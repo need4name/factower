@@ -27,7 +27,8 @@ class BootScene extends Phaser.Scene {
 
     // Tap anywhere to continue
     this.input.once('pointerdown', () => {
-      console.log('Ready to build.');
-    });
-  }
-}
+  this.cameras.main.fade(300, 0, 0, 0);
+  this.time.delayedCall(300, () => {
+    this.scene.start('SaveScene');
+  });
+});

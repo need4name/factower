@@ -26,59 +26,55 @@ class BaseScene extends Phaser.Scene {
     }
 
     // Header
-    this.add.rectangle(width / 2, 52, width, 80, 0x111318);
-    this.add.rectangle(width / 2, 92, width, 1, 0x252c38);
+this.add.rectangle(width / 2, 70, width, 80, 0x111318);
+this.add.rectangle(width / 2, 110, width, 1, 0x252c38);
 
-    this.add.text(24, 28, 'THE PIRATE KING', {
-      fontFamily: 'monospace',
-      fontSize: '11px',
-      color: '#6a7585',
-      letterSpacing: 3
-    });
+this.add.text(24, 40, 'THE PIRATE KING', {
+  fontFamily: 'monospace',
+  fontSize: '11px',
+  color: '#6a7585',
+  letterSpacing: 3
+});
 
-    this.add.text(24, 48, 'YOUR ISLAND', {
-      fontFamily: 'monospace',
-      fontSize: '20px',
-      color: '#eef2f8',
-      fontStyle: 'bold'
-    });
+this.add.text(24, 60, 'YOUR ISLAND', {
+  fontFamily: 'monospace',
+  fontSize: '20px',
+  color: '#eef2f8',
+  fontStyle: 'bold'
+});
 
-    // Power score
-    const powerScore = this.saveData?.powerScore || 0;
-    this.add.text(width - 24, 28, 'POWER', {
-      fontFamily: 'monospace',
-      fontSize: '10px',
-      color: '#6a7585',
-      letterSpacing: 3
-    }).setOrigin(1, 0);
+const powerScore = this.saveData?.powerScore || 0;
+this.add.text(width - 24, 40, 'POWER', {
+  fontFamily: 'monospace',
+  fontSize: '10px',
+  color: '#6a7585',
+  letterSpacing: 3
+}).setOrigin(1, 0);
 
-    this.add.text(width - 24, 46, `${powerScore}`, {
-      fontFamily: 'monospace',
-      fontSize: '22px',
-      color: '#e8a020',
-      fontStyle: 'bold'
-    }).setOrigin(1, 0);
+this.add.text(width - 24, 58, `${powerScore}`, {
+  fontFamily: 'monospace',
+  fontSize: '22px',
+  color: '#e8a020',
+  fontStyle: 'bold'
+}).setOrigin(1, 0);
 
-    // Divider
-    this.add.rectangle(width / 2, 108, width, 1, 0x252c38);
+this.add.rectangle(width / 2, 120, width, 1, 0x252c38);
 
-    // Zone label
-    this.add.text(width / 2, 128, 'SELECT ZONE', {
-      fontFamily: 'monospace',
-      fontSize: '10px',
-      color: '#6a7585',
-      letterSpacing: 5
-    }).setOrigin(0.5);
+this.add.text(width / 2, 142, 'SELECT ZONE', {
+  fontFamily: 'monospace',
+  fontSize: '10px',
+  color: '#6a7585',
+  letterSpacing: 5
+}).setOrigin(0.5);
 
     // Zones
-    this.createZone(0, 'FACTORY FLOOR', 'PRODUCE TOWERS', '#3a8fc4', true, 200);
-this.createZone(1, 'ARMOURY', 'MANAGE STOCKPILE', '#5eba7d', true, 320);
-this.createZone(2, 'DOCK', 'LAUNCH MISSIONS', '#e8a020', true, 440);
-this.createZone(3, 'MARKETPLACE', 'LOCKED', '#252c38', false, 540);
-this.createZone(4, 'WORKER HOUSING', 'LOCKED', '#252c38', false, 610);
-this.createZone(5, 'POWER', 'LOCKED', '#252c38', false, 680);
-  }
-
+    this.createZone(0, 'FACTORY FLOOR', 'PRODUCE TOWERS', '#3a8fc4', true, 240);
+this.createZone(1, 'ARMOURY', 'MANAGE STOCKPILE', '#5eba7d', true, 360);
+this.createZone(2, 'DOCK', 'LAUNCH MISSIONS', '#e8a020', true, 480);
+this.createZone(3, 'MARKETPLACE', 'LOCKED', '#252c38', false, 580);
+this.createZone(4, 'WORKER HOUSING', 'LOCKED', '#252c38', false, 650);
+this.createZone(5, 'POWER', 'LOCKED', '#252c38', false, 720);
+    
   createZone(index, title, subtitle, colour, unlocked, y) {
     const { width } = this.scale;
     const zoneHeight = unlocked ? 100 : 60;

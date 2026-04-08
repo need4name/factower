@@ -127,20 +127,27 @@ class SaveScene extends Phaser.Scene {
     if (isEmpty) {
       // Create new save
       const newSave = {
-        slot: index,
-        playerName: 'THE PIRATE KING',
-        storyline: 1,
-        level: 1,
-        powerScore: 0,
-        materials: {
-          plasticScrap: 0,
-          refinedPlastic: 0,
-          salvagedMetal: 0
-        },
-        nuts: 0,
-        bolts: 0,
-        createdAt: Date.now()
-      };
+  slot: index,
+  playerName: 'THE PIRATE KING',
+  storyline: 1,
+  level: 1,
+  powerScore: 0,
+  materials: {
+    plasticScrap: 0,
+    refinedPlastic: 0,
+    salvagedMetal: 0
+  },
+  stockpile: {
+    gunner: 3,
+    bomber: 2,
+    barricade: 2
+  },
+  nuts: 0,
+  bolts: 0,
+  parts: 0,
+  completedLevels: {},
+  createdAt: Date.now()
+};
       localStorage.setItem(saveKey, JSON.stringify(newSave));
     }
 

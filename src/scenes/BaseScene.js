@@ -71,12 +71,12 @@ class BaseScene extends Phaser.Scene {
     }).setOrigin(0.5);
 
     // Zones
-    this.createZone(0, 'FACTORY FLOOR', 'PRODUCE TOWERS', '#3a8fc4', true, 220);
-    this.createZone(1, 'ARMOURY', 'MANAGE STOCKPILE', '#5eba7d', true, 380);
-    this.createZone(2, 'DOCK', 'LAUNCH MISSIONS', '#e8a020', true, 540);
-    this.createZone(3, 'MARKETPLACE', 'LOCKED', '#252c38', false, 660);
-    this.createZone(4, 'WORKER HOUSING', 'LOCKED', '#252c38', false, 740);
-    this.createZone(5, 'POWER', 'LOCKED', '#252c38', false, 820);
+    this.createZone(0, 'FACTORY FLOOR', 'PRODUCE TOWERS', '#3a8fc4', true, 200);
+this.createZone(1, 'ARMOURY', 'MANAGE STOCKPILE', '#5eba7d', true, 320);
+this.createZone(2, 'DOCK', 'LAUNCH MISSIONS', '#e8a020', true, 440);
+this.createZone(3, 'MARKETPLACE', 'LOCKED', '#252c38', false, 540);
+this.createZone(4, 'WORKER HOUSING', 'LOCKED', '#252c38', false, 610);
+this.createZone(5, 'POWER', 'LOCKED', '#252c38', false, 680);
   }
 
   createZone(index, title, subtitle, colour, unlocked, y) {

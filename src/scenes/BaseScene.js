@@ -132,15 +132,16 @@ class BaseScene extends Phaser.Scene {
     this.cameras.main.flash(150, 0, 0, 0);
     this.time.delayedCall(150, () => {
       switch(index) {
-        case 0:
-          console.log('Enter Factory');
-          break;
-        case 1:
-          this.scene.start('FactoryScene');
-          break;
-        case 2:
-          console.log('Enter Dock');
-          break;
+  case 0:
+    this.scene.start('FactoryScene');
+    break;
+  case 1:
+    console.log('Enter Armoury');
+    break;
+  case 2:
+    console.log('Enter Dock');
+    break;
+}
       }
     });
   }

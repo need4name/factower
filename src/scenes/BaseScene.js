@@ -16,8 +16,8 @@ class BaseScene extends Phaser.Scene {
       this.add.rectangle(width / 2, 100 + i * 40, width, 1, 0x111318);
     }
 
-    this.add.rectangle(width / 2, 70, width, 80, 0x111318);
-    this.add.rectangle(width / 2, 110, width, 1, 0x252c38);
+    this.add.rectangle(width / 2, 70, width, 100, 0x111318);
+    this.add.rectangle(width / 2, 120, width, 1, 0x252c38);
 
     this.add.text(24, 40, 'THE PIRATE KING', {
       fontFamily: 'monospace',
@@ -131,17 +131,16 @@ class BaseScene extends Phaser.Scene {
   enterZone(index) {
     this.cameras.main.flash(150, 0, 0, 0);
     this.time.delayedCall(150, () => {
-      switch(index) {
-  case 0:
-    this.scene.start('FactoryScene');
-    break;
-  case 1:
-  this.scene.start('ArmouryScene');
-  break;
-case 2:
-  this.scene.start('DockScene');
-  break;
-}
+      switch (index) {
+        case 0:
+          this.scene.start('FactoryScene');
+          break;
+        case 1:
+          this.scene.start('ArmouryScene');
+          break;
+        case 2:
+          this.scene.start('DockScene');
+          break;
       }
     });
   }

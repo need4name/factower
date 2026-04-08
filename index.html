@@ -21,13 +21,14 @@
   <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
   <script src="src/scenes/Boot.js"></script>
   <script src="src/scenes/SaveScene.js"></script>
+<script src="src/scenes/BaseScene.js"></script>
   <script>
     const config = {
       type: Phaser.AUTO,
       width: 390,
       height: 844,
       backgroundColor: '#0a0c0f',
-      scene: [BootScene, SaveScene],
+scene: [BootScene, SaveScene, BaseScene],
       scale: {
         mode: Phaser.Scale.FIT,
         autoCenter: Phaser.Scale.CENTER_BOTH

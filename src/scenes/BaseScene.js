@@ -135,12 +135,12 @@ class BaseScene extends Phaser.Scene {
   case 0:
     this.scene.start('FactoryScene');
     break;
-  case 1:
-    console.log('Enter Armoury');
-    break;
-  case 2:
-    console.log('Enter Dock');
-    break;
+  ccase 1:
+  this.scene.start('ArmouryScene');
+  break;
+case 2:
+  this.scene.start('DockScene');
+  break;
 }
       }
     });

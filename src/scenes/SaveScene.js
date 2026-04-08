@@ -151,8 +151,7 @@ class SaveScene extends Phaser.Scene {
     this.cameras.main.flash(200, 232, 160, 32);
     this.time.delayedCall(250, () => {
       // Placeholder — will go to BaseScene once built
-      console.log(`Loaded slot ${index}`);
-      this.scene.restart();
+      this.scene.start('BaseScene');
     });
   }
 }

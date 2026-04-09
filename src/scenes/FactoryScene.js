@@ -18,9 +18,9 @@ class FactoryScene extends Phaser.Scene {
     this.COLS = 5;
     this.ROWS = 5;
     this.GX = (width - this.TILE * this.COLS) / 2;
-    this.HEADER_Y = 144;
-    this.STORE_Y = 228;
-    this.GY = 272;
+    this.HEADER_Y = 184;
+    this.STORE_Y = 268;
+    this.GY = 312;
     this.DEPOT_Y = this.GY + this.ROWS * this.TILE + 28; // 560
     this.PANEL_Y = this.DEPOT_Y + 52;                    // 612
     this.WORKER_SPEED = 80;

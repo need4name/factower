@@ -241,13 +241,25 @@ class FactoryScene extends Phaser.Scene {
     this.machineSprites[key] = { bg, lbl, barBg, bar };
 
     let timer = null;
-    bg.setInteractive();
-    bg.on('pointerdown', () => {
-      timer = this.time.delayedCall(700, () => this.confirmDelete(row, col));
-    });
-    bg.on('pointerup', () => { timer?.remove(); timer = null; });
-    bg.on('pointerout', () => { timer?.remove(); timer = null; });
+let pressing = false;
+bg.setInteractive();
+bg.on('pointerdown', () => {
+  pressing = true;
+  timer = this.time.delayedCall(700, () => {
+    pressing = false;
+    this.confirmDelete(row, col);
+  });
+});
+bg.on('pointerup', () => {
+  timer?.remove();
+  timer = null;
+  if (pressing) {
+    pressing = false;
+    this.tileTapped(null, row, col);
   }
+});
+bg.on('pointerout', () => { timer?.remove(); timer = null; pressing = false; });
+
 
   drawWorker() {
     const { width } = this.scale;

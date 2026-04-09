@@ -6,7 +6,7 @@ const MACHINE_TYPES = {
     colourHex: '#e8a020',
     inputItems: ['plasticScrap'],
     outputItem: 'refinedPlastic',
-    duration: 20000
+    duration: 10000
   },
   assembly: {
     key: 'assembly',
@@ -15,7 +15,7 @@ const MACHINE_TYPES = {
     colourHex: '#5eba7d',
     inputItems: ['refinedPlastic', 'salvagedMetal'],
     outputItem: 'towerComponent',
-    duration: 20000
+    duration: 6667
   }
 };
 
@@ -99,7 +99,6 @@ class Factory {
     this.worker.progress = 0;
   }
 
-  // Returns true if work completed this tick
   update(delta) {
     if (this.worker.state !== 'working') return false;
 

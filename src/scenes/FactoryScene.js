@@ -13,19 +13,18 @@ class FactoryScene extends Phaser.Scene {
     this.factory = new Factory();
     this.factory.loadFromSave(this.saveData);
 
+    // Layout — fitted to 844px portrait
     this.TILE = 52;
     this.COLS = 5;
-    this.ROWS = 7;
+    this.ROWS = 5;
     this.GX = (width - this.TILE * this.COLS) / 2;
-    this.GY = 200;
-    this.STORE_Y = 160;
+    this.STORE_Y = 148;
+    this.GY = 192;
     this.DEPOT_Y = this.GY + this.ROWS * this.TILE + 28;
+    this.PANEL_Y = this.DEPOT_Y + 52;
     this.WORKER_SPEED = 80;
 
     this.placingMachine = null;
-    this.deleteMode = false;
-    this.workerSprite = null;
-    this.workerLabel = null;
     this.progressBars = {};
     this.machineSprites = {};
     this.tutorialElements = [];
@@ -38,26 +37,27 @@ class FactoryScene extends Phaser.Scene {
     this.drawMachines();
     this.drawWorker();
     this.drawBottomPanel();
-    this.drawWorkerStatus();
+    this.drawStatusBar();
 
     if (!this.factory.tutorialComplete) {
       this.startTutorial();
     }
   }
 
+  // ── LAYOUT ──────────────────────────────────────────────────
+
   drawHeader() {
     const { width } = this.scale;
 
-    this.add.rectangle(width / 2, 68, width, 96, 0x161b22);
-    this.add.rectangle(width / 2, 116, width, 1, 0x334455);
+    this.add.rectangle(width / 2, 64, width, 88, 0x161b22);
+    this.add.rectangle(width / 2, 108, width, 1, 0x334455);
 
-    const backBtn = this.add.rectangle(48, 68, 76, 52, 0x1e2530)
-      .setInteractive()
-      .setDepth(5);
-    this.add.text(48, 68, '← BACK', {
+    // Back button — large tap target
+    const backBtn = this.add.rectangle(52, 64, 84, 56, 0x1e2530)
+      .setInteractive().setDepth(5);
+    this.add.text(52, 64, '← BACK', {
       fontFamily: 'monospace', fontSize: '14px', color: '#e8a020'
     }).setOrigin(0.5).setDepth(6);
-
     backBtn.on('pointerdown', () => {
       this.factory.save();
       this.cameras.main.fade(200, 0, 0, 0);
@@ -66,11 +66,11 @@ class FactoryScene extends Phaser.Scene {
     backBtn.on('pointerover', () => backBtn.setFillStyle(0x252c38));
     backBtn.on('pointerout', () => backBtn.setFillStyle(0x1e2530));
 
-    this.add.text(width / 2 + 24, 52, 'FACTORY FLOOR', {
-      fontFamily: 'monospace', fontSize: '18px', color: '#eef2f8', fontStyle: 'bold'
+    this.add.text(width / 2 + 28, 50, 'FACTORY FLOOR', {
+      fontFamily: 'monospace', fontSize: '17px', color: '#eef2f8', fontStyle: 'bold'
     }).setOrigin(0.5);
 
-    this.add.text(width / 2 + 24, 78, 'BUILD YOUR TOWERS', {
+    this.add.text(width / 2 + 28, 76, 'BUILD YOUR TOWERS', {
       fontFamily: 'monospace', fontSize: '11px', color: '#8899aa', letterSpacing: 2
     }).setOrigin(0.5);
   }
@@ -79,33 +79,38 @@ class FactoryScene extends Phaser.Scene {
     const { width } = this.scale;
     const cx = width / 2;
 
-    const storeBg = this.add.rectangle(cx, this.STORE_Y, width - 48, 44, 0x161b22)
+    // Store
+    const storeBg = this.add.rectangle(cx, this.STORE_Y, width - 48, 40, 0x161b22)
       .setInteractive();
-    this.add.rectangle(cx, this.STORE_Y, width - 48, 44)
+    this.add.rectangle(cx, this.STORE_Y, width - 48, 40)
       .setStrokeStyle(2, 0x3a8fc4);
-    this.add.text(cx, this.STORE_Y, 'RAW MATERIAL STORE', {
-      fontFamily: 'monospace', fontSize: '13px', color: '#3a8fc4', fontStyle: 'bold'
+    this.add.text(cx, this.STORE_Y, 'RAW MATERIAL STORE  —  TAP TO COLLECT', {
+      fontFamily: 'monospace', fontSize: '11px', color: '#3a8fc4', fontStyle: 'bold'
     }).setOrigin(0.5);
     storeBg.on('pointerdown', () => this.stationTapped('store'));
     storeBg.on('pointerover', () => storeBg.setFillStyle(0x1e2d3a));
     storeBg.on('pointerout', () => storeBg.setFillStyle(0x161b22));
 
-    const depotBg = this.add.rectangle(cx, this.DEPOT_Y, width - 48, 44, 0x161b22)
+    // Store progress bar
+    this.progressBars['store'] = this.add.rectangle(
+      24, this.STORE_Y + 22, 0, 4, 0x3a8fc4
+    ).setOrigin(0, 0.5);
+
+    // Depository
+    const depotBg = this.add.rectangle(cx, this.DEPOT_Y, width - 48, 40, 0x161b22)
       .setInteractive();
-    this.add.rectangle(cx, this.DEPOT_Y, width - 48, 44)
+    this.add.rectangle(cx, this.DEPOT_Y, width - 48, 40)
       .setStrokeStyle(2, 0xc43a3a);
-    this.add.text(cx, this.DEPOT_Y, 'DEPOSITORY', {
-      fontFamily: 'monospace', fontSize: '13px', color: '#c43a3a', fontStyle: 'bold'
+    this.add.text(cx, this.DEPOT_Y, 'DEPOSITORY  —  TAP TO DELIVER', {
+      fontFamily: 'monospace', fontSize: '11px', color: '#c43a3a', fontStyle: 'bold'
     }).setOrigin(0.5);
     depotBg.on('pointerdown', () => this.stationTapped('depository'));
     depotBg.on('pointerover', () => depotBg.setFillStyle(0x2a1a1a));
     depotBg.on('pointerout', () => depotBg.setFillStyle(0x161b22));
 
-    this.progressBars['store'] = this.add.rectangle(
-      24, this.STORE_Y + 24, 0, 4, 0x3a8fc4
-    ).setOrigin(0, 0.5);
+    // Depository progress bar
     this.progressBars['depository'] = this.add.rectangle(
-      24, this.DEPOT_Y + 24, 0, 4, 0xc43a3a
+      24, this.DEPOT_Y + 22, 0, 4, 0xc43a3a
     ).setOrigin(0, 0.5);
   }
 
@@ -118,7 +123,6 @@ class FactoryScene extends Phaser.Scene {
         const tile = this.add.rectangle(
           x, y, this.TILE - 2, this.TILE - 2, 0x161b22
         ).setInteractive();
-
         this.add.rectangle(x, y, this.TILE - 2, this.TILE - 2)
           .setStrokeStyle(1, 0x2a3a4a);
 
@@ -132,65 +136,97 @@ class FactoryScene extends Phaser.Scene {
           }
         });
         tile.on('pointerout', () => {
-          if (!this.factory.getMachineAt(row, col)) {
-            tile.setFillStyle(0x161b22);
-          }
+          if (!this.factory.getMachineAt(row, col)) tile.setFillStyle(0x161b22);
         });
       }
     }
   }
 
   tileTapped(tile, row, col) {
-    // PLACE mode
+    // Placing a machine
     if (this.placingMachine) {
       if (this.factory.getMachineAt(row, col)) return;
-      const placed = this.factory.placeMachine(row, col, this.placingMachine);
-      if (placed) {
+      if (this.factory.placeMachine(row, col, this.placingMachine)) {
         this.drawMachineAt(row, col, this.placingMachine);
         this.factory.save();
         if (!this.factory.tutorialComplete) {
           this.advanceTutorial(`placed_${this.placingMachine}`);
         }
         this.placingMachine = null;
-        this.smelterBtn.setFillStyle(0x1e2530);
-        this.assemblyBtn.setFillStyle(0x1e2530);
+        this.smelterBtn?.setFillStyle(0x1e2530);
+        this.assemblyBtn?.setFillStyle(0x1e2530);
       }
       return;
     }
 
-    // ASSIGN mode — tap existing machine to send worker
+    // Assigning worker to machine
     const machine = this.factory.getMachineAt(row, col);
-    if (machine) {
-      const stationKey = `${row},${col}`;
-      const w = this.factory.worker;
-      if (w.station === stationKey && w.state === 'working') return;
+    if (!machine) return;
 
-      if (!this.factory.canWorkerStartAt(stationKey)) {
-        const mt = MACHINE_TYPES[machine.type];
-        this.showMessage(`Need: ${mt.inputItems.join(' + ')} in inventory first`, '#c43a3a');
-        return;
-      }
+    const stationKey = `${row},${col}`;
+    const w = this.factory.worker;
 
-      this.walkWorkerTo(stationKey, () => {
-        this.factory.startWorkAt(stationKey);
-        this.updateWorkerStatus();
-        if (!this.factory.tutorialComplete) {
-          this.advanceTutorial(`assigned_${stationKey}`);
-        }
-      });
+    if (w.station === stationKey && w.state === 'working') {
+      this.showMessage('Worker already here', '#8899aa');
+      return;
     }
+
+    if (!this.factory.canWorkerStartAt(stationKey)) {
+      this.showMessage(
+        `Need: ${MACHINE_TYPES[machine.type].inputItems.join(' + ')} in inventory`,
+        '#c43a3a'
+      );
+      return;
+    }
+
+    this.walkWorkerTo(stationKey, () => {
+      this.factory.startWorkAt(stationKey);
+      this.updateStatus();
+      if (!this.factory.tutorialComplete) {
+        this.advanceTutorial(`assigned_${stationKey}`);
+      }
+    });
+  }
+
+  stationTapped(stationKey) {
+    if (this.placingMachine) return;
+
+    const w = this.factory.worker;
+    if (w.station === stationKey && w.state === 'working') {
+      this.showMessage('Worker already here', '#8899aa');
+      return;
+    }
+
+    if (!this.factory.canWorkerStartAt(stationKey)) {
+      if (stationKey === 'store' && w.inventory.length > 0) {
+        this.showMessage('Deliver items first before collecting more', '#c43a3a');
+      } else if (stationKey === 'depository') {
+        this.showMessage('No finished tower to deliver yet', '#c43a3a');
+      } else {
+        this.showMessage('Worker needs the right materials first', '#c43a3a');
+      }
+      return;
+    }
+
+    this.walkWorkerTo(stationKey, () => {
+      this.factory.startWorkAt(stationKey);
+      this.updateStatus();
+      if (!this.factory.tutorialComplete) {
+        this.advanceTutorial(`assigned_${stationKey}`);
+      }
+    });
   }
 
   drawMachines() {
-    Object.values(this.machineSprites).forEach(s => {
-      if (s) Object.values(s).forEach(o => o && o.destroy && o.destroy());
+    Object.values(this.machineSprites).forEach(group => {
+      if (group) Object.values(group).forEach(s => s?.destroy?.());
     });
     this.machineSprites = {};
 
     for (let row = 0; row < this.ROWS; row++) {
       for (let col = 0; col < this.COLS; col++) {
-        const machine = this.factory.getMachineAt(row, col);
-        if (machine) this.drawMachineAt(row, col, machine.type);
+        const m = this.factory.getMachineAt(row, col);
+        if (m) this.drawMachineAt(row, col, m.type);
       }
     }
   }
@@ -203,30 +239,26 @@ class FactoryScene extends Phaser.Scene {
 
     const bg = this.add.rectangle(x, y, this.TILE - 2, this.TILE - 2, mt.colour, 0.15);
     this.add.rectangle(x, y, this.TILE - 2, this.TILE - 2).setStrokeStyle(2, mt.colour);
-
-    const label = type === 'smelter' ? 'SML' : 'ASM';
-    const text = this.add.text(x, y - 4, label, {
+    const lbl = this.add.text(x, y - 4, type === 'smelter' ? 'SML' : 'ASM', {
       fontFamily: 'monospace', fontSize: '13px', color: mt.colourHex, fontStyle: 'bold'
     }).setOrigin(0.5);
 
-    const barBg = this.add.rectangle(
-      x, y + this.TILE / 2 - 5, this.TILE - 4, 5, 0x2a3a4a
-    );
+    const barBg = this.add.rectangle(x, y + this.TILE / 2 - 5, this.TILE - 4, 5, 0x2a3a4a);
     const bar = this.add.rectangle(
       x - (this.TILE - 4) / 2, y + this.TILE / 2 - 5, 0, 5, mt.colour
     ).setOrigin(0, 0.5);
 
     this.progressBars[key] = bar;
-    this.machineSprites[key] = { bg, text, barBg, bar };
+    this.machineSprites[key] = { bg, lbl, barBg, bar };
 
     // Long press to delete
-    let pressTimer = null;
+    let timer = null;
     bg.setInteractive();
     bg.on('pointerdown', () => {
-      pressTimer = this.time.delayedCall(600, () => this.confirmDelete(row, col));
+      timer = this.time.delayedCall(700, () => this.confirmDelete(row, col));
     });
-    bg.on('pointerup', () => { if (pressTimer) { pressTimer.remove(); pressTimer = null; } });
-    bg.on('pointerout', () => { if (pressTimer) { pressTimer.remove(); pressTimer = null; } });
+    bg.on('pointerup', () => { timer?.remove(); timer = null; });
+    bg.on('pointerout', () => { timer?.remove(); timer = null; });
   }
 
   drawWorker() {
@@ -239,154 +271,100 @@ class FactoryScene extends Phaser.Scene {
 
   drawBottomPanel() {
     const { width, height } = this.scale;
-    const panelY = this.DEPOT_Y + 28;
 
-    this.add.rectangle(width / 2, height - 60, width, height - panelY, 0x161b22);
-    this.add.rectangle(width / 2, panelY, width, 1, 0x334455);
+    this.add.rectangle(width / 2, height - 56, width, height - this.PANEL_Y, 0x161b22);
+    this.add.rectangle(width / 2, this.PANEL_Y, width, 1, 0x334455);
 
-    this.smelterBtn = this.add.rectangle(80, panelY + 52, 128, 80, 0x1e2530).setInteractive();
-    this.add.rectangle(80, panelY + 52, 128, 80).setStrokeStyle(1, 0xe8a020);
-    this.add.circle(80, panelY + 26, 10, 0xe8a020);
-    this.add.text(80, panelY + 54, 'SMELTER', {
+    const btnY = this.PANEL_Y + 52;
+
+    this.smelterBtn = this.add.rectangle(78, btnY, 128, 80, 0x1e2530).setInteractive();
+    this.add.rectangle(78, btnY, 128, 80).setStrokeStyle(1, 0xe8a020);
+    this.add.circle(78, btnY - 26, 9, 0xe8a020);
+    this.add.text(78, btnY + 2, 'SMELTER', {
       fontFamily: 'monospace', fontSize: '13px', color: '#eef2f8', fontStyle: 'bold'
     }).setOrigin(0.5);
-    this.add.text(80, panelY + 74, 'SCRAP→REFINED', {
+    this.add.text(78, btnY + 22, 'SCRAP→REFINED', {
       fontFamily: 'monospace', fontSize: '10px', color: '#8899aa'
     }).setOrigin(0.5);
-    this.smelterBtn.on('pointerdown', () => this.selectPlacingMachine('smelter'));
+    this.smelterBtn.on('pointerdown', () => this.selectPlacing('smelter'));
     this.smelterBtn.on('pointerover', () => this.smelterBtn.setFillStyle(0x252c38));
     this.smelterBtn.on('pointerout', () => {
       this.smelterBtn.setFillStyle(this.placingMachine === 'smelter' ? 0x2a3a4a : 0x1e2530);
     });
 
-    this.assemblyBtn = this.add.rectangle(230, panelY + 52, 128, 80, 0x1e2530).setInteractive();
-    this.add.rectangle(230, panelY + 52, 128, 80).setStrokeStyle(1, 0x5eba7d);
-    this.add.circle(230, panelY + 26, 10, 0x5eba7d);
-    this.add.text(230, panelY + 54, 'ASSEMBLY', {
+    this.assemblyBtn = this.add.rectangle(228, btnY, 128, 80, 0x1e2530).setInteractive();
+    this.add.rectangle(228, btnY, 128, 80).setStrokeStyle(1, 0x5eba7d);
+    this.add.circle(228, btnY - 26, 9, 0x5eba7d);
+    this.add.text(228, btnY + 2, 'ASSEMBLY', {
       fontFamily: 'monospace', fontSize: '13px', color: '#eef2f8', fontStyle: 'bold'
     }).setOrigin(0.5);
-    this.add.text(230, panelY + 74, 'REFINED→TOWER', {
+    this.add.text(228, btnY + 22, 'REFINED→TOWER', {
       fontFamily: 'monospace', fontSize: '10px', color: '#8899aa'
     }).setOrigin(0.5);
-    this.assemblyBtn.on('pointerdown', () => this.selectPlacingMachine('assembly'));
+    this.assemblyBtn.on('pointerdown', () => this.selectPlacing('assembly'));
     this.assemblyBtn.on('pointerover', () => this.assemblyBtn.setFillStyle(0x252c38));
     this.assemblyBtn.on('pointerout', () => {
       this.assemblyBtn.setFillStyle(this.placingMachine === 'assembly' ? 0x2a3a4a : 0x1e2530);
     });
 
-    this.deleteModeBtn = this.add.rectangle(348, panelY + 52, 80, 80, 0x1e2530).setInteractive();
-    this.add.rectangle(348, panelY + 52, 80, 80).setStrokeStyle(1, 0x554444);
-    this.add.text(348, panelY + 44, 'DEL', {
+    // Delete instructions button
+    const delBtn = this.add.rectangle(346, btnY, 80, 80, 0x1e2530).setInteractive();
+    this.add.rectangle(346, btnY, 80, 80).setStrokeStyle(1, 0x553333);
+    this.add.text(346, btnY - 8, 'DEL', {
       fontFamily: 'monospace', fontSize: '16px', color: '#aa4444', fontStyle: 'bold'
     }).setOrigin(0.5);
-    this.add.text(348, panelY + 66, 'HOLD', {
+    this.add.text(346, btnY + 16, 'HOLD', {
       fontFamily: 'monospace', fontSize: '10px', color: '#aa4444'
     }).setOrigin(0.5);
-    this.add.text(348, panelY + 80, 'MACHINE', {
-      fontFamily: 'monospace', fontSize: '10px', color: '#aa4444'
-    }).setOrigin(0.5);
-    this.deleteModeBtn.on('pointerdown', () => this.showMessage('HOLD any machine tile to delete it', '#c43a3a'));
+    delBtn.on('pointerdown', () => this.showMessage('HOLD any machine tile to delete it', '#c43a3a'));
   }
 
-  drawWorkerStatus() {
+  drawStatusBar() {
     const { width, height } = this.scale;
-    this.workerStatusText = this.add.text(width / 2, height - 14, '', {
+    this.statusText = this.add.text(width / 2, height - 10, '', {
       fontFamily: 'monospace', fontSize: '11px', color: '#8899aa'
     }).setOrigin(0.5).setDepth(5);
-    this.updateWorkerStatus();
+    this.updateStatus();
   }
 
-  updateWorkerStatus() {
-    if (!this.workerStatusText) return;
-    const w = this.factory.worker;
-    const inv = this.factory.getInventoryDisplay();
-    this.workerStatusText.setText(`W1: ${w.state.toUpperCase()}  ·  ${inv}`);
-  }
+  // ── ACTIONS ─────────────────────────────────────────────────
 
-  selectPlacingMachine(type) {
+  selectPlacing(type) {
     this.placingMachine = this.placingMachine === type ? null : type;
-    this.deleteMode = false;
-    this.smelterBtn.setFillStyle(this.placingMachine === 'smelter' ? 0x2a3a4a : 0x1e2530);
-    this.assemblyBtn.setFillStyle(this.placingMachine === 'assembly' ? 0x2a3a4a : 0x1e2530);
-  }
-
-  stationTapped(stationKey) {
-    if (this.placingMachine) return;
-
-    const w = this.factory.worker;
-    if (w.station === stationKey && w.state === 'working') return;
-
-    if (!this.factory.canWorkerStartAt(stationKey)) {
-      if (stationKey === 'store' && w.inventory.length > 0) {
-        this.showMessage('Worker carrying items — deliver them first', '#c43a3a');
-      } else if (stationKey === 'depository') {
-        this.showMessage('No finished tower to deliver yet', '#c43a3a');
-      } else {
-        this.showMessage('Worker needs the right materials first', '#c43a3a');
-      }
-      return;
+    this.smelterBtn?.setFillStyle(this.placingMachine === 'smelter' ? 0x2a3a4a : 0x1e2530);
+    this.assemblyBtn?.setFillStyle(this.placingMachine === 'assembly' ? 0x2a3a4a : 0x1e2530);
+    if (this.placingMachine) {
+      this.showMessage(`Tap an empty tile to place ${this.placingMachine.toUpperCase()}`, '#e8a020');
     }
+  }
 
-    this.walkWorkerTo(stationKey, () => {
-      this.factory.startWorkAt(stationKey);
-      this.updateWorkerStatus();
-      if (!this.factory.tutorialComplete) {
-        this.advanceTutorial(`assigned_${stationKey}`);
+  walkWorkerTo(stationKey, onComplete) {
+    const target = this.getStationPos(stationKey);
+    const dist = Phaser.Math.Distance.Between(
+      this.workerSprite.x, this.workerSprite.y, target.x, target.y
+    );
+
+    this.factory.worker.state = 'walking';
+    this.factory.worker.progress = 0;
+    this.updateStatus();
+
+    this.tweens.killTweensOf(this.workerSprite);
+    this.tweens.killTweensOf(this.workerLabel);
+
+    this.tweens.add({
+      targets: [this.workerSprite, this.workerLabel],
+      x: target.x,
+      y: target.y,
+      duration: Math.max((dist / this.WORKER_SPEED) * 1000, 80),
+      ease: 'Linear',
+      onComplete: () => {
+        if (onComplete) onComplete();
+        this.updateStatus();
       }
     });
   }
 
-  confirmDelete(row, col) {
-    const machine = this.factory.getMachineAt(row, col);
-    if (!machine) return;
-
-    const mt = MACHINE_TYPES[machine.type];
-    const { width, height } = this.scale;
-
-    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.7).setDepth(20);
-    const box = this.add.rectangle(width / 2, height / 2, width - 60, 180, 0x161b22).setDepth(21);
-    this.add.rectangle(width / 2, height / 2, width - 60, 180).setStrokeStyle(1, 0xc43a3a).setDepth(21);
-
-    this.add.text(width / 2, height / 2 - 52, `DELETE ${mt.name}?`, {
-      fontFamily: 'monospace', fontSize: '18px', color: '#eef2f8', fontStyle: 'bold'
-    }).setOrigin(0.5).setDepth(22);
-
-    this.add.text(width / 2, height / 2 - 20, 'This cannot be undone.', {
-      fontFamily: 'monospace', fontSize: '13px', color: '#8899aa'
-    }).setOrigin(0.5).setDepth(22);
-
-    const confirmBtn = this.add.rectangle(width / 2 - 80, height / 2 + 44, 130, 50, 0x3a1010).setInteractive().setDepth(22);
-    this.add.rectangle(width / 2 - 80, height / 2 + 44, 130, 50).setStrokeStyle(1, 0xc43a3a).setDepth(22);
-    this.add.text(width / 2 - 80, height / 2 + 44, 'DELETE', {
-      fontFamily: 'monospace', fontSize: '15px', color: '#c43a3a', fontStyle: 'bold'
-    }).setOrigin(0.5).setDepth(23);
-
-    const cancelBtn = this.add.rectangle(width / 2 + 80, height / 2 + 44, 130, 50, 0x1e2530).setInteractive().setDepth(22);
-    this.add.rectangle(width / 2 + 80, height / 2 + 44, 130, 50).setStrokeStyle(1, 0x334455).setDepth(22);
-    this.add.text(width / 2 + 80, height / 2 + 44, 'CANCEL', {
-      fontFamily: 'monospace', fontSize: '15px', color: '#8899aa', fontStyle: 'bold'
-    }).setOrigin(0.5).setDepth(23);
-
-    const allElements = [overlay, box, confirmBtn, cancelBtn];
-    const dismiss = () => allElements.forEach(e => e.destroy());
-
-    confirmBtn.on('pointerdown', () => {
-      dismiss();
-      const key = `${row},${col}`;
-      if (this.machineSprites[key]) {
-        Object.values(this.machineSprites[key]).forEach(s => s && s.destroy && s.destroy());
-        delete this.machineSprites[key];
-        delete this.progressBars[key];
-      }
-      this.factory.deleteMachine(row, col);
-      this.factory.save();
-      this.updateWorkerStatus();
-    });
-
-    cancelBtn.on('pointerdown', dismiss);
-  }
-
-  getStationPixelPos(stationKey) {
+  getStationPos(stationKey) {
     const { width } = this.scale;
     if (stationKey === 'store') return { x: width / 2, y: this.STORE_Y };
     if (stationKey === 'depository') return { x: width / 2, y: this.DEPOT_Y };
@@ -397,277 +375,180 @@ class FactoryScene extends Phaser.Scene {
     };
   }
 
-  walkWorkerTo(stationKey, onComplete) {
-    if (!this.workerSprite) return;
+  confirmDelete(row, col) {
+    const machine = this.factory.getMachineAt(row, col);
+    if (!machine) return;
+    const mt = MACHINE_TYPES[machine.type];
+    const { width, height } = this.scale;
 
-    if (this.factory.worker.state === 'working') {
-      this.factory.worker.state = 'idle';
-      this.factory.worker.progress = 0;
-    }
+    const els = [];
+    const bg = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.75).setDepth(40);
+    const box = this.add.rectangle(width / 2, height / 2, width - 60, 170, 0x161b22).setDepth(41);
+    this.add.rectangle(width / 2, height / 2, width - 60, 170).setStrokeStyle(1, 0xc43a3a).setDepth(41);
+    const title = this.add.text(width / 2, height / 2 - 48, `DELETE ${mt.name}?`, {
+      fontFamily: 'monospace', fontSize: '18px', color: '#eef2f8', fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(42);
+    const sub = this.add.text(width / 2, height / 2 - 18, 'This cannot be undone.', {
+      fontFamily: 'monospace', fontSize: '13px', color: '#8899aa'
+    }).setOrigin(0.5).setDepth(42);
 
-    const target = this.getStationPixelPos(stationKey);
-    const dist = Phaser.Math.Distance.Between(
-      this.workerSprite.x, this.workerSprite.y, target.x, target.y
-    );
-    const duration = Math.max((dist / this.WORKER_SPEED) * 1000, 100);
+    const confirmBtn = this.add.rectangle(width / 2 - 80, height / 2 + 44, 130, 48, 0x3a1010).setInteractive().setDepth(42);
+    this.add.rectangle(width / 2 - 80, height / 2 + 44, 130, 48).setStrokeStyle(1, 0xc43a3a).setDepth(42);
+    this.add.text(width / 2 - 80, height / 2 + 44, 'DELETE', {
+      fontFamily: 'monospace', fontSize: '15px', color: '#c43a3a', fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(43);
 
-    this.tweens.killTweensOf(this.workerSprite);
-    this.tweens.killTweensOf(this.workerLabel);
+    const cancelBtn = this.add.rectangle(width / 2 + 80, height / 2 + 44, 130, 48, 0x1e2530).setInteractive().setDepth(42);
+    this.add.rectangle(width / 2 + 80, height / 2 + 44, 130, 48).setStrokeStyle(1, 0x334455).setDepth(42);
+    this.add.text(width / 2 + 80, height / 2 + 44, 'CANCEL', {
+      fontFamily: 'monospace', fontSize: '15px', color: '#8899aa', fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(43);
 
-    this.factory.worker.state = 'walking';
-    this.updateWorkerStatus();
+    const all = [bg, box, title, sub, confirmBtn, cancelBtn];
+    const dismiss = () => all.forEach(e => e?.destroy());
 
-    this.tweens.add({
-      targets: [this.workerSprite, this.workerLabel],
-      x: target.x, y: target.y,
-      duration,
-      ease: 'Linear',
-      onComplete: () => {
-        if (onComplete) onComplete();
-        this.updateWorkerStatus();
+    confirmBtn.on('pointerdown', () => {
+      dismiss();
+      const key = `${row},${col}`;
+      if (this.machineSprites[key]) {
+        Object.values(this.machineSprites[key]).forEach(s => s?.destroy?.());
+        delete this.machineSprites[key];
+        delete this.progressBars[key];
       }
+      this.factory.deleteMachine(row, col);
+      this.factory.save();
     });
+    cancelBtn.on('pointerdown', dismiss);
   }
 
   showMessage(text, colour) {
     const { width } = this.scale;
-    const msg = this.add.text(width / 2, 126, text, {
+    this.msgText?.destroy();
+    this.msgText = this.add.text(width / 2, 116, text, {
       fontFamily: 'monospace', fontSize: '12px',
       color: colour || '#e8a020',
-      backgroundColor: '#0d1117',
+      backgroundColor: '#161b22',
       padding: { x: 10, y: 5 }
-    }).setOrigin(0.5).setDepth(15);
+    }).setOrigin(0.5).setDepth(20);
+    this.time.delayedCall(2500, () => { if (this.msgText?.active) this.msgText.destroy(); });
+  }
 
-    this.time.delayedCall(2500, () => { if (msg?.active) msg.destroy(); });
+  updateStatus() {
+    if (!this.statusText) return;
+    const w = this.factory.worker;
+    const inv = this.factory.getInventoryDisplay();
+    this.statusText.setText(`W1: ${w.state.toUpperCase()}  ·  CARRYING: ${inv}`);
   }
 
   // ── TUTORIAL ────────────────────────────────────────────────
+  // Simple approach: one persistent instruction strip, no blocking overlays
 
   startTutorial() {
-    this.tutorialSteps = [
-      {
-        key: 'welcome',
-        text: 'FACTORY TUTORIAL\n\nThis is your factory floor.\nYou have 1 worker to start.\n\nFollow the steps to build\nyour first tower.',
-        action: 'tap_continue'
-      },
-      {
-        key: 'place_smelter',
-        text: 'STEP 1 — PLACE A SMELTER\n\nTap SMELTER below,\nthen tap an empty grid tile.',
-        action: 'wait_place_smelter'
-      },
-      {
-        key: 'place_assembly',
-        text: 'STEP 2 — PLACE AN ASSEMBLY BENCH\n\nTap ASSEMBLY below,\nthen tap an empty grid tile.\n\nTip: place it below the smelter.',
-        action: 'wait_place_assembly'
-      },
-      {
-        key: 'assign_store',
-        text: 'STEP 3 — COLLECT MATERIALS\n\nTap the RAW MATERIAL STORE\nto send your worker to collect.',
-        action: 'wait_assign_store'
-      },
-      {
-        key: 'working_store',
-        text: 'COLLECTING...\n\nWatch the progress bar.\nYour worker is gathering\nplastic scrap and salvaged metal.',
-        action: 'wait_store_done'
-      },
-      {
-        key: 'assign_smelter',
-        text: 'STEP 4 — SMELT THE SCRAP\n\nTap the SMELTER tile\nto process the plastic scrap.',
-        action: 'wait_assign_smelter'
-      },
-      {
-        key: 'working_smelter',
-        text: 'SMELTING...\n\nPlastic scrap is being refined.\nWatch the progress bar.',
-        action: 'wait_smelter_done'
-      },
-      {
-        key: 'assign_assembly',
-        text: 'STEP 5 — BUILD THE TOWER\n\nTap the ASSEMBLY BENCH tile\nto assemble your tower.',
-        action: 'wait_assign_assembly'
-      },
-      {
-        key: 'working_assembly',
-        text: 'ASSEMBLING...\n\nCombining refined plastic\nand salvaged metal.\nAlmost done!',
-        action: 'wait_assembly_done'
-      },
-      {
-        key: 'assign_depot',
-        text: 'STEP 6 — DELIVER THE TOWER\n\nTap the DEPOSITORY\nto store your finished tower.',
-        action: 'wait_assign_depository'
-      },
-      {
-        key: 'working_depot',
-        text: 'DELIVERING...\n\nYour worker is storing\nthe tower in the armoury.',
-        action: 'wait_depot_done'
-      },
-      {
-        key: 'complete',
-        text: 'TOWER COMPLETE!\n\nYour first tower is ready.\nHead to the DOCK to fight\nyour first battle!',
-        action: 'tap_to_dock'
-      }
-    ];
+    const { width } = this.scale;
+
+    // Single tutorial strip — non-blocking, sits just below header
+    this.tutorialStrip = this.add.text(width / 2, 120, '', {
+      fontFamily: 'monospace',
+      fontSize: '12px',
+      color: '#e8a020',
+      backgroundColor: '#1a1408',
+      padding: { x: 10, y: 6 },
+      align: 'center',
+      wordWrap: { width: width - 40 }
+    }).setOrigin(0.5).setDepth(25);
 
     this.currentTutStep = this.factory.tutorialStep || 0;
-    this.showTutorialStep(this.currentTutStep);
+    this.updateTutorialStrip();
   }
 
-  showTutorialStep(stepIndex) {
-    if (stepIndex >= this.tutorialSteps.length) {
+  updateTutorialStrip() {
+    if (!this.tutorialStrip) return;
+
+    const steps = [
+      'TUTORIAL: Tap SMELTER below, then tap an empty grid tile to place it.',
+      'TUTORIAL: Tap ASSEMBLY below, then tap an empty grid tile to place it below the smelter.',
+      'TUTORIAL: Tap the RAW MATERIAL STORE to send your worker to collect materials.',
+      'TUTORIAL: Tap the SMELTER tile to smelt your plastic scrap.',
+      'TUTORIAL: Tap the ASSEMBLY BENCH tile to build your tower.',
+      'TUTORIAL: Tap the DEPOSITORY to deliver your finished tower.',
+      'TUTORIAL COMPLETE! Tower added to Armoury. Head to the DOCK to fight.'
+    ];
+
+    const msg = steps[this.currentTutStep] || '';
+    this.tutorialStrip.setText(msg);
+
+    if (this.currentTutStep >= steps.length) {
       this.completeTutorial();
-      return;
     }
-
-    this.clearTutorialOverlay();
-
-    const step = this.tutorialSteps[stepIndex];
-    const { width, height } = this.scale;
-
-    // Position at bottom so it doesn't block the grid
-    const boxY = height - 170;
-
-    const overlayBg = this.add.rectangle(width / 2, boxY, width - 24, 240, 0x0d1117, 0.96)
-      .setDepth(30);
-    this.add.rectangle(width / 2, boxY, width - 24, 240)
-      .setStrokeStyle(1, 0xe8a020).setDepth(30);
-
-    const textObj = this.add.text(width / 2, boxY - 60, step.text, {
-      fontFamily: 'monospace',
-      fontSize: '13px',
-      color: '#eef2f8',
-      align: 'center',
-      lineSpacing: 5,
-      wordWrap: { width: width - 60 }
-    }).setOrigin(0.5).setDepth(31);
-
-    this.tutorialElements = [overlayBg, textObj];
-
-    if (step.action === 'tap_continue') {
-      const btn = this.add.rectangle(width / 2, boxY + 88, 200, 48, 0x1e2d1e)
-        .setInteractive().setDepth(31);
-      this.add.rectangle(width / 2, boxY + 88, 200, 48)
-        .setStrokeStyle(1, 0x5eba7d).setDepth(31);
-      const btnTxt = this.add.text(width / 2, boxY + 88, 'CONTINUE →', {
-        fontFamily: 'monospace', fontSize: '15px', color: '#5eba7d', fontStyle: 'bold'
-      }).setOrigin(0.5).setDepth(32);
-      this.tutorialElements.push(btn, btnTxt);
-      btn.on('pointerdown', () => {
-        this.currentTutStep++;
-        this.factory.tutorialStep = this.currentTutStep;
-        this.showTutorialStep(this.currentTutStep);
-      });
-    }
-
-    if (step.action === 'tap_to_dock') {
-      const btn = this.add.rectangle(width / 2, boxY + 88, 240, 48, 0x1a2210)
-        .setInteractive().setDepth(31);
-      this.add.rectangle(width / 2, boxY + 88, 240, 48)
-        .setStrokeStyle(1, 0xe8a020).setDepth(31);
-      const btnTxt = this.add.text(width / 2, boxY + 88, 'GO TO DOCK →', {
-        fontFamily: 'monospace', fontSize: '15px', color: '#e8a020', fontStyle: 'bold'
-      }).setOrigin(0.5).setDepth(32);
-      this.tutorialElements.push(btn, btnTxt);
-      btn.on('pointerdown', () => {
-        this.completeTutorial();
-        this.factory.save();
-        this.cameras.main.fade(200, 0, 0, 0);
-        this.time.delayedCall(200, () => this.scene.start('DockScene'));
-      });
-    }
-
-    // For wait steps, show a small dismissible hint strip instead of a blocking overlay
-    if (!['tap_continue', 'tap_to_dock'].includes(step.action)) {
-      const hintY = height - 48;
-      const hint = this.add.text(width / 2, hintY, step.text.split('\n')[0], {
-        fontFamily: 'monospace', fontSize: '12px', color: '#e8a020',
-        backgroundColor: '#161b22', padding: { x: 10, y: 6 }
-      }).setOrigin(0.5).setDepth(32);
-      this.tutorialElements.push(hint);
-
-      // Destroy the blocking overlay for wait steps
-      overlayBg.destroy();
-      textObj.destroy();
-      this.tutorialElements = this.tutorialElements.filter(e => e !== overlayBg && e !== textObj);
-    }
-  }
-
-  clearTutorialOverlay() {
-    if (this.tutorialElements) {
-      this.tutorialElements.forEach(e => { if (e?.active) e.destroy(); });
-    }
-    this.tutorialElements = [];
   }
 
   advanceTutorial(event) {
-    const step = this.tutorialSteps[this.currentTutStep];
-    if (!step) return;
+    const step = this.currentTutStep;
 
-    const isSmelterStation = (key) => {
+    const isSmelter = (key) => {
       if (!key || key === 'store' || key === 'depository') return false;
       const [r, c] = key.split(',').map(Number);
       const m = this.factory.getMachineAt(r, c);
-      return m && m.type === 'smelter';
+      return m?.type === 'smelter';
     };
 
-    const isAssemblyStation = (key) => {
+    const isAssembly = (key) => {
       if (!key || key === 'store' || key === 'depository') return false;
       const [r, c] = key.split(',').map(Number);
       const m = this.factory.getMachineAt(r, c);
-      return m && m.type === 'assembly';
+      return m?.type === 'assembly';
     };
 
     const stationKey = event.startsWith('assigned_') ? event.replace('assigned_', '') : '';
 
-    const shouldAdvance =
-      (step.action === 'wait_place_smelter' && event === 'placed_smelter') ||
-      (step.action === 'wait_place_assembly' && event === 'placed_assembly') ||
-      (step.action === 'wait_assign_store' && event === 'assigned_store') ||
-      (step.action === 'wait_assign_smelter' && isSmelterStation(stationKey)) ||
-      (step.action === 'wait_assign_assembly' && isAssemblyStation(stationKey)) ||
-      (step.action === 'wait_assign_depository' && event === 'assigned_depository');
+    const advance =
+      (step === 0 && event === 'placed_smelter') ||
+      (step === 1 && event === 'placed_assembly') ||
+      (step === 2 && event === 'assigned_store') ||
+      (step === 3 && isSmelter(stationKey)) ||
+      (step === 4 && isAssembly(stationKey)) ||
+      (step === 5 && event === 'assigned_depository');
 
-    if (shouldAdvance) {
+    if (advance) {
       this.currentTutStep++;
       this.factory.tutorialStep = this.currentTutStep;
-      this.showTutorialStep(this.currentTutStep);
+      this.updateTutorialStrip();
     }
   }
 
   tutorialWorkCompleted(station) {
-    const step = this.tutorialSteps[this.currentTutStep];
-    if (!step) return;
+    const step = this.currentTutStep;
 
     const isSmelter = () => {
       if (!station || station === 'store' || station === 'depository') return false;
       const [r, c] = station.split(',').map(Number);
-      const m = this.factory.getMachineAt(r, c);
-      return m && m.type === 'smelter';
+      return this.factory.getMachineAt(r, c)?.type === 'smelter';
     };
 
     const isAssembly = () => {
       if (!station || station === 'store' || station === 'depository') return false;
       const [r, c] = station.split(',').map(Number);
-      const m = this.factory.getMachineAt(r, c);
-      return m && m.type === 'assembly';
+      return this.factory.getMachineAt(r, c)?.type === 'assembly';
     };
 
-    const shouldAdvance =
-      (step.action === 'wait_store_done' && station === 'store') ||
-      (step.action === 'wait_smelter_done' && isSmelter()) ||
-      (step.action === 'wait_assembly_done' && isAssembly()) ||
-      (step.action === 'wait_depot_done' && station === 'depository');
+    const advance =
+      (step === 3 && isSmelter()) ||
+      (step === 4 && isAssembly()) ||
+      (step === 6 && station === 'depository');
 
-    if (shouldAdvance) {
+    if (advance) {
       this.currentTutStep++;
       this.factory.tutorialStep = this.currentTutStep;
-      this.showTutorialStep(this.currentTutStep);
+      this.updateTutorialStrip();
     }
   }
 
   completeTutorial() {
     this.factory.tutorialComplete = true;
     this.factory.tutorialStep = 0;
-    this.clearTutorialOverlay();
     this.factory.save();
+    this.tutorialStrip?.destroy();
+    this.tutorialStrip = null;
   }
 
   // ── UPDATE LOOP ─────────────────────────────────────────────
@@ -675,40 +556,38 @@ class FactoryScene extends Phaser.Scene {
   update(time, delta) {
     const completed = this.factory.update(delta);
     const w = this.factory.worker;
-    const maxBarW = this.scale.width - 48;
+    const barW = this.scale.width - 48;
 
-    // Fixed station progress bars
+    // Fixed station bars
     ['store', 'depository'].forEach(key => {
       const bar = this.progressBars[key];
       if (!bar) return;
-      if (w.station === key && w.state === 'working') {
-        bar.setSize(maxBarW * w.progress, 4);
-      } else {
-        bar.setSize(0, 4);
-      }
+      bar.setSize(
+        (w.station === key && w.state === 'working') ? barW * w.progress : 0,
+        4
+      );
     });
 
-    // Machine progress bars
-    for (let row = 0; row < this.ROWS; row++) {
-      for (let col = 0; col < this.COLS; col++) {
-        const key = `${row},${col}`;
+    // Machine bars
+    for (let r = 0; r < this.ROWS; r++) {
+      for (let c = 0; c < this.COLS; c++) {
+        const key = `${r},${c}`;
         const bar = this.progressBars[key];
         if (!bar) continue;
-        if (w.station === key && w.state === 'working') {
-          bar.setSize((this.TILE - 4) * w.progress, 5);
-        } else {
-          bar.setSize(0, 5);
-        }
+        bar.setSize(
+          (w.station === key && w.state === 'working') ? (this.TILE - 4) * w.progress : 0,
+          5
+        );
       }
     }
 
-    // Keep label on worker
+    // Keep worker label on worker sprite
     if (this.workerLabel && this.workerSprite) {
       this.workerLabel.setPosition(this.workerSprite.x, this.workerSprite.y);
     }
 
     if (completed) {
-      this.updateWorkerStatus();
+      this.updateStatus();
 
       if (w.station === 'depository') {
         this.addTowerToStockpile('gunner');
@@ -720,17 +599,15 @@ class FactoryScene extends Phaser.Scene {
     }
   }
 
-  addTowerToStockpile(towerType) {
+  addTowerToStockpile(type) {
     const slotIndex = localStorage.getItem('factower_active_slot');
     const saveKey = `factower_save_${slotIndex}`;
     const save = JSON.parse(localStorage.getItem(saveKey));
-
     if (!save.stockpile) save.stockpile = { gunner: 0, bomber: 0, barricade: 0 };
-    save.stockpile[towerType] = (save.stockpile[towerType] || 0) + 1;
+    save.stockpile[type] = (save.stockpile[type] || 0) + 1;
     localStorage.setItem(saveKey, JSON.stringify(save));
     this.saveData = save;
-
-    this.showMessage('GUNNER added to Armoury!', '#5eba7d');
+    this.showMessage(`${type.toUpperCase()} added to Armoury!`, '#5eba7d');
     this.factory.save();
   }
 }

@@ -27,8 +27,11 @@ class FactoryScene extends Phaser.Scene {
     this.placingMachine = null;
     this.progressBars = {};
     this.machineSprites = {};
+    this.workerSprites = {};
+    this.workerLabels = {};
     this.msgText = null;
     this.tutorialStrip = null;
+    this.workerMenuActive = false;
 
     this.add.rectangle(width / 2, height / 2, width, height, 0x0d1117);
 
@@ -36,13 +39,62 @@ class FactoryScene extends Phaser.Scene {
     this.drawFixedStations();
     this.drawGrid();
     this.drawMachines();
-    this.drawWorker();
+    this.drawWorkers();
     this.drawBottomPanel();
     this.drawStatusBar();
 
     if (!this.factory.tutorialComplete) {
       this.startTutorial();
     }
+
+    // Check if worker 2 just unlocked and hasn't been introduced yet
+    this.checkWorker2Recruitment();
+  }
+
+  checkWorker2Recruitment() {
+    const w2 = this.factory.workers[1];
+    if (w2.unlocked && !this.factory.worker2Introduced) {
+      this.factory.worker2Introduced = true;
+      this.factory.save();
+      this.showRecruitmentBanner();
+    }
+  }
+
+  showRecruitmentBanner() {
+    const { width, height } = this.scale;
+
+    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.7).setDepth(50);
+    const box = this.add.rectangle(width / 2, height / 2, width - 48, 220, 0x161b22).setDepth(51);
+    this.add.rectangle(width / 2, height / 2, width - 48, 220).setStrokeStyle(1, 0x3a8fc4).setDepth(51);
+
+    this.add.circle(width / 2, height / 2 - 72, 20, 0x3a8fc4).setDepth(52);
+    this.add.text(width / 2, height / 2 - 72, 'W2', {
+      fontFamily: 'monospace', fontSize: '11px', color: '#0d1117', fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(53);
+
+    this.add.text(width / 2, height / 2 - 36, 'NEW RECRUIT', {
+      fontFamily: 'monospace', fontSize: '22px', color: '#3a8fc4', fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(52);
+
+    this.add.text(width / 2, height / 2 + 2, 'Word of your victory spread.\nA second worker has arrived\nand is ready to be assigned.', {
+      fontFamily: 'monospace', fontSize: '13px', color: '#eef2f8',
+      align: 'center', lineSpacing: 5
+    }).setOrigin(0.5).setDepth(52);
+
+    const btn = this.add.rectangle(width / 2, height / 2 + 76, 200, 48, 0x1e2d3a).setInteractive().setDepth(52);
+    this.add.rectangle(width / 2, height / 2 + 76, 200, 48).setStrokeStyle(1, 0x3a8fc4).setDepth(52);
+    this.add.text(width / 2, height / 2 + 76, 'WELCOME THEM', {
+      fontFamily: 'monospace', fontSize: '15px', color: '#3a8fc4', fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(53);
+
+    const all = [overlay, box, btn];
+    btn.on('pointerdown', () => {
+      all.forEach(e => e.destroy());
+      this.drawWorkers();
+      this.showMessage('W2 assigned to factory. Tap any station to assign them.', '#3a8fc4');
+    });
+    btn.on('pointerover', () => btn.setFillStyle(0x253545));
+    btn.on('pointerout', () => btn.setFillStyle(0x1e2d3a));
   }
 
   drawHeader() {
@@ -77,8 +129,7 @@ class FactoryScene extends Phaser.Scene {
     const { width } = this.scale;
     const cx = width / 2;
 
-    const storeBg = this.add.rectangle(cx, this.STORE_Y, width - 48, 40, 0x161b22)
-      .setInteractive();
+    const storeBg = this.add.rectangle(cx, this.STORE_Y, width - 48, 40, 0x161b22).setInteractive();
     this.add.rectangle(cx, this.STORE_Y, width - 48, 40).setStrokeStyle(2, 0x3a8fc4);
     this.add.text(cx, this.STORE_Y, 'RAW MATERIAL STORE  —  TAP TO COLLECT', {
       fontFamily: 'monospace', fontSize: '11px', color: '#3a8fc4', fontStyle: 'bold'
@@ -86,12 +137,9 @@ class FactoryScene extends Phaser.Scene {
     storeBg.on('pointerdown', () => this.stationTapped('store'));
     storeBg.on('pointerover', () => storeBg.setFillStyle(0x1e2d3a));
     storeBg.on('pointerout', () => storeBg.setFillStyle(0x161b22));
-    this.progressBars['store'] = this.add.rectangle(
-      24, this.STORE_Y + 22, 0, 4, 0x3a8fc4
-    ).setOrigin(0, 0.5);
+    this.progressBars['store'] = this.add.rectangle(24, this.STORE_Y + 22, 0, 4, 0x3a8fc4).setOrigin(0, 0.5);
 
-    const depotBg = this.add.rectangle(cx, this.DEPOT_Y, width - 48, 40, 0x161b22)
-      .setInteractive();
+    const depotBg = this.add.rectangle(cx, this.DEPOT_Y, width - 48, 40, 0x161b22).setInteractive();
     this.add.rectangle(cx, this.DEPOT_Y, width - 48, 40).setStrokeStyle(2, 0xc43a3a);
     this.add.text(cx, this.DEPOT_Y, 'DEPOSITORY  —  TAP TO DELIVER', {
       fontFamily: 'monospace', fontSize: '11px', color: '#c43a3a', fontStyle: 'bold'
@@ -99,9 +147,7 @@ class FactoryScene extends Phaser.Scene {
     depotBg.on('pointerdown', () => this.stationTapped('depository'));
     depotBg.on('pointerover', () => depotBg.setFillStyle(0x2a1a1a));
     depotBg.on('pointerout', () => depotBg.setFillStyle(0x161b22));
-    this.progressBars['depository'] = this.add.rectangle(
-      24, this.DEPOT_Y + 22, 0, 4, 0xc43a3a
-    ).setOrigin(0, 0.5);
+    this.progressBars['depository'] = this.add.rectangle(24, this.DEPOT_Y + 22, 0, 4, 0xc43a3a).setOrigin(0, 0.5);
   }
 
   drawGrid() {
@@ -110,20 +156,15 @@ class FactoryScene extends Phaser.Scene {
         const x = this.GX + col * this.TILE + this.TILE / 2;
         const y = this.GY + row * this.TILE + this.TILE / 2;
 
-        const tile = this.add.rectangle(
-          x, y, this.TILE - 2, this.TILE - 2, 0x161b22
-        ).setInteractive();
-        this.add.rectangle(x, y, this.TILE - 2, this.TILE - 2)
-          .setStrokeStyle(1, 0x2a3a4a);
+        const tile = this.add.rectangle(x, y, this.TILE - 2, this.TILE - 2, 0x161b22).setInteractive();
+        this.add.rectangle(x, y, this.TILE - 2, this.TILE - 2).setStrokeStyle(1, 0x2a3a4a);
 
         tile.gridRow = row;
         tile.gridCol = col;
 
         tile.on('pointerdown', () => this.tileTapped(tile, row, col));
         tile.on('pointerover', () => {
-          if (this.placingMachine && !this.factory.getMachineAt(row, col)) {
-            tile.setFillStyle(0x1e2d3a);
-          }
+          if (this.placingMachine && !this.factory.getMachineAt(row, col)) tile.setFillStyle(0x1e2d3a);
         });
         tile.on('pointerout', () => {
           if (!this.factory.getMachineAt(row, col)) tile.setFillStyle(0x161b22);
@@ -138,9 +179,7 @@ class FactoryScene extends Phaser.Scene {
       if (this.factory.placeMachine(row, col, this.placingMachine)) {
         this.drawMachineAt(row, col, this.placingMachine);
         this.factory.save();
-        if (!this.factory.tutorialComplete) {
-          this.advanceTutorial(`placed_${this.placingMachine}`);
-        }
+        if (!this.factory.tutorialComplete) this.advanceTutorial(`placed_${this.placingMachine}`);
         this.placingMachine = null;
         this.smelterBtn?.setFillStyle(0x1e2530);
         this.assemblyBtn?.setFillStyle(0x1e2530);
@@ -150,58 +189,113 @@ class FactoryScene extends Phaser.Scene {
 
     const machine = this.factory.getMachineAt(row, col);
     if (!machine) return;
-
-    const stationKey = `${row},${col}`;
-    const w = this.factory.worker;
-
-    if (w.station === stationKey && w.state === 'working') {
-      this.showMessage('Worker already working here', '#8899aa');
-      return;
-    }
-
-    if (!this.factory.canWorkerStartAt(stationKey)) {
-      this.showMessage(
-        `Need: ${MACHINE_TYPES[machine.type].inputItems.join(' + ')} in inventory`,
-        '#c43a3a'
-      );
-      return;
-    }
-
-    this.walkWorkerTo(stationKey, () => {
-      this.factory.startWorkAt(stationKey);
-      this.updateStatus();
-      if (!this.factory.tutorialComplete) {
-        this.advanceTutorial(`assigned_${stationKey}`);
-      }
-    });
+    this.openWorkerMenu(`${row},${col}`);
   }
 
   stationTapped(stationKey) {
     if (this.placingMachine) return;
-    const w = this.factory.worker;
+    this.openWorkerMenu(stationKey);
+  }
 
-    if (w.station === stationKey && w.state === 'working') {
-      this.showMessage('Worker already working here', '#8899aa');
+  openWorkerMenu(stationKey) {
+    if (this.workerMenuActive) return;
+
+    const unlocked = this.factory.getUnlockedWorkers();
+
+    // If only 1 worker, skip menu and assign directly
+    if (unlocked.length === 1) {
+      this.tryAssignWorker(0, stationKey);
       return;
     }
 
-    if (!this.factory.canWorkerStartAt(stationKey)) {
+    this.workerMenuActive = true;
+    const pos = this.getStationPos(stationKey);
+    const { width } = this.scale;
+
+    const menuY = pos.y > 500 ? pos.y - 80 : pos.y + 80;
+    const menuW = 260;
+    const menuH = 80;
+
+    const menuBg = this.add.rectangle(width / 2, menuY, menuW, menuH, 0x161b22).setDepth(30);
+    this.add.rectangle(width / 2, menuY, menuW, menuH).setStrokeStyle(1, 0x334455).setDepth(30);
+
+    this.add.text(width / 2, menuY - 28, 'ASSIGN WORKER', {
+      fontFamily: 'monospace', fontSize: '10px', color: '#8899aa', letterSpacing: 3
+    }).setOrigin(0.5).setDepth(31);
+
+    const menuElements = [menuBg];
+
+    unlocked.forEach((w, i) => {
+      const btnX = width / 2 - 56 + i * 116;
+      const canWork = this.factory.canWorkerStartAt(stationKey, w.id);
+      const colourHex = '#' + WORKER_COLOURS[w.id].toString(16).padStart(6, '0');
+
+      const btn = this.add.rectangle(btnX, menuY + 8, 104, 52,
+        canWork ? 0x1e2530 : 0x161b22
+      ).setDepth(31);
+
+      this.add.rectangle(btnX, menuY + 8, 104, 52)
+        .setStrokeStyle(1, canWork ? WORKER_COLOURS[w.id] : 0x334455).setDepth(31);
+
+      this.add.circle(btnX - 28, menuY + 8, 10, canWork ? WORKER_COLOURS[w.id] : 0x334455).setDepth(32);
+      this.add.text(btnX - 28, menuY + 8, WORKER_LABELS[w.id], {
+        fontFamily: 'monospace', fontSize: '10px', color: '#0d1117', fontStyle: 'bold'
+      }).setOrigin(0.5).setDepth(33);
+
+      const stateText = w.state === 'working' ? 'BUSY' : w.state === 'walking' ? 'MOVING' : 'IDLE';
+      this.add.text(btnX + 4, menuY, stateText, {
+        fontFamily: 'monospace', fontSize: '11px',
+        color: canWork ? colourHex : '#445566', fontStyle: 'bold'
+      }).setOrigin(0.5).setDepth(32);
+
+      this.add.text(btnX + 4, menuY + 18, this.factory.getInventoryDisplay(w.id), {
+        fontFamily: 'monospace', fontSize: '9px', color: '#556677'
+      }).setOrigin(0.5).setDepth(32);
+
+      menuElements.push(btn);
+
+      if (canWork) {
+        btn.setInteractive();
+        btn.on('pointerdown', () => {
+          menuElements.forEach(e => e?.destroy?.());
+          this.workerMenuActive = false;
+          this.tryAssignWorker(w.id, stationKey);
+        });
+        btn.on('pointerover', () => btn.setFillStyle(0x252c38));
+        btn.on('pointerout', () => btn.setFillStyle(0x1e2530));
+      }
+    });
+
+    // Tap anywhere else to dismiss
+    const dismissZone = this.add.rectangle(width / 2, this.scale.height / 2, width, this.scale.height, 0x000000, 0.01)
+      .setInteractive().setDepth(29);
+    menuElements.push(dismissZone);
+    dismissZone.on('pointerdown', () => {
+      menuElements.forEach(e => e?.destroy?.());
+      this.workerMenuActive = false;
+    });
+  }
+
+  tryAssignWorker(workerId, stationKey) {
+    if (!this.factory.canWorkerStartAt(stationKey, workerId)) {
+      const w = this.factory.workers[workerId];
       if (stationKey === 'store' && w.inventory.length > 0) {
-        this.showMessage('Deliver items first before collecting more', '#c43a3a');
+        this.showMessage(`W${workerId + 1}: Deliver items first`, '#c43a3a');
       } else if (stationKey === 'depository') {
-        this.showMessage('No finished tower to deliver yet', '#c43a3a');
+        this.showMessage(`W${workerId + 1}: No finished tower to deliver`, '#c43a3a');
       } else {
-        this.showMessage('Worker needs the right materials first', '#c43a3a');
+        const machine = this.factory.getMachineAt(...stationKey.split(',').map(Number));
+        if (machine) {
+          this.showMessage(`W${workerId + 1}: Need ${MACHINE_TYPES[machine.type].inputItems.join(' + ')}`, '#c43a3a');
+        }
       }
       return;
     }
 
-    this.walkWorkerTo(stationKey, () => {
-      this.factory.startWorkAt(stationKey);
+    this.walkWorkerTo(workerId, stationKey, () => {
+      this.factory.startWorkAt(stationKey, workerId);
       this.updateStatus();
-      if (!this.factory.tutorialComplete) {
-        this.advanceTutorial(`assigned_${stationKey}`);
-      }
+      if (!this.factory.tutorialComplete) this.advanceTutorial(`assigned_${stationKey}`);
     });
   }
 
@@ -248,8 +342,7 @@ class FactoryScene extends Phaser.Scene {
       });
     });
     bg.on('pointerup', () => {
-      timer?.remove();
-      timer = null;
+      timer?.remove(); timer = null;
       if (pressing) {
         pressing = false;
         this.tileTapped(null, row, col);
@@ -258,12 +351,24 @@ class FactoryScene extends Phaser.Scene {
     bg.on('pointerout', () => { timer?.remove(); timer = null; pressing = false; });
   }
 
-  drawWorker() {
+  drawWorkers() {
+    // Clear existing worker sprites
+    Object.values(this.workerSprites).forEach(s => s?.destroy?.());
+    Object.values(this.workerLabels).forEach(s => s?.destroy?.());
+    this.workerSprites = {};
+    this.workerLabels = {};
+
     const { width } = this.scale;
-    this.workerSprite = this.add.circle(width / 2, this.STORE_Y, 16, 0xe8a020).setDepth(10);
-    this.workerLabel = this.add.text(width / 2, this.STORE_Y, 'W1', {
-      fontFamily: 'monospace', fontSize: '10px', color: '#0d1117', fontStyle: 'bold'
-    }).setOrigin(0.5).setDepth(11);
+
+    this.factory.getUnlockedWorkers().forEach(w => {
+      const startX = width / 2 + (w.id === 0 ? -20 : 20);
+      const sprite = this.add.circle(startX, this.STORE_Y, 14, WORKER_COLOURS[w.id]).setDepth(10);
+      const label = this.add.text(startX, this.STORE_Y, WORKER_LABELS[w.id], {
+        fontFamily: 'monospace', fontSize: '9px', color: '#0d1117', fontStyle: 'bold'
+      }).setOrigin(0.5).setDepth(11);
+      this.workerSprites[w.id] = sprite;
+      this.workerLabels[w.id] = label;
+    });
   }
 
   drawBottomPanel() {
@@ -335,18 +440,23 @@ class FactoryScene extends Phaser.Scene {
     }
   }
 
-  walkWorkerTo(stationKey, onComplete) {
+  walkWorkerTo(workerId, stationKey, onComplete) {
+    const sprite = this.workerSprites[workerId];
+    const label = this.workerLabels[workerId];
+    if (!sprite) return;
+
     const target = this.getStationPos(stationKey);
-    const dist = Phaser.Math.Distance.Between(
-      this.workerSprite.x, this.workerSprite.y, target.x, target.y
-    );
-    this.factory.worker.state = 'walking';
-    this.factory.worker.progress = 0;
+    const dist = Phaser.Math.Distance.Between(sprite.x, sprite.y, target.x, target.y);
+
+    this.factory.workers[workerId].state = 'walking';
+    this.factory.workers[workerId].progress = 0;
     this.updateStatus();
-    this.tweens.killTweensOf(this.workerSprite);
-    this.tweens.killTweensOf(this.workerLabel);
+
+    this.tweens.killTweensOf(sprite);
+    this.tweens.killTweensOf(label);
+
     this.tweens.add({
-      targets: [this.workerSprite, this.workerLabel],
+      targets: [sprite, label],
       x: target.x, y: target.y,
       duration: Math.max((dist / this.WORKER_SPEED) * 1000, 80),
       ease: 'Linear',
@@ -422,11 +532,14 @@ class FactoryScene extends Phaser.Scene {
 
   updateStatus() {
     if (!this.statusText) return;
-    const w = this.factory.worker;
-    this.statusText.setText(
-      `W1: ${w.state.toUpperCase()}  ·  CARRYING: ${this.factory.getInventoryDisplay()}`
-    );
+    const parts = this.factory.getUnlockedWorkers().map(w => {
+      const colourHex = '#' + WORKER_COLOURS[w.id].toString(16).padStart(6, '0');
+      return `W${w.id + 1}: ${w.state.toUpperCase()}`;
+    });
+    this.statusText.setText(parts.join('  ·  '));
   }
+
+  // ── TUTORIAL ─────────────────────────────────────────────
 
   startTutorial() {
     const { width } = this.scale;
@@ -540,7 +653,7 @@ class FactoryScene extends Phaser.Scene {
       fontFamily: 'monospace', fontSize: '24px', color: '#5eba7d', fontStyle: 'bold'
     }).setOrigin(0.5).setDepth(36);
 
-    this.add.text(width / 2, height / 2 - 18, 'Your first GUNNER is in the Armoury.\nHead to the DOCK to fight\nyour first battle.', {
+    this.add.text(width / 2, height / 2 - 16, 'Your first GUNNER is in the Armoury.\nHead to the DOCK to fight\nyour first battle.', {
       fontFamily: 'monospace', fontSize: '13px', color: '#eef2f8',
       align: 'center', lineSpacing: 5
     }).setOrigin(0.5).setDepth(36);
@@ -560,44 +673,49 @@ class FactoryScene extends Phaser.Scene {
     dockBtn.on('pointerout', () => dockBtn.setFillStyle(0x1a2210));
   }
 
+  // ── UPDATE LOOP ───────────────────────────────────────────
 
   update(time, delta) {
-    const completed = this.factory.update(delta);
-    const w = this.factory.worker;
+    const completedWorkers = this.factory.update(delta);
     const barW = this.scale.width - 48;
 
-    ['store', 'depository'].forEach(key => {
-      const bar = this.progressBars[key];
-      if (!bar) return;
-      bar.setSize(
-        (w.station === key && w.state === 'working') ? barW * w.progress : 0, 4
-      );
+    // Update all worker label positions
+    this.factory.getUnlockedWorkers().forEach(w => {
+      const sprite = this.workerSprites[w.id];
+      const label = this.workerLabels[w.id];
+      if (sprite && label) label.setPosition(sprite.x, sprite.y);
     });
+
+    // Update progress bars — show the working worker's progress per station
+    const updateBar = (stationKey, maxW, barH) => {
+      const bar = this.progressBars[stationKey];
+      if (!bar) return;
+      const workingWorker = this.factory.workers.find(
+        w => w.unlocked && w.station === stationKey && w.state === 'working'
+      );
+      bar.setSize(workingWorker ? maxW * workingWorker.progress : 0, barH);
+    };
+
+    updateBar('store', barW, 4);
+    updateBar('depository', barW, 4);
 
     for (let r = 0; r < this.ROWS; r++) {
       for (let c = 0; c < this.COLS; c++) {
-        const key = `${r},${c}`;
-        const bar = this.progressBars[key];
-        if (!bar) continue;
-        bar.setSize(
-          (w.station === key && w.state === 'working') ? (this.TILE - 4) * w.progress : 0, 5
-        );
+        updateBar(`${r},${c}`, this.TILE - 4, 5);
       }
     }
 
-    if (this.workerLabel && this.workerSprite) {
-      this.workerLabel.setPosition(this.workerSprite.x, this.workerSprite.y);
-    }
-
-    if (completed) {
+    // Handle completed work
+    completedWorkers.forEach(workerId => {
       this.updateStatus();
+      const w = this.factory.workers[workerId];
       if (w.station === 'depository') {
         this.addTowerToStockpile('gunner');
       }
       if (!this.factory.tutorialComplete) {
         this.tutorialWorkCompleted(w.station);
       }
-    }
+    });
   }
 
   addTowerToStockpile(type) {

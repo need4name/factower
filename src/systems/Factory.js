@@ -6,7 +6,7 @@ const MACHINE_TYPES = {
     colourHex: '#e8a020',
     inputItems: ['plasticScrap'],
     outputItem: 'refinedPlastic',
-    duration: 10000
+    duration: 8500
   },
   assembly: {
     key: 'assembly',
@@ -15,7 +15,7 @@ const MACHINE_TYPES = {
     colourHex: '#5eba7d',
     inputItems: ['refinedPlastic', 'salvagedMetal'],
     outputItem: 'towerComponent',
-    duration: 6667
+    duration: 3500
   }
 };
 

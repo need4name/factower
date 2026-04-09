@@ -19,19 +19,28 @@ const MACHINE_TYPES = {
   }
 };
 
+const WORKER_COLOURS = [0xe8a020, 0x3a8fc4];
+const WORKER_LABELS = ['W1', 'W2'];
+
 class Factory {
   constructor() {
     this.COLS = 5;
-    this.ROWS = 7;
+    this.ROWS = 5;
     this.grid = Array.from({ length: this.ROWS }, () => Array(this.COLS).fill(null));
-    this.resetWorker();
+    this.workers = [
+      this.makeWorker(0, true),
+      this.makeWorker(1, false)
+    ];
     this.materials = { plasticScrap: 50, salvagedMetal: 50 };
     this.tutorialStep = 0;
     this.tutorialComplete = false;
+    this.worker2Introduced = false;
   }
 
-  resetWorker() {
-    this.worker = {
+  makeWorker(id, unlocked) {
+    return {
+      id,
+      unlocked,
       state: 'idle',
       station: 'store',
       progress: 0,
@@ -40,7 +49,18 @@ class Factory {
   }
 
   loadFromSave(saveData) {
-    if (!saveData || !saveData.factory) return;
+    if (!saveData) return;
+
+    // Unlock worker 2 if save says so
+    if (saveData.workers >= 2) {
+      this.workers[1].unlocked = true;
+    }
+
+    if (saveData.worker2Introduced) {
+      this.worker2Introduced = saveData.worker2Introduced;
+    }
+
+    if (!saveData.factory) return;
     const f = saveData.factory;
     if (f.grid) this.grid = f.grid;
     if (f.materials) this.materials = f.materials;
@@ -58,7 +78,24 @@ class Factory {
       tutorialStep: this.tutorialStep,
       tutorialComplete: this.tutorialComplete
     };
+    saveData.worker2Introduced = this.worker2Introduced;
     localStorage.setItem(saveKey, JSON.stringify(saveData));
+  }
+
+  getWorker(id) {
+    return this.workers[id];
+  }
+
+  getUnlockedWorkers() {
+    return this.workers.filter(w => w.unlocked);
+  }
+
+  getIdleWorkers() {
+    return this.workers.filter(w => w.unlocked && w.state !== 'walking' && w.state !== 'working');
+  }
+
+  getWorkerAtStation(stationKey) {
+    return this.workers.find(w => w.unlocked && w.station === stationKey && w.state === 'working');
   }
 
   canPlace(row, col) {
@@ -74,7 +111,13 @@ class Factory {
 
   deleteMachine(row, col) {
     if (!this.grid[row] || !this.grid[row][col]) return false;
-    if (this.worker.station === `${row},${col}`) this.resetWorker();
+    const key = `${row},${col}`;
+    this.workers.forEach(w => {
+      if (w.station === key) {
+        w.state = 'idle';
+        w.progress = 0;
+      }
+    });
     this.grid[row][col] = null;
     return true;
   }
@@ -84,71 +127,90 @@ class Factory {
     return this.grid[row][col];
   }
 
-  canWorkerStartAt(stationKey) {
-    if (stationKey === 'store') return this.worker.inventory.length === 0;
-    if (stationKey === 'depository') return this.worker.inventory.includes('towerComponent');
+  canWorkerStartAt(stationKey, workerId) {
+    const w = this.workers[workerId];
+    if (!w || !w.unlocked) return false;
+
+    // Check station not already occupied by another worker
+    const occupant = this.getWorkerAtStation(stationKey);
+    if (occupant && occupant.id !== workerId) return false;
+
+    if (stationKey === 'store') return w.inventory.length === 0;
+    if (stationKey === 'depository') return w.inventory.includes('towerComponent');
+
     const [r, c] = stationKey.split(',').map(Number);
     const machine = this.getMachineAt(r, c);
     if (!machine) return false;
-    return MACHINE_TYPES[machine.type].inputItems.every(i => this.worker.inventory.includes(i));
+    return MACHINE_TYPES[machine.type].inputItems.every(i => w.inventory.includes(i));
   }
 
-  startWorkAt(stationKey) {
-    this.worker.station = stationKey;
-    this.worker.state = 'working';
-    this.worker.progress = 0;
+  startWorkAt(stationKey, workerId) {
+    const w = this.workers[workerId];
+    if (!w) return;
+    w.station = stationKey;
+    w.state = 'working';
+    w.progress = 0;
   }
 
+  // Returns array of worker ids that completed work this tick
   update(delta) {
-    if (this.worker.state !== 'working') return false;
+    const completed = [];
 
-    const station = this.worker.station;
-    let duration;
+    this.workers.forEach(w => {
+      if (!w.unlocked || w.state !== 'working') return;
 
-    if (station === 'store') {
-      duration = 5000;
-    } else if (station === 'depository') {
-      duration = 3000;
-    } else {
-      const [r, c] = station.split(',').map(Number);
-      const machine = this.getMachineAt(r, c);
-      if (!machine) { this.worker.state = 'idle'; return false; }
-      duration = MACHINE_TYPES[machine.type].duration;
-    }
+      const station = w.station;
+      let duration;
 
-    this.worker.progress += delta / duration;
+      if (station === 'store') {
+        duration = 5000;
+      } else if (station === 'depository') {
+        duration = 3000;
+      } else {
+        const [r, c] = station.split(',').map(Number);
+        const machine = this.getMachineAt(r, c);
+        if (!machine) { w.state = 'idle'; return; }
+        duration = MACHINE_TYPES[machine.type].duration;
+      }
 
-    if (this.worker.progress >= 1) {
-      this.worker.progress = 1;
-      this.worker.state = 'waiting';
-      this.completeWorkAt(station);
-      return true;
-    }
+      w.progress += delta / duration;
 
-    return false;
+      if (w.progress >= 1) {
+        w.progress = 1;
+        w.state = 'waiting';
+        this.completeWorkAt(station, w.id);
+        completed.push(w.id);
+      }
+    });
+
+    return completed;
   }
 
-  completeWorkAt(station) {
+  completeWorkAt(station, workerId) {
+    const w = this.workers[workerId];
+    if (!w) return;
+
     if (station === 'store') {
-      this.worker.inventory = ['plasticScrap', 'salvagedMetal'];
+      w.inventory = ['plasticScrap', 'salvagedMetal'];
     } else if (station === 'depository') {
-      this.worker.inventory = [];
+      w.inventory = [];
     } else {
       const [r, c] = station.split(',').map(Number);
       const machine = this.getMachineAt(r, c);
       if (!machine) return;
       const mt = MACHINE_TYPES[machine.type];
       mt.inputItems.forEach(item => {
-        const idx = this.worker.inventory.indexOf(item);
-        if (idx !== -1) this.worker.inventory.splice(idx, 1);
+        const idx = w.inventory.indexOf(item);
+        if (idx !== -1) w.inventory.splice(idx, 1);
       });
-      this.worker.inventory.push(mt.outputItem);
+      w.inventory.push(mt.outputItem);
     }
   }
 
-  getInventoryDisplay() {
-    if (this.worker.inventory.length === 0) return 'EMPTY';
-    return this.worker.inventory.map(i => ({
+  getInventoryDisplay(workerId) {
+    const w = this.workers[workerId];
+    if (!w || w.inventory.length === 0) return 'EMPTY';
+    return w.inventory.map(i => ({
       plasticScrap: 'SCRAP',
       salvagedMetal: 'METAL',
       refinedPlastic: 'REFINED',

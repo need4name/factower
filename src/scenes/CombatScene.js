@@ -472,9 +472,12 @@ class CombatScene extends Phaser.Scene {
       fontFamily: 'monospace', fontSize: '20px', color: '#e8a020'
     }).setOrigin(0.5);
 
-    if (victory) {
+        if (victory) {
       this.saveProgress();
-      this.add.text(width / 2, height / 2 + 18, 'NEXT LEVEL UNLOCKED', {
+      const rewardText = this.levelId === 1
+        ? 'NEXT LEVEL UNLOCKED  ·  2ND WORKER RECRUITED'
+        : 'NEXT LEVEL UNLOCKED';
+      this.add.text(width / 2, height / 2 + 18, rewardText, {
         fontFamily: 'monospace', fontSize: '13px', color: '#5eba7d', letterSpacing: 2
       }).setOrigin(0.5);
     }

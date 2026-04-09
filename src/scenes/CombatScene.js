@@ -509,6 +509,25 @@ class CombatScene extends Phaser.Scene {
     save.parts = (save.parts || 0) + this.parts;
     save.level = Math.max(save.level || 1, this.levelId + 1);
 
+    // Reward: winning Level 1 unlocks a 2nd worker
+    if (this.levelId === 1 && !save.workers) {
+      save.workers = 2;
+    }
+
+    localStorage.setItem(saveKey, JSON.stringify(save));
+  }
+
+
+    if (!save.completedLevels) save.completedLevels = {};
+    const key = `storyline${this.storylineId}`;
+    if (!save.completedLevels[key]) save.completedLevels[key] = [];
+    if (!save.completedLevels[key].includes(this.levelId)) {
+      save.completedLevels[key].push(this.levelId);
+    }
+
+    save.parts = (save.parts || 0) + this.parts;
+    save.level = Math.max(save.level || 1, this.levelId + 1);
+
     localStorage.setItem(saveKey, JSON.stringify(save));
   }
 }

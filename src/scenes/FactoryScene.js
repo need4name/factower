@@ -259,7 +259,7 @@ bg.on('pointerup', () => {
   }
 });
 bg.on('pointerout', () => { timer?.remove(); timer = null; pressing = false; });
-
+}
 
   drawWorker() {
     const { width } = this.scale;

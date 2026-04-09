@@ -530,7 +530,36 @@ class FactoryScene extends Phaser.Scene {
     this.factory.save();
     this.tutorialStrip?.destroy();
     this.tutorialStrip = null;
+
+    const { width, height } = this.scale;
+
+    const banner = this.add.rectangle(width / 2, height / 2, width - 48, 180, 0x161b22).setDepth(35);
+    this.add.rectangle(width / 2, height / 2, width - 48, 180).setStrokeStyle(1, 0x5eba7d).setDepth(35);
+
+    this.add.text(width / 2, height / 2 - 52, 'TOWER BUILT!', {
+      fontFamily: 'monospace', fontSize: '24px', color: '#5eba7d', fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(36);
+
+    this.add.text(width / 2, height / 2 - 18, 'Your first GUNNER is in the Armoury.\nHead to the DOCK to fight\nyour first battle.', {
+      fontFamily: 'monospace', fontSize: '13px', color: '#eef2f8',
+      align: 'center', lineSpacing: 5
+    }).setOrigin(0.5).setDepth(36);
+
+    const dockBtn = this.add.rectangle(width / 2, height / 2 + 64, 220, 48, 0x1a2210).setInteractive().setDepth(36);
+    this.add.rectangle(width / 2, height / 2 + 64, 220, 48).setStrokeStyle(1, 0xe8a020).setDepth(36);
+    this.add.text(width / 2, height / 2 + 64, 'GO TO DOCK →', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#e8a020', fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(37);
+
+    dockBtn.on('pointerdown', () => {
+      this.factory.save();
+      this.cameras.main.fade(200, 0, 0, 0);
+      this.time.delayedCall(200, () => this.scene.start('DockScene'));
+    });
+    dockBtn.on('pointerover', () => dockBtn.setFillStyle(0x253318));
+    dockBtn.on('pointerout', () => dockBtn.setFillStyle(0x1a2210));
   }
+
 
   update(time, delta) {
     const completed = this.factory.update(delta);

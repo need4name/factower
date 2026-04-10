@@ -10,14 +10,13 @@ class DockScene extends Phaser.Scene {
     const saveKey = `factower_save_${slotIndex}`;
     this.saveData = JSON.parse(localStorage.getItem(saveKey));
 
+    this.add.rectangle(width / 2, height / 2, width, height, 0x0d1117);
+
     this.add.rectangle(width / 2, 144, width, 100, 0x161b22);
-this.add.rectangle(width / 2, 194, width, 1, 0x334455);
-const backBtn = this.add.rectangle(44, 144, 72, 48, 0x1e2530).setInteractive();
-this.add.text(44, 144, '← BACK', {
+    this.add.rectangle(width / 2, 194, width, 1, 0x334455);
 
-
-    const backBtn = this.add.rectangle(44, 70, 72, 48, 0x1e2530).setInteractive();
-    this.add.text(44, 70, '← BACK', {
+    const backBtn = this.add.rectangle(44, 144, 72, 48, 0x1e2530).setInteractive();
+    this.add.text(44, 144, '← BACK', {
       fontFamily: 'monospace', fontSize: '14px', color: '#e8a020'
     }).setOrigin(0.5);
     backBtn.on('pointerdown', () => {
@@ -27,27 +26,27 @@ this.add.text(44, 144, '← BACK', {
     backBtn.on('pointerover', () => backBtn.setFillStyle(0x252c38));
     backBtn.on('pointerout', () => backBtn.setFillStyle(0x1e2530));
 
-    this.add.text(width / 2 + 20, 56, 'DOCK', {
+    this.add.text(width / 2 + 20, 130, 'DOCK', {
       fontFamily: 'monospace', fontSize: '22px', color: '#eef2f8', fontStyle: 'bold'
     }).setOrigin(0.5);
 
-    this.add.text(width / 2 + 20, 84, 'SELECT CAMPAIGN', {
+    this.add.text(width / 2 + 20, 158, 'SELECT CAMPAIGN', {
       fontFamily: 'monospace', fontSize: '12px', color: '#8899aa', letterSpacing: 2
     }).setOrigin(0.5);
 
     const powerScore = this.saveData?.powerScore || 0;
-    this.add.text(width / 2, 148, `YOUR POWER SCORE: ${powerScore}`, {
+    this.add.text(width / 2, 218, `YOUR POWER SCORE: ${powerScore}`, {
       fontFamily: 'monospace', fontSize: '13px', color: '#e8a020', letterSpacing: 2
     }).setOrigin(0.5);
 
-    this.add.rectangle(width / 2, 170, width - 48, 1, 0x334455);
+    this.add.rectangle(width / 2, 240, width - 48, 1, 0x334455);
 
     this.drawStoryline(LEVEL_DATA.storylines[0]);
   }
 
   drawStoryline(storyline) {
     const { width } = this.scale;
-    let y = 196;
+    let y = 266;
 
     this.add.text(24, y, storyline.name, {
       fontFamily: 'monospace', fontSize: '20px', color: '#eef2f8', fontStyle: 'bold'

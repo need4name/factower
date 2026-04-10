@@ -510,14 +510,23 @@ class CombatScene extends Phaser.Scene {
     }
 
     save.parts = (save.parts || 0) + this.parts;
-    save.level = Math.max(save.level || 1, this.levelId + 1);
+save.level = Math.max(save.level || 1, this.levelId + 1);
 
-    // Reward: winning Level 1 unlocks a 2nd worker
-    if (this.levelId === 1 && !save.workers) {
-      save.workers = 2;
+// Consume towers that were placed in this level
+if (save.stockpile) {
+  Object.keys(this.loadout).forEach(type => {
+    const used = (this.saveData?.stockpile?.[type] || 0) - this.loadout[type];
+    if (used > 0) {
+      save.stockpile[type] = Math.max(0, (save.stockpile[type] || 0) - used);
     }
+  });
+}
 
-    localStorage.setItem(saveKey, JSON.stringify(save));
-  }
+// Reward: winning Level 1 unlocks a 2nd worker
+if (this.levelId === 1 && !save.workers) {
+  save.workers = 2;
+}
+
+localStorage.setItem(saveKey, JSON.stringify(save));
 
 }

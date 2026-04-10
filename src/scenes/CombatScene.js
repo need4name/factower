@@ -520,3 +520,4 @@ class CombatScene extends Phaser.Scene {
     localStorage.setItem(saveKey, JSON.stringify(save));
   }
 
+}

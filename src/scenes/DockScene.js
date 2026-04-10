@@ -10,10 +10,11 @@ class DockScene extends Phaser.Scene {
     const saveKey = `factower_save_${slotIndex}`;
     this.saveData = JSON.parse(localStorage.getItem(saveKey));
 
-    this.add.rectangle(width / 2, height / 2, width, height, 0x0d1117);
+    this.add.rectangle(width / 2, 144, width, 100, 0x161b22);
+this.add.rectangle(width / 2, 194, width, 1, 0x334455);
+const backBtn = this.add.rectangle(44, 144, 72, 48, 0x1e2530).setInteractive();
+this.add.text(44, 144, '← BACK', {
 
-    this.add.rectangle(width / 2, 70, width, 100, 0x161b22);
-    this.add.rectangle(width / 2, 120, width, 1, 0x334455);
 
     const backBtn = this.add.rectangle(44, 70, 72, 48, 0x1e2530).setInteractive();
     this.add.text(44, 70, '← BACK', {

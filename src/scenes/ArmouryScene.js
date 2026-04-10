@@ -10,15 +10,13 @@ class ArmouryScene extends Phaser.Scene {
     const saveKey = `factower_save_${slotIndex}`;
     this.saveData = JSON.parse(localStorage.getItem(saveKey));
 
+    this.add.rectangle(width / 2, height / 2, width, height, 0x0d1117);
+
     this.add.rectangle(width / 2, 144, width, 100, 0x161b22);
-this.add.rectangle(width / 2, 194, width, 1, 0x334455);
-const backBtn = this.add.rectangle(44, 144, 72, 48, 0x1e2530).setInteractive();
-this.add.text(44, 144, '← BACK', {
+    this.add.rectangle(width / 2, 194, width, 1, 0x334455);
 
-
-
-    const backBtn = this.add.rectangle(44, 70, 72, 48, 0x1e2530).setInteractive();
-    this.add.text(44, 70, '← BACK', {
+    const backBtn = this.add.rectangle(44, 144, 72, 48, 0x1e2530).setInteractive();
+    this.add.text(44, 144, '← BACK', {
       fontFamily: 'monospace', fontSize: '14px', color: '#e8a020'
     }).setOrigin(0.5);
     backBtn.on('pointerdown', () => {
@@ -28,18 +26,18 @@ this.add.text(44, 144, '← BACK', {
     backBtn.on('pointerover', () => backBtn.setFillStyle(0x252c38));
     backBtn.on('pointerout', () => backBtn.setFillStyle(0x1e2530));
 
-    this.add.text(width / 2 + 20, 56, 'ARMOURY', {
+    this.add.text(width / 2 + 20, 130, 'ARMOURY', {
       fontFamily: 'monospace', fontSize: '22px', color: '#eef2f8', fontStyle: 'bold'
     }).setOrigin(0.5);
 
-    this.add.text(width / 2 + 20, 84, 'TOWER STOCKPILE', {
+    this.add.text(width / 2 + 20, 158, 'TOWER STOCKPILE', {
       fontFamily: 'monospace', fontSize: '12px', color: '#8899aa', letterSpacing: 2
     }).setOrigin(0.5);
 
-    this.add.text(24, 144, 'AVAILABLE TOWERS', {
+    this.add.text(24, 214, 'AVAILABLE TOWERS', {
       fontFamily: 'monospace', fontSize: '12px', color: '#8899aa', letterSpacing: 3
     });
-    this.add.rectangle(width / 2, 164, width - 48, 1, 0x334455);
+    this.add.rectangle(width / 2, 234, width - 48, 1, 0x334455);
 
     const stockpile = this.saveData?.stockpile || {};
     const towerTypes = ['gunner', 'bomber', 'barricade'];
@@ -47,7 +45,7 @@ this.add.text(44, 144, '← BACK', {
     towerTypes.forEach((type, i) => {
       const count = stockpile[type] || 0;
       const data = TOWER_DATA[type];
-      const y = 240 + i * 130;
+      const y = 310 + i * 130;
       const colourHex = '#' + data.colour.toString(16).padStart(6, '0');
       const active = count > 0;
 
@@ -85,10 +83,10 @@ this.add.text(44, 144, '← BACK', {
 
     const totalTowers = towerTypes.reduce((sum, t) => sum + (stockpile[t] || 0), 0);
     if (totalTowers === 0) {
-      this.add.text(width / 2, 620, 'NO TOWERS IN STOCK', {
+      this.add.text(width / 2, 690, 'NO TOWERS IN STOCK', {
         fontFamily: 'monospace', fontSize: '16px', color: '#445566', letterSpacing: 3
       }).setOrigin(0.5);
-      this.add.text(width / 2, 652, 'BUILD TOWERS IN THE FACTORY FIRST', {
+      this.add.text(width / 2, 722, 'BUILD TOWERS IN THE FACTORY FIRST', {
         fontFamily: 'monospace', fontSize: '12px', color: '#334455', letterSpacing: 1
       }).setOrigin(0.5);
     }

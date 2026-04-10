@@ -530,3 +530,4 @@ if (this.levelId === 1 && !save.workers) {
 localStorage.setItem(saveKey, JSON.stringify(save));
 
 }
+}

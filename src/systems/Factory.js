@@ -63,10 +63,11 @@ class Factory {
       id,
       unlocked,
       state: 'idle',
-      station: 'store',
-      stationAction: null, // 'deposit' or 'assemble'
+      station: 'store_scrap',
+      stationAction: null,
       progress: 0,
-      inventory: []
+      inventory: [],
+      _producedTowerType: null
     };
   }
 
@@ -104,6 +105,10 @@ class Factory {
     return this.workers.find(w => w.unlocked && w.station === stationKey && w.state === 'working');
   }
 
+  isAssemblyType(type) {
+    return type && type.startsWith('assembly');
+  }
+
   canPlace(row, col) {
     if (row < 0 || row >= this.ROWS || col < 0 || col >= this.COLS) return false;
     return this.grid[row][col] === null;
@@ -111,11 +116,9 @@ class Factory {
 
   placeMachine(row, col, type) {
     if (!this.canPlace(row, col)) return false;
-    const isAssembly = type.startsWith('assembly');
     this.grid[row][col] = {
       type,
-      // Assembly benches hold refined plastic waiting for metal
-      heldMaterial: isAssembly ? null : undefined
+      heldMaterial: this.isAssemblyType(type) ? null : undefined
     };
     return true;
   }
@@ -139,23 +142,18 @@ class Factory {
     return this.grid[row][col];
   }
 
-  isAssemblyType(type) {
-    return type && type.startsWith('assembly');
-  }
-
-  // Determine what action a worker would do at this station
   getWorkerAction(stationKey, workerId) {
     const w = this.workers[workerId];
     if (!w) return null;
 
-    if (stationKey === 'store') {
-      if (w.inventory.length > 0) return null;
-      return 'collect';
+    if (stationKey === 'store_scrap') {
+      return w.inventory.length === 0 ? 'collect_scrap' : null;
     }
-
+    if (stationKey === 'store_metal') {
+      return w.inventory.length === 0 ? 'collect_metal' : null;
+    }
     if (stationKey === 'depository') {
-      if (w.inventory.includes('towerComponent')) return 'deliver';
-      return null;
+      return w.inventory.includes('towerComponent') ? 'deliver' : null;
     }
 
     const [r, c] = stationKey.split(',').map(Number);
@@ -163,16 +161,13 @@ class Factory {
     if (!machine) return null;
 
     if (machine.type === 'smelter') {
-      if (w.inventory.includes('plasticScrap')) return 'smelt';
-      return null;
+      return w.inventory.includes('plasticScrap') ? 'smelt' : null;
     }
 
     if (this.isAssemblyType(machine.type)) {
-      // Worker has refined plastic — deposit it
       if (w.inventory.includes('refinedPlastic') && machine.heldMaterial === null) {
         return 'deposit';
       }
-      // Worker has salvaged metal and bench has refined plastic — assemble
       if (w.inventory.includes('salvagedMetal') && machine.heldMaterial === 'refinedPlastic') {
         return 'assemble';
       }
@@ -183,27 +178,13 @@ class Factory {
   }
 
   canWorkerStartAt(stationKey, workerId) {
+    const w = this.workers[workerId];
+    if (!w || !w.unlocked) return false;
     const action = this.getWorkerAction(stationKey, workerId);
     if (!action) return false;
-
-    // Check station not already occupied by another working worker
     const occupant = this.getWorkerAtStation(stationKey);
     if (occupant && occupant.id !== workerId) return false;
-
     return true;
-  }
-
-  // What should the store give this worker?
-  getStoreRequest(workerId) {
-    const w = this.workers[workerId];
-    if (w.inventory.length > 0) return null;
-    // Default: collect scrap (first trip)
-    return 'plasticScrap';
-  }
-
-  // Force store to give salvaged metal instead
-  setStoreRequestMetal(workerId) {
-    this.workers[workerId]._nextStoreItem = 'salvagedMetal';
   }
 
   startWorkAt(stationKey, workerId) {
@@ -225,7 +206,7 @@ class Factory {
       const station = w.station;
       let duration;
 
-      if (station === 'store') {
+      if (station === 'store_scrap' || station === 'store_metal') {
         duration = 4000;
       } else if (station === 'depository') {
         duration = 2500;
@@ -260,14 +241,14 @@ class Factory {
     const w = this.workers[workerId];
     if (!w) return;
 
-    if (station === 'store') {
-      // Give what was requested
-      const item = w._nextStoreItem || 'plasticScrap';
-      w._nextStoreItem = null;
-      w.inventory = [item];
+    if (station === 'store_scrap') {
+      w.inventory = ['plasticScrap'];
       return;
     }
-
+    if (station === 'store_metal') {
+      w.inventory = ['salvagedMetal'];
+      return;
+    }
     if (station === 'depository') {
       w.inventory = [];
       return;
@@ -278,7 +259,6 @@ class Factory {
     if (!machine) return;
 
     if (machine.type === 'smelter') {
-      // Scrap → Refined Plastic
       w.inventory = w.inventory.filter(i => i !== 'plasticScrap');
       w.inventory.push('refinedPlastic');
       return;
@@ -286,14 +266,11 @@ class Factory {
 
     if (this.isAssemblyType(machine.type)) {
       if (w.stationAction === 'deposit') {
-        // Deposit refined plastic into bench
         w.inventory = w.inventory.filter(i => i !== 'refinedPlastic');
         machine.heldMaterial = 'refinedPlastic';
         return;
       }
-
       if (w.stationAction === 'assemble') {
-        // Consume metal + held plastic, produce tower
         w.inventory = w.inventory.filter(i => i !== 'salvagedMetal');
         machine.heldMaterial = null;
         w.inventory.push('towerComponent');
@@ -312,15 +289,5 @@ class Factory {
       refinedPlastic: 'REFINED',
       towerComponent: 'TOWER ★'
     }[i] || i.toUpperCase())).join(' + ');
-  }
-
-  getMachineStatusText(row, col) {
-    const machine = this.getMachineAt(row, col);
-    if (!machine) return '';
-    if (this.isAssemblyType(machine.type)) {
-      if (machine.heldMaterial === 'refinedPlastic') return '+ REFINED';
-      return 'EMPTY';
-    }
-    return '';
   }
 }

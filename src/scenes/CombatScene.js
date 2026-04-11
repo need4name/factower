@@ -26,7 +26,6 @@ class CombatScene extends Phaser.Scene {
     this.activeEnemies = [];
     this.selectedTowerType = null;
 
-    // Use real stockpile — no free towers
     const stockpile = this.saveData?.stockpile || {};
     this.loadout = {
       gunner:    stockpile.gunner    || 0,
@@ -70,18 +69,16 @@ class CombatScene extends Phaser.Scene {
     this.drawTowerSlots();
     this.drawBottomPanel();
 
-    // If no towers warn the player
     const total = Object.values(this.loadout).reduce((s, v) => s + v, 0);
     if (total === 0) {
-      this.add.rectangle(width / 2, height / 2, width - 48, 160, 0x1a0a0a);
-      this.add.rectangle(width / 2, height / 2, width - 48, 160)
-        .setStrokeStyle(1, 0xc43a3a);
+      const warn = this.add.rectangle(width / 2, height / 2, width - 48, 160, 0x1a0a0a).setDepth(5);
+      this.add.rectangle(width / 2, height / 2, width - 48, 160).setStrokeStyle(1, 0xc43a3a).setDepth(5);
       this.add.text(width / 2, height / 2 - 24, 'NO TOWERS IN STOCK', {
         fontFamily: 'monospace', fontSize: '18px', color: '#c43a3a', fontStyle: 'bold'
-      }).setOrigin(0.5);
+      }).setOrigin(0.5).setDepth(6);
       this.add.text(width / 2, height / 2 + 12, 'Build towers in the Factory first', {
         fontFamily: 'monospace', fontSize: '13px', color: '#8899aa'
-      }).setOrigin(0.5);
+      }).setOrigin(0.5).setDepth(6);
     }
   }
 
@@ -102,7 +99,6 @@ class CombatScene extends Phaser.Scene {
     this.add.text(195, 114, '▼ ENTRY', {
       fontFamily: 'monospace', fontSize: '10px', color: '#c43a3a', letterSpacing: 2
     }).setOrigin(0.5);
-
     this.add.text(195, 696, '▲ BASE', {
       fontFamily: 'monospace', fontSize: '10px', color: '#3a8fc4', letterSpacing: 2
     }).setOrigin(0.5);
@@ -192,12 +188,9 @@ class CombatScene extends Phaser.Scene {
       const count = this.loadout[type];
       const active = count > 0;
 
-      const btn = this.add.rectangle(x, y, 86, 82, active ? 0x1e2530 : 0x161b22)
-        .setInteractive();
+      const btn = this.add.rectangle(x, y, 86, 82, active ? 0x1e2530 : 0x161b22).setInteractive();
       btn.towerType = type;
-      this.add.rectangle(x, y, 86, 82)
-        .setStrokeStyle(1, active ? data.colour : 0x334455);
-
+      this.add.rectangle(x, y, 86, 82).setStrokeStyle(1, active ? data.colour : 0x334455);
       this.add.circle(x, y - 24, 9, active ? data.colour : 0x334455);
 
       this.add.text(x, y + 2, data.name, {
@@ -224,14 +217,11 @@ class CombatScene extends Phaser.Scene {
       }
     });
 
-    this.startWaveBtn = this.add.rectangle(width - 68, panelY + 56, 98, 82, 0x0d1a0d)
-      .setInteractive();
+    this.startWaveBtn = this.add.rectangle(width - 68, panelY + 56, 98, 82, 0x0d1a0d).setInteractive();
     this.add.rectangle(width - 68, panelY + 56, 98, 82).setStrokeStyle(1, 0x5eba7d);
-
     this.startWaveBtnLabel = this.add.text(width - 68, panelY + 44, 'START', {
       fontFamily: 'monospace', fontSize: '16px', color: '#5eba7d', fontStyle: 'bold'
     }).setOrigin(0.5);
-
     this.startWaveBtnSub = this.add.text(width - 68, panelY + 66, 'WAVE 1', {
       fontFamily: 'monospace', fontSize: '11px', color: '#5eba7d'
     }).setOrigin(0.5);
@@ -256,7 +246,6 @@ class CombatScene extends Phaser.Scene {
 
     const data = TOWER_DATA[this.selectedTowerType];
     const pos = slot.slotPos;
-    const colourHex = '#' + data.colour.toString(16).padStart(6, '0');
 
     slot.setFillStyle(data.colour, 0.15);
     this.add.rectangle(pos.x, pos.y, 48, 48).setStrokeStyle(2, data.colour);
@@ -275,8 +264,7 @@ class CombatScene extends Phaser.Scene {
 
     const tower = {
       type: this.selectedTowerType,
-      x: pos.x,
-      y: pos.y,
+      x: pos.x, y: pos.y,
       data: { ...data },
       lastFired: 0
     };
@@ -310,8 +298,7 @@ class CombatScene extends Phaser.Scene {
     const bullet = this.add.circle(tower.x, tower.y, 5, tower.data.colour);
     this.tweens.add({
       targets: bullet,
-      x: target.sprite.x,
-      y: target.sprite.y,
+      x: target.sprite.x, y: target.sprite.y,
       duration: 160,
       onComplete: () => {
         bullet.destroy();
@@ -383,7 +370,6 @@ class CombatScene extends Phaser.Scene {
     const data = ENEMY_DATA[type];
     const start = this.pathPoints[0];
     const sprite = this.add.circle(start.x, start.y, data.size, data.colour);
-
     const enemy = { type, data, sprite, hp: data.hp, alive: true, pathProgress: 0 };
     this.activeEnemies.push(enemy);
     this.moveToWaypoint(enemy, 1);
@@ -453,41 +439,61 @@ class CombatScene extends Phaser.Scene {
     this.waveActive = false;
 
     const { width, height } = this.scale;
+    const isFirstVictory = victory && this.levelId === 1;
 
-    this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.8);
+    this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.92).setDepth(10);
 
     const titleColour = victory ? '#5eba7d' : '#c43a3a';
     const titleText = victory ? 'VICTORY' : 'BASE LOST';
     const subText = victory ? 'YOUR SOVEREIGNTY HOLDS' : 'YOUR BASE WAS OVERWHELMED';
 
-    this.add.text(width / 2, height / 2 - 110, titleText, {
+    this.add.text(width / 2, height / 2 - 150, titleText, {
       fontFamily: 'monospace', fontSize: '44px', color: titleColour, fontStyle: 'bold'
-    }).setOrigin(0.5);
+    }).setOrigin(0.5).setDepth(11);
 
-    this.add.text(width / 2, height / 2 - 58, subText, {
+    this.add.text(width / 2, height / 2 - 100, subText, {
       fontFamily: 'monospace', fontSize: '14px', color: '#8899aa', letterSpacing: 2
-    }).setOrigin(0.5);
+    }).setOrigin(0.5).setDepth(11);
 
-    this.add.text(width / 2, height / 2 - 18, `PARTS EARNED: ${this.parts}`, {
+    this.add.text(width / 2, height / 2 - 64, `PARTS EARNED: ${this.parts}`, {
       fontFamily: 'monospace', fontSize: '20px', color: '#e8a020'
-    }).setOrigin(0.5);
+    }).setOrigin(0.5).setDepth(11);
 
-        if (victory) {
+    if (victory) {
       this.saveProgress();
-      const rewardText = this.levelId === 1
-        ? 'NEXT LEVEL UNLOCKED  ·  2ND WORKER RECRUITED'
-        : 'NEXT LEVEL UNLOCKED';
-      this.add.text(width / 2, height / 2 + 18, rewardText, {
-        fontFamily: 'monospace', fontSize: '13px', color: '#5eba7d', letterSpacing: 2
-      }).setOrigin(0.5);
+
+      if (isFirstVictory) {
+        // Recruitment announcement on victory screen
+        this.add.rectangle(width / 2, height / 2 + 20, width - 48, 140, 0x0d1a22).setDepth(11);
+        this.add.rectangle(width / 2, height / 2 + 20, width - 48, 140).setStrokeStyle(1, 0x3a8fc4).setDepth(11);
+
+        this.add.circle(width / 2 - 100, height / 2 + 20, 18, 0x3a8fc4).setDepth(12);
+        this.add.text(width / 2 - 100, height / 2 + 20, 'W2', {
+          fontFamily: 'monospace', fontSize: '11px', color: '#0d1117', fontStyle: 'bold'
+        }).setOrigin(0.5).setDepth(13);
+
+        this.add.text(width / 2 + 10, height / 2 + 4, 'NEW RECRUIT', {
+          fontFamily: 'monospace', fontSize: '16px', color: '#3a8fc4', fontStyle: 'bold'
+        }).setOrigin(0.5).setDepth(12);
+
+        this.add.text(width / 2 + 10, height / 2 + 28, 'Word spread of your victory.\nA second worker awaits\nyou at the factory.', {
+          fontFamily: 'monospace', fontSize: '11px', color: '#8899aa',
+          align: 'center', lineSpacing: 4
+        }).setOrigin(0.5).setDepth(12);
+
+      } else {
+        this.add.text(width / 2, height / 2 - 24, 'NEXT LEVEL UNLOCKED', {
+          fontFamily: 'monospace', fontSize: '13px', color: '#5eba7d', letterSpacing: 2
+        }).setOrigin(0.5).setDepth(11);
+      }
     }
 
-    const btn = this.add.rectangle(width / 2, height / 2 + 110, 260, 68, 0x161b22)
-      .setInteractive();
-    this.add.rectangle(width / 2, height / 2 + 110, 260, 68).setStrokeStyle(1, 0xe8a020);
-    this.add.text(width / 2, height / 2 + 110, 'RETURN TO BASE', {
+    const btnY = isFirstVictory ? height / 2 + 130 : height / 2 + 80;
+    const btn = this.add.rectangle(width / 2, btnY, 260, 68, 0x161b22).setInteractive().setDepth(11);
+    this.add.rectangle(width / 2, btnY, 260, 68).setStrokeStyle(1, 0xe8a020).setDepth(11);
+    this.add.text(width / 2, btnY, 'RETURN TO BASE', {
       fontFamily: 'monospace', fontSize: '18px', color: '#e8a020', fontStyle: 'bold'
-    }).setOrigin(0.5);
+    }).setOrigin(0.5).setDepth(12);
 
     btn.on('pointerdown', () => {
       this.cameras.main.fade(300, 0, 0, 0);
@@ -510,24 +516,21 @@ class CombatScene extends Phaser.Scene {
     }
 
     save.parts = (save.parts || 0) + this.parts;
-save.level = Math.max(save.level || 1, this.levelId + 1);
+    save.level = Math.max(save.level || 1, this.levelId + 1);
 
-// Consume towers that were placed in this level
-if (save.stockpile) {
-  Object.keys(this.loadout).forEach(type => {
-    const used = (this.saveData?.stockpile?.[type] || 0) - this.loadout[type];
-    if (used > 0) {
-      save.stockpile[type] = Math.max(0, (save.stockpile[type] || 0) - used);
+    if (save.stockpile) {
+      Object.keys(this.loadout).forEach(type => {
+        const used = (this.saveData?.stockpile?.[type] || 0) - this.loadout[type];
+        if (used > 0) {
+          save.stockpile[type] = Math.max(0, (save.stockpile[type] || 0) - used);
+        }
+      });
     }
-  });
-}
 
-// Reward: winning Level 1 unlocks a 2nd worker
-if (this.levelId === 1 && !save.workers) {
-  save.workers = 2;
-}
+    if (this.levelId === 1 && !save.workers) {
+      save.workers = 2;
+    }
 
-localStorage.setItem(saveKey, JSON.stringify(save));
-
-}
+    localStorage.setItem(saveKey, JSON.stringify(save));
+  }
 }

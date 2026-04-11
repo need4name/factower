@@ -63,7 +63,7 @@ class FactoryScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const all = [];
 
-    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.7).setDepth(50);
+    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.95).setDepth(50);
     const box = this.add.rectangle(width / 2, height / 2, width - 48, 220, 0x161b22).setDepth(51);
     const boxBorder = this.add.rectangle(width / 2, height / 2, width - 48, 220).setStrokeStyle(1, 0x3a8fc4).setDepth(51);
     const dot = this.add.circle(width / 2, height / 2 - 72, 20, 0x3a8fc4).setDepth(52);

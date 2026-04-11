@@ -17,7 +17,7 @@ const LEVEL_DATA = {
             {
               preWaveDelay: 3000,
               enemies: [
-                { type: 'saltChild', count: 6, interval: 1800 }
+                { type: 'saltChild', count: 4, interval: 2500 }
               ]
             }
           ]

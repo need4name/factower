@@ -2,18 +2,20 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Factower</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      background: #0a0c0f;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      overflow: hidden;
-    }
+   body {
+  background: #0a0c0f;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: env(safe-area-inset-top, 44px);
+  height: 100vh;
+  overflow: hidden;
+}
+  
     canvas { display: block; }
   </style>
 </head>

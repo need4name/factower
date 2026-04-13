@@ -5,7 +5,7 @@ const TOWER_DATA = {
     colour:   0x3a8fc4,
     tier:     1,
     damage:   15,
-    range:    110,
+    range:    120,
     fireRate: 900,
     speed:    70
   },
@@ -14,10 +14,10 @@ const TOWER_DATA = {
     name:         'BOMBER',
     colour:       0xe8a020,
     tier:         1,
-    damage:       12,
+    damage:       20,
     range:        90,
-    fireRate:     1800,
-    splashRadius: 50,
+    fireRate:     2500,
+    splashRadius: 100,
     speed:        50
   },
   barricade: {
@@ -26,7 +26,7 @@ const TOWER_DATA = {
     colour:     0xc43a3a,
     tier:       1,
     damage:     0,
-    range:      80,           // slow-field radius
+    range:      90,           // slow-field radius
     slowAmount: 0.45,         // enemies in range move at 45% speed
     fireRate:   99999,        // never fires
     speed:      25

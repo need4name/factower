@@ -135,9 +135,9 @@ class SaveScene extends Phaser.Scene {
           salvagedMetal: 0
         },
         stockpile: {
-          gunner: 1,
-          bomber: 0,
-          barricade: 0
+          gunner: 10,
+          bomber: 10,
+          barricade: 10
         },
         nuts: 0,
         bolts: 0,

@@ -624,10 +624,10 @@ class CombatScene extends Phaser.Scene {
     this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.88).setDepth(20);
 
     const titleColour = victory ? '#5eba7d' : '#c43a3a';
-    this.add.text(width / 2, 108, victory ? 'VICTORY' : 'BASE LOST', {
+      this.add.text(width / 2, 168, victory ? 'VICTORY' : 'BASE LOST',
       fontFamily: 'monospace', fontSize: '44px', color: titleColour, fontStyle: 'bold'
     }).setOrigin(0.5).setDepth(21);
-    this.add.text(width / 2, 162, victory ? 'YOUR SOVEREIGNTY HOLDS' : 'YOUR BASE WAS OVERWHELMED', {
+      this.add.text(width / 2, 196, victory ? 'YOUR SOVEREIGNTY HOLDS'
       fontFamily: 'monospace', fontSize: '13px', color: '#8899aa', letterSpacing: 2
     }).setOrigin(0.5).setDepth(21);
 

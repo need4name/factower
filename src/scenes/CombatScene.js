@@ -46,35 +46,32 @@ class CombatScene extends Phaser.Scene {
     };
     this.startingLoadout = { gunner: this.loadout.gunner, bomber: this.loadout.bomber, barricade: this.loadout.barricade };
 
-    // Header pushed down to clear iOS Safari chrome (~100px)
-    // CT = combat top (path start), CB = combat bottom (path end)
-    this.HY = 155;
-    this.CT = 215;
-    this.CB = 688;
+    this.HY = 148;
+    this.CT = 225;
+    this.CB = 686;
 
     this.pathPoints = [
-      { x: 195, y: this.CT       },
-      { x: 195, y: this.CT +  70 },
-      { x: 60,  y: this.CT +  70 },
-      { x: 60,  y: this.CT + 230 },
-      { x: 330, y: this.CT + 230 },
-      { x: 330, y: this.CT + 360 },
-      { x: 60,  y: this.CT + 360 },
-      { x: 60,  y: this.CT + 430 },
-      { x: 195, y: this.CT + 430 },
-      { x: 195, y: this.CB       }
+      { x: 195, y: this.CT        },
+      { x: 195, y: this.CT +  70  },
+      { x: 60,  y: this.CT +  70  },
+      { x: 60,  y: this.CT + 230  },
+      { x: 330, y: this.CT + 230  },
+      { x: 330, y: this.CT + 360  },
+      { x: 60,  y: this.CT + 360  },
+      { x: 60,  y: this.CT + 430  },
+      { x: 195, y: this.CT + 430  },
+      { x: 195, y: this.CB        }
     ];
 
-    // Slots placed at "sweet spots" — each covers 2-3 path segments simultaneously
     const allSlots = [
-      { x: 290, y: this.CT +  30 },
-      { x: 100, y: this.CT +  30 },
+      { x: 290, y: this.CT +  32 },
+      { x: 100, y: this.CT +  32 },
       { x: 290, y: this.CT + 155 },
       { x: 115, y: this.CT + 155 },
       { x: 260, y: this.CT + 295 },
       { x: 115, y: this.CT + 275 },
-      { x: 260, y: this.CT + 405 },
-      { x: 115, y: this.CT + 405 }
+      { x: 260, y: this.CT + 400 },
+      { x: 115, y: this.CT + 400 }
     ];
 
     const numSlots = this.levelData ? this.levelData.towerSlots : 6;
@@ -148,7 +145,7 @@ class CombatScene extends Phaser.Scene {
     this.add.text(195, this.CT + 4, 'v ENTRY', {
       fontFamily: 'monospace', fontSize: '10px', color: '#c43a3a', letterSpacing: 2
     }).setOrigin(0.5);
-    this.add.text(195, this.CB - 4, '^ BASE', {
+    this.add.text(195, this.CB - 6, '^ BASE', {
       fontFamily: 'monospace', fontSize: '10px', color: '#3a8fc4', letterSpacing: 2
     }).setOrigin(0.5);
   }
@@ -157,16 +154,21 @@ class CombatScene extends Phaser.Scene {
     const { width } = this.scale;
     const HY = this.HY;
 
-    this.add.rectangle(width / 2, HY, width, 80, 0x161b22);
-    this.add.rectangle(width / 2, HY + 40, width, 1, 0x334455);
+    // Row 1: back | level name | parts + hp values
+    // Row 2: wave status text (own row — no collision possible)
+    // Row 3: hp bar strip
 
-    // Persistent HP bar strip — always visible below header
+    this.add.rectangle(width / 2, HY, width, 98, 0x161b22);
+    this.add.rectangle(width / 2, HY + 49, width, 1, 0x334455);
+
+    // HP bar — sits in its own strip just below separator
     const barW = width - 48;
-    this.add.rectangle(width / 2, HY + 51, barW, 7, 0x1e2530);
-    this.hpBarFill = this.add.rectangle(24, HY + 51, barW, 7, 0x5eba7d).setOrigin(0, 0.5);
+    this.add.rectangle(width / 2, HY + 60, barW, 5, 0x1e2530);
+    this.hpBarFill = this.add.rectangle(24, HY + 60, barW, 5, 0x5eba7d).setOrigin(0, 0.5);
 
-    const backBtn = this.add.rectangle(40, HY, 60, 44, 0x1e2530).setInteractive();
-    this.add.text(40, HY, '<- BACK', { fontFamily: 'monospace', fontSize: '12px', color: '#8899aa' }).setOrigin(0.5);
+    // Back button — top-left, row 1
+    const backBtn = this.add.rectangle(36, HY - 18, 54, 28, 0x1e2530).setInteractive();
+    this.add.text(36, HY - 18, '<- BACK', { fontFamily: 'monospace', fontSize: '10px', color: '#8899aa' }).setOrigin(0.5);
     backBtn.on('pointerdown', () => {
       if (!this.waveActive) {
         this.cameras.main.fade(200, 0, 0, 0);
@@ -174,26 +176,30 @@ class CombatScene extends Phaser.Scene {
       }
     });
 
-    this.add.text(width / 2, HY - 18, this.levelData ? this.levelData.name : 'LEVEL', {
-      fontFamily: 'monospace', fontSize: '11px', color: '#8899aa', letterSpacing: 3
+    // Level name — top centre, row 1
+    this.add.text(width / 2, HY - 26, this.levelData ? this.levelData.name : 'LEVEL', {
+      fontFamily: 'monospace', fontSize: '10px', color: '#8899aa', letterSpacing: 3
     }).setOrigin(0.5);
 
-    this.waveText = this.add.text(width / 2, HY + 8, 'PLACE TOWERS . THEN START WAVE', {
-      fontFamily: 'monospace', fontSize: '13px', color: '#eef2f8', fontStyle: 'bold'
+    // PARTS — left column, row 1
+    this.add.text(82, HY - 26, 'PARTS', { fontFamily: 'monospace', fontSize: '9px', color: '#8899aa', letterSpacing: 2 }).setOrigin(0.5);
+    this.partsText = this.add.text(82, HY - 5, '0', { fontFamily: 'monospace', fontSize: '20px', color: '#e8a020', fontStyle: 'bold' }).setOrigin(0.5);
+
+    // BASE HP — right column, row 1
+    this.add.text(width - 54, HY - 26, 'BASE HP', { fontFamily: 'monospace', fontSize: '9px', color: '#8899aa', letterSpacing: 1 }).setOrigin(0.5);
+    this.hpText = this.add.text(width - 54, HY - 5, '' + this.baseHp, { fontFamily: 'monospace', fontSize: '20px', color: '#5eba7d', fontStyle: 'bold' }).setOrigin(0.5);
+
+    // Wave status — row 2, full-width centre, nothing to collide with
+    this.waveText = this.add.text(width / 2, HY + 25, 'PLACE TOWERS — THEN START WAVE', {
+      fontFamily: 'monospace', fontSize: '11px', color: '#eef2f8', fontStyle: 'bold'
     }).setOrigin(0.5);
-
-    this.add.text(80, HY - 20, 'PARTS', { fontFamily: 'monospace', fontSize: '10px', color: '#8899aa', letterSpacing: 2 }).setOrigin(0.5);
-    this.partsText = this.add.text(80, HY + 6, '0', { fontFamily: 'monospace', fontSize: '22px', color: '#e8a020', fontStyle: 'bold' }).setOrigin(0.5);
-
-    this.add.text(width - 80, HY - 20, 'BASE HP', { fontFamily: 'monospace', fontSize: '10px', color: '#8899aa', letterSpacing: 2 }).setOrigin(0.5);
-    this.hpText = this.add.text(width - 80, HY + 6, '' + this.baseHp, { fontFamily: 'monospace', fontSize: '22px', color: '#5eba7d', fontStyle: 'bold' }).setOrigin(0.5);
   }
 
   updateHpBar() {
     if (!this.hpBarFill) return;
     const pct    = this.baseHp / this.baseHpMax;
     const maxW   = this.scale.width - 48;
-    this.hpBarFill.setSize(maxW * pct, 7);
+    this.hpBarFill.setSize(maxW * pct, 5);
     const colour = pct > 0.5 ? 0x5eba7d : pct > 0.25 ? 0xe8a020 : 0xc43a3a;
     this.hpBarFill.setFillStyle(colour);
   }
@@ -216,9 +222,9 @@ class CombatScene extends Phaser.Scene {
 
   drawBottomPanel() {
     const { width, height } = this.scale;
-    const panelY = height - 144;
+    const panelY = height - 152;
 
-    this.add.rectangle(width / 2, height - 72, width, 144, 0x161b22);
+    this.add.rectangle(width / 2, height - 76, width, 152, 0x161b22);
     this.add.rectangle(width / 2, panelY, width, 1, 0x334455);
 
     const towerTypes = ['gunner', 'bomber', 'barricade'];
@@ -227,15 +233,15 @@ class CombatScene extends Phaser.Scene {
     towerTypes.forEach((type, i) => {
       const data      = TOWER_DATA[type];
       const x         = 52 + i * 96;
-      const y         = panelY + 56;
+      const y         = panelY + 60;
       const colourHex = '#' + data.colour.toString(16).padStart(6, '0');
       const count     = this.loadout[type];
       const active    = count > 0;
 
-      const btn = this.add.rectangle(x, y, 86, 82, active ? 0x1e2530 : 0x161b22).setInteractive();
+      const btn = this.add.rectangle(x, y, 86, 86, active ? 0x1e2530 : 0x161b22).setInteractive();
       btn.towerType = type;
-      this.add.rectangle(x, y, 86, 82).setStrokeStyle(1, active ? data.colour : 0x334455);
-      this.add.circle(x, y - 24, 9, active ? data.colour : 0x334455);
+      this.add.rectangle(x, y, 86, 86).setStrokeStyle(1, active ? data.colour : 0x334455);
+      this.add.circle(x, y - 26, 9, active ? data.colour : 0x334455);
       this.add.text(x, y + 2, data.name, { fontFamily: 'monospace', fontSize: '12px', color: active ? '#eef2f8' : '#556677', fontStyle: 'bold' }).setOrigin(0.5);
       const countText = this.add.text(x, y + 22, 'x' + count, { fontFamily: 'monospace', fontSize: '14px', color: active ? colourHex : '#445566' }).setOrigin(0.5);
       btn.countText = countText;
@@ -248,10 +254,10 @@ class CombatScene extends Phaser.Scene {
       }
     });
 
-    this.startWaveBtn = this.add.rectangle(width - 68, panelY + 56, 98, 82, 0x0d1a0d).setInteractive();
-    this.add.rectangle(width - 68, panelY + 56, 98, 82).setStrokeStyle(1, 0x5eba7d);
-    this.startWaveBtnLabel = this.add.text(width - 68, panelY + 44, 'START', { fontFamily: 'monospace', fontSize: '16px', color: '#5eba7d', fontStyle: 'bold' }).setOrigin(0.5);
-    this.startWaveBtnSub   = this.add.text(width - 68, panelY + 66, 'WAVE 1', { fontFamily: 'monospace', fontSize: '11px', color: '#5eba7d' }).setOrigin(0.5);
+    this.startWaveBtn = this.add.rectangle(width - 60, panelY + 60, 88, 86, 0x0d1a0d).setInteractive();
+    this.add.rectangle(width - 60, panelY + 60, 88, 86).setStrokeStyle(1, 0x5eba7d);
+    this.startWaveBtnLabel = this.add.text(width - 60, panelY + 48, 'START', { fontFamily: 'monospace', fontSize: '15px', color: '#5eba7d', fontStyle: 'bold' }).setOrigin(0.5);
+    this.startWaveBtnSub   = this.add.text(width - 60, panelY + 68, 'WAVE 1', { fontFamily: 'monospace', fontSize: '11px', color: '#5eba7d' }).setOrigin(0.5);
     this.startWaveBtn.on('pointerdown', () => this.startNextWave());
     this.startWaveBtn.on('pointerover', () => this.startWaveBtn.setFillStyle(0x162616));
     this.startWaveBtn.on('pointerout',  () => this.startWaveBtn.setFillStyle(0x0d1a0d));
@@ -396,7 +402,6 @@ class CombatScene extends Phaser.Scene {
     this.waveActive = true;
     this.selectedTowerType = null;
 
-    // Button becomes "ACTIVE" state — clearly shows wave is running
     this.startWaveBtn.setAlpha(0.5).disableInteractive();
     this.startWaveBtnLabel.setText('WAVE ' + (this.currentWave + 1));
     this.startWaveBtnSub.setText('ACTIVE');
@@ -404,7 +409,6 @@ class CombatScene extends Phaser.Scene {
     this.waveText.setText('WAVE ' + (this.currentWave + 1) + ' of ' + this.levelData.waves.length + ' — STAND BY');
     this.waveText.setStyle({ color: '#e8a020' });
 
-    // INCOMING flash — unambiguous wave start feedback
     const { width, height } = this.scale;
     const incoming = this.add.text(width / 2, height / 2 - 40, 'WAVE ' + (this.currentWave + 1) + '\nINCOMING', {
       fontFamily: 'monospace', fontSize: '40px', color: '#c43a3a', fontStyle: 'bold', align: 'center'
@@ -430,7 +434,6 @@ class CombatScene extends Phaser.Scene {
 
     waveData.enemies.forEach(group => {
       for (let i = 0; i < group.count; i++) {
-        // +/-20% jitter breaks the robotic rhythm and creates natural clusters
         const jitter = group.interval * 0.2 * (Math.random() * 2 - 1);
         const delay  = Math.max(150, group.interval + jitter);
         this.time.delayedCall(totalDelay, () => {
@@ -536,16 +539,15 @@ class CombatScene extends Phaser.Scene {
     this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.88);
 
     const titleColour = victory ? '#5eba7d' : '#c43a3a';
-    this.add.text(width / 2, 115, victory ? 'VICTORY' : 'BASE LOST', {
+    this.add.text(width / 2, 108, victory ? 'VICTORY' : 'BASE LOST', {
       fontFamily: 'monospace', fontSize: '44px', color: titleColour, fontStyle: 'bold'
     }).setOrigin(0.5);
-    this.add.text(width / 2, 168, victory ? 'YOUR SOVEREIGNTY HOLDS' : 'YOUR BASE WAS OVERWHELMED', {
+    this.add.text(width / 2, 162, victory ? 'YOUR SOVEREIGNTY HOLDS' : 'YOUR BASE WAS OVERWHELMED', {
       fontFamily: 'monospace', fontSize: '13px', color: '#8899aa', letterSpacing: 2
     }).setOrigin(0.5);
 
-    let y = 192;
+    let y = 186;
 
-    // HP remaining
     const hpColour = this.baseHp > 5 ? '#5eba7d' : this.baseHp > 2 ? '#e8a020' : '#c43a3a';
     this.add.text(28, y, 'BASE HP REMAINING', { fontFamily: 'monospace', fontSize: '10px', color: '#8899aa', letterSpacing: 2 });
     this.add.text(28, y + 18, this.baseHp + ' / ' + this.baseHpMax, { fontFamily: 'monospace', fontSize: '22px', color: hpColour, fontStyle: 'bold' });
@@ -554,7 +556,6 @@ class CombatScene extends Phaser.Scene {
     this.add.rectangle(28, y + 56, barMaxW * (this.baseHp / this.baseHpMax), 8, Phaser.Display.Color.HexStringToColor(hpColour).color).setOrigin(0, 0.5);
     y += 76;
 
-    // Escaped + Parts
     this.add.rectangle(width / 2, y, width - 48, 1, 0x334455);
     y += 12;
     this.add.text(28, y, 'ESCAPED', { fontFamily: 'monospace', fontSize: '10px', color: '#8899aa', letterSpacing: 2 });
@@ -563,7 +564,6 @@ class CombatScene extends Phaser.Scene {
     this.add.text(width / 2 + 10, y + 16, '' + this.parts, { fontFamily: 'monospace', fontSize: '20px', color: '#e8a020', fontStyle: 'bold' });
     y += 50;
 
-    // Tower performance
     this.add.rectangle(width / 2, y, width - 48, 1, 0x334455);
     y += 12;
     this.add.text(28, y, 'TOWER PERFORMANCE', { fontFamily: 'monospace', fontSize: '10px', color: '#8899aa', letterSpacing: 2 });
@@ -583,7 +583,6 @@ class CombatScene extends Phaser.Scene {
       y += 20;
     });
 
-    // Enemies eliminated
     this.add.rectangle(width / 2, y + 4, width - 48, 1, 0x334455);
     y += 16;
     const totalKills = Object.values(this.killStats).reduce(function(s, v) { return s + v; }, 0);
@@ -599,7 +598,6 @@ class CombatScene extends Phaser.Scene {
       y += 18;
     }.bind(this));
 
-    // Level reward cards
     if (victory && this.levelId === 1) {
       y += 8;
       this.add.rectangle(width / 2, y + 28, width - 48, 56, 0x0d1e2e);
@@ -667,7 +665,7 @@ class CombatScene extends Phaser.Scene {
       const barY = y - enemy.data.size - 7;
       if (enemy.hpBg) enemy.hpBg.setPosition(x, barY);
       if (enemy.hpFill) {
-        const pct   = Math.max(0, enemy.hp / enemy.maxHp);
+        const pct = Math.max(0, enemy.hp / enemy.maxHp);
         enemy.hpFill.setPosition(x - barW / 2, barY);
         enemy.hpFill.setSize(barW * pct, 4);
         enemy.hpFill.setFillStyle(pct > 0.5 ? 0x5eba7d : pct > 0.25 ? 0xe8a020 : 0xc43a3a);

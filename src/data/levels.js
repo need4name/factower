@@ -13,7 +13,7 @@ const LEVEL_DATA = {
           name:         'THE FIRST PRESS-GANG',
           description:  'Rivals target your turbine. Repel them.',
           difficulty:   1,
-          towerSlots:   5,
+          towerSlots:   6,
           baseHp:       10,
           tutorialText: 'Select a GUNNER from the panel below, then tap a numbered slot to place it.\nGunners fire fast at single targets — your core early-game tower.',
           waves: [
@@ -32,7 +32,7 @@ const LEVEL_DATA = {
           name:         'HEAVY ORDNANCE',
           description:  'Shielded units. Your scrap-throwers won\'t dent them.',
           difficulty:   2,
-          towerSlots:   6,
+          towerSlots:   8,
           baseHp:       10,
           tutorialText: 'BOMBERS deal splash damage — perfect against clusters.\nYou\'ve unlocked them in the Factory. Build some before this mission.',
           waves: [
@@ -58,7 +58,7 @@ const LEVEL_DATA = {
           name:         'SCRAP RECOVERY',
           description:  'Mid-wave, the turbine kicks up debris. Parts incoming.',
           difficulty:   3,
-          towerSlots:   6,
+          towerSlots:   10,
           baseHp:       10,
           tutorialText: 'PARTS are earned from every kill — shown top-left.\nThey\'ll power upgrades in future levels. Kill everything you can.',
           waves: [
@@ -91,7 +91,7 @@ const LEVEL_DATA = {
           name:         'THE COUNTER-RAID',
           description:  'They retaliate. Heavier numbers, coordinated push.',
           difficulty:   3,
-          towerSlots:   7,
+          towerSlots:   12,
           baseHp:       10,
           missionType:  'defence_placeholder',
           tutorialText: 'BARRICADES slow nearby enemies — place them in crowded sections of the path.\nA slowed cluster gives your Gunners and Bombers far more time on target.',
@@ -126,7 +126,7 @@ const LEVEL_DATA = {
           name:         'THE DRIFTWOOD HULK',
           description:  'A massive bio-mass floats in. High HP. Ignores light towers.',
           difficulty:   4,
-          towerSlots:   7,
+          towerSlots:   15,
           baseHp:       10,
           tutorialText: 'DRIFTWOOD HULKS have extreme HP — Bombers barely scratch them.\nPlace BARRICADES to slow them while your GUNNERS focus fire.',
           waves: [
@@ -159,7 +159,7 @@ const LEVEL_DATA = {
           name:         'THE KING\'S VISION',
           description:  'Your factory output reaches critical mass. The island grows.',
           difficulty:   4,
-          towerSlots:   7,
+          towerSlots:   15,
           baseHp:       10,
           tutorialText: 'Tower diversity matters — a mixed loadout outperforms spamming one type.\nGUNNERS handle singles. BOMBERS clear clusters. BARRICADES buy time.',
           waves: [
@@ -195,7 +195,7 @@ const LEVEL_DATA = {
           name:         'THE PRODUCTION LINE',
           description:  'A rival scout captured. The largest assault yet.',
           difficulty:   5,
-          towerSlots:   8,
+          towerSlots:   15,
           baseHp:       10,
           tutorialText: 'Largest wave yet — your factory throughput is your real ceiling.\nIf you\'re short on towers, go back and optimise your production line.',
           waves: [

@@ -51,8 +51,8 @@ class CombatScene extends Phaser.Scene {
     };
     this.startingLoadout = { gunner: this.loadout.gunner, bomber: this.loadout.bomber, barricade: this.loadout.barricade };
 
-    this.HY = 148;
-    this.CT = 225;
+    this.HY = 178;
+    this.CT = 255;
     this.CB = 686;
 
     // Play area bounds for tower placement

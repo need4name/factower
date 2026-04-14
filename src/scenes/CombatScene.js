@@ -32,16 +32,16 @@ class CombatScene extends Phaser.Scene {
     this.waveEnemyTotal    = 0;
     this.waveEnemyResolved = 0;
     this.enemiesEscaped    = 0;
+    this.upgradePanel      = null;
+    this.activeTower       = null;
     this.towerStats = {
       gunner:    { damageDealt: 0, kills: 0 },
       bomber:    { damageDealt: 0, kills: 0 },
       barricade: { placed: 0 }
     };
 
-    // Preview indicator shown when a tower type is selected
-    this.previewCircle     = null;
-    this.previewRing       = null;
-    this.previewValid      = false;
+    this.previewCircle = null;
+    this.previewRing   = null;
 
     const stockpile = (this.saveData && this.saveData.stockpile) ? this.saveData.stockpile : {};
     this.loadout = {
@@ -55,7 +55,6 @@ class CombatScene extends Phaser.Scene {
     this.CT = 255;
     this.CB = 686;
 
-    // Play area bounds for tower placement
     this.PLAY_TOP    = this.HY + 68;
     this.PLAY_BOTTOM = height - 156;
     this.PLAY_LEFT   = 14;
@@ -98,32 +97,23 @@ class CombatScene extends Phaser.Scene {
   // ── Path collision ────────────────────────────────────────────────────────
 
   distToSegment(px, py, ax, ay, bx, by) {
-    const dx = bx - ax;
-    const dy = by - ay;
+    const dx = bx - ax, dy = by - ay;
     const lenSq = dx * dx + dy * dy;
-    if (lenSq === 0) return Math.sqrt((px - ax) * (px - ax) + (py - ay) * (py - ay));
-    let t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
-    t = Math.max(0, Math.min(1, t));
-    const nx = ax + t * dx;
-    const ny = ay + t * dy;
-    return Math.sqrt((px - nx) * (px - nx) + (py - ny) * (py - ny));
+    if (lenSq === 0) return Math.sqrt((px-ax)*(px-ax)+(py-ay)*(py-ay));
+    let t = Math.max(0, Math.min(1, ((px-ax)*dx+(py-ay)*dy)/lenSq));
+    return Math.sqrt((px-(ax+t*dx))*(px-(ax+t*dx))+(py-(ay+t*dy))*(py-(ay+t*dy)));
   }
 
   isOnPath(x, y) {
-    const clearance = 30; // half path width 20 + 10 buffer
     for (let i = 0; i < this.pathPoints.length - 1; i++) {
-      const a = this.pathPoints[i];
-      const b = this.pathPoints[i + 1];
-      if (this.distToSegment(x, y, a.x, a.y, b.x, b.y) < clearance) return true;
+      const a = this.pathPoints[i], b = this.pathPoints[i+1];
+      if (this.distToSegment(x, y, a.x, a.y, b.x, b.y) < 30) return true;
     }
     return false;
   }
 
   isOccupied(x, y) {
-    const minDist = 32;
-    return this.placedTowers.some(t => {
-      return Math.sqrt((t.x - x) * (t.x - x) + (t.y - y) * (t.y - y)) < minDist;
-    });
+    return this.placedTowers.some(t => Math.sqrt((t.x-x)*(t.x-x)+(t.y-y)*(t.y-y)) < 32);
   }
 
   isInPlayArea(x, y) {
@@ -135,47 +125,57 @@ class CombatScene extends Phaser.Scene {
     return this.isInPlayArea(x, y) && !this.isOnPath(x, y) && !this.isOccupied(x, y);
   }
 
-  // ── Free placement input ──────────────────────────────────────────────────
+  // ── Input ─────────────────────────────────────────────────────────────────
 
   setupPlacementInput() {
-    // Track pointer movement to update preview
     this.input.on('pointermove', (pointer) => {
       if (!this.selectedTowerType || this.waveActive || this.gameOver) return;
-      if (!this.isInPlayArea(pointer.x, pointer.y)) {
-        this.hidePreview();
-        return;
-      }
+      if (!this.isInPlayArea(pointer.x, pointer.y)) { this.hidePreview(); return; }
       this.updatePreview(pointer.x, pointer.y);
     });
 
     this.input.on('pointerup', (pointer) => {
-      if (!this.selectedTowerType || this.waveActive || this.gameOver) return;
-      if (!this.isInPlayArea(pointer.x, pointer.y)) return;
-      if (this.canPlaceAt(pointer.x, pointer.y)) {
-        this.placeTower(pointer.x, pointer.y);
+      if (this.gameOver) return;
+
+      // Tapping an existing tower always opens upgrade panel
+      const tappedTower = this.placedTowers.find(t =>
+        Phaser.Math.Distance.Between(t.x, t.y, pointer.x, pointer.y) < 22
+      );
+      if (tappedTower) {
+        this.showUpgradePanel(tappedTower);
+        return;
       }
+
+      // Tapping elsewhere dismisses upgrade panel
+      if (this.upgradePanel) {
+        this.dismissUpgradePanel();
+        return;
+      }
+
+      // Tower placement — blocked during wave
+      if (!this.selectedTowerType || this.waveActive) return;
+      if (!this.isInPlayArea(pointer.x, pointer.y)) return;
+      if (this.canPlaceAt(pointer.x, pointer.y)) this.placeTower(pointer.x, pointer.y);
     });
 
-    this.input.on('pointerout', () => {
-      this.hidePreview();
-    });
+    this.input.on('pointerout', () => this.hidePreview());
   }
 
+  // ── Preview ───────────────────────────────────────────────────────────────
+
   updatePreview(x, y) {
-    const data    = TOWER_DATA[this.selectedTowerType];
-    const valid   = this.canPlaceAt(x, y);
-    const colour  = valid ? data.colour : 0xc43a3a;
-    const alpha   = valid ? 0.25 : 0.15;
+    const data   = TOWER_DATA[this.selectedTowerType];
+    const valid  = this.canPlaceAt(x, y);
+    const colour = valid ? data.colour : 0xc43a3a;
 
     if (!this.previewCircle) {
-      this.previewCircle = this.add.circle(x, y, 14, colour, alpha).setDepth(15);
+      this.previewCircle = this.add.circle(x, y, 14, colour, 0.25).setDepth(15);
       this.previewRing   = this.add.circle(x, y, data.range).setStrokeStyle(1, colour, 0.4).setDepth(15);
     } else {
-      this.previewCircle.setPosition(x, y).setFillStyle(colour, alpha);
+      this.previewCircle.setPosition(x, y).setFillStyle(colour, 0.25);
       this.previewRing.setPosition(x, y).setStrokeStyle(1, colour, 0.4);
       this.previewRing.setRadius(data.range);
     }
-    this.previewValid = valid;
   }
 
   hidePreview() {
@@ -183,38 +183,44 @@ class CombatScene extends Phaser.Scene {
     if (this.previewRing)   { this.previewRing.destroy();   this.previewRing   = null; }
   }
 
+  // ── Tower placement ───────────────────────────────────────────────────────
+
   placeTower(x, y) {
     if (this.loadout[this.selectedTowerType] <= 0) return;
 
     const type = this.selectedTowerType;
     const data = TOWER_DATA[type];
 
-    // Place visual
-    this.add.circle(x, y, 14, data.colour, 0.9).setDepth(4);
+    const towerCircle = this.add.circle(x, y, 14, data.colour, 0.9).setDepth(4);
     this.add.circle(x, y, 14).setStrokeStyle(2, data.colour).setDepth(4);
-    this.add.text(x, y, data.name.substring(0, 3), {
+    const towerLabel = this.add.text(x, y, data.name.substring(0, 3), {
       fontFamily: 'monospace', fontSize: '9px', color: '#eef2f8', fontStyle: 'bold'
     }).setOrigin(0.5).setDepth(5);
 
-    // Range ring — fades for non-barricade
     if (type === 'barricade') {
       this.add.circle(x, y, data.range, data.colour, 0.04).setDepth(2);
       this.add.circle(x, y, data.range).setStrokeStyle(1, data.colour, 0.2).setDepth(2);
       this.towerStats.barricade.placed++;
     } else {
       const ring = this.add.circle(x, y, data.range, data.colour, 0.08).setDepth(2);
-      const ringBorder = this.add.circle(x, y, data.range).setStrokeStyle(1, data.colour, 0.3).setDepth(2);
-      this.time.delayedCall(1400, () => { ring.destroy(); ringBorder.destroy(); });
+      const rb   = this.add.circle(x, y, data.range).setStrokeStyle(1, data.colour, 0.3).setDepth(2);
+      this.time.delayedCall(1400, () => { ring.destroy(); rb.destroy(); });
     }
 
     this.loadout[type]--;
     this.towerButtons[type].countText.setText('x' + this.loadout[type]);
-    if (this.loadout[type] === 0) {
-      this.towerButtons[type].setFillStyle(0x161b22);
-    }
+    if (this.loadout[type] === 0) this.towerButtons[type].setFillStyle(0x161b22);
     this.towersUsed[type] = (this.towersUsed[type] || 0) + 1;
 
-    const tower = { type, x, y, data: { ...data }, lastFired: 0 };
+    const tower = {
+      type, x, y,
+      data:         { ...data },
+      lastFired:    0,
+      upgradeTier:  0,
+      towerCircle,
+      towerLabel,
+      tierBadge:    null
+    };
     this.placedTowers.push(tower);
 
     if (type !== 'barricade') {
@@ -222,8 +228,154 @@ class CombatScene extends Phaser.Scene {
       this.towerTimerEvents.push(timerEvent);
     }
 
-    // Update preview at same position so player can keep placing
     this.updatePreview(x, y);
+  }
+
+  // ── Upgrade panel ─────────────────────────────────────────────────────────
+
+  showUpgradePanel(tower) {
+    this.dismissUpgradePanel();
+    this.activeTower = tower;
+
+    const { width, height } = this.scale;
+    const panelH   = 152;
+    const panelY   = height - 152 - 10 - panelH / 2;
+    const panelTop = panelY - panelH / 2;
+    const colour   = tower.data.colour;
+    const hex      = '#' + colour.toString(16).padStart(6, '0');
+    const path     = TOWER_DATA[tower.type].upgrades.pathA;
+    const tier     = tower.upgradeTier;
+    const maxTier  = path.tiers.length;
+    const items    = [];
+
+    const bg     = this.add.rectangle(width / 2, panelY, width - 24, panelH, 0x080e08).setDepth(18);
+    const border = this.add.rectangle(width / 2, panelY, width - 24, panelH).setStrokeStyle(2, colour).setDepth(18);
+    items.push(bg, border);
+
+    // Tower name + current tier
+    const tierStr = tier === 0 ? 'BASE' : 'TIER ' + tier;
+    items.push(this.add.text(28, panelTop + 12, tower.data.name, {
+      fontFamily: 'monospace', fontSize: '14px', color: hex, fontStyle: 'bold'
+    }).setDepth(19));
+    items.push(this.add.text(width - 28, panelTop + 12, tierStr, {
+      fontFamily: 'monospace', fontSize: '12px', color: tier > 0 ? '#e8a020' : '#445566', fontStyle: 'bold'
+    }).setOrigin(1, 0).setDepth(19));
+
+    // Path name
+    items.push(this.add.text(28, panelTop + 30, 'PATH A: ' + path.name, {
+      fontFamily: 'monospace', fontSize: '10px', color: '#556677', letterSpacing: 2
+    }).setDepth(19));
+
+    if (tier < maxTier) {
+      const nextTier  = path.tiers[tier];
+      const canAfford = this.parts >= nextTier.cost;
+
+      // Description
+      items.push(this.add.text(28, panelTop + 52, nextTier.label, {
+        fontFamily: 'monospace', fontSize: '13px', color: '#eef2f8',
+        wordWrap: { width: width - 180 }
+      }).setDepth(19));
+
+      // Cost
+      items.push(this.add.text(28, panelTop + panelH - 40, nextTier.cost + ' PARTS', {
+        fontFamily: 'monospace', fontSize: '15px',
+        color: canAfford ? '#e8a020' : '#c43a3a', fontStyle: 'bold'
+      }).setDepth(19));
+      if (!canAfford) {
+        items.push(this.add.text(28, panelTop + panelH - 20, 'not enough parts', {
+          fontFamily: 'monospace', fontSize: '10px', color: '#445566'
+        }).setDepth(19));
+      }
+
+      // Upgrade button
+      const btnBg  = canAfford ? 0x162616 : 0x161b22;
+      const btnBdr = canAfford ? 0x5eba7d : 0x334455;
+      const btnTxt = canAfford ? '#5eba7d' : '#445566';
+      const btn    = this.add.rectangle(width - 72, panelTop + panelH - 32, 108, 52, btnBg).setInteractive().setDepth(19);
+      const btnB   = this.add.rectangle(width - 72, panelTop + panelH - 32, 108, 52).setStrokeStyle(1, btnBdr).setDepth(19);
+      const btnL   = this.add.text(width - 72, panelTop + panelH - 32, 'UPGRADE', {
+        fontFamily: 'monospace', fontSize: '13px', color: btnTxt, fontStyle: 'bold'
+      }).setOrigin(0.5).setDepth(20);
+      items.push(btn, btnB, btnL);
+
+      if (canAfford) {
+        btn.on('pointerdown', () => this.applyUpgrade(tower));
+        btn.on('pointerover', () => btn.setFillStyle(0x1e3a1e));
+        btn.on('pointerout',  () => btn.setFillStyle(btnBg));
+      }
+    } else {
+      items.push(this.add.text(width / 2, panelTop + 90, 'FULLY UPGRADED', {
+        fontFamily: 'monospace', fontSize: '15px', color: hex, fontStyle: 'bold', letterSpacing: 3
+      }).setOrigin(0.5).setDepth(19));
+    }
+
+    // Range ring for this tower while panel is open
+    const ring  = this.add.circle(tower.x, tower.y, tower.data.range, colour, 0.08).setDepth(3);
+    const ringB = this.add.circle(tower.x, tower.y, tower.data.range).setStrokeStyle(1, colour, 0.5).setDepth(3);
+    items.push(ring, ringB);
+
+    this.upgradePanel = items;
+  }
+
+  dismissUpgradePanel() {
+    if (this.upgradePanel) {
+      this.upgradePanel.forEach(e => { if (e && e.destroy) e.destroy(); });
+      this.upgradePanel = null;
+    }
+    this.activeTower = null;
+  }
+
+  applyUpgrade(tower) {
+    if (!tower) return;
+    const path    = TOWER_DATA[tower.type].upgrades.pathA;
+    const tier    = tower.upgradeTier;
+    if (tier >= path.tiers.length) return;
+
+    const upgrade = path.tiers[tier];
+    if (this.parts < upgrade.cost) return;
+
+    this.parts -= upgrade.cost;
+    this.partsText.setText('' + this.parts);
+    tower.upgradeTier++;
+
+    // Apply stat changes
+    if (upgrade.fireRate    !== undefined) tower.data.fireRate    = upgrade.fireRate;
+    if (upgrade.damageBonus !== undefined) tower.data.damage     += upgrade.damageBonus;
+    if (upgrade.rangeBonus  !== undefined) tower.data.range      += upgrade.rangeBonus;
+    if (upgrade.splashRadius !== undefined) tower.data.splashRadius = upgrade.splashRadius;
+    if (upgrade.slowAmount  !== undefined) tower.data.slowAmount  = upgrade.slowAmount;
+
+    // Burn DPS — barricade T3
+    if (upgrade.burnDps) {
+      tower.data.burnDps = upgrade.burnDps;
+      const burnTimer = this.time.addEvent({
+        delay: 500,
+        callback: () => {
+          if (!this.waveActive || this.gameOver) return;
+          this.activeEnemies.forEach(enemy => {
+            if (!enemy.alive || !enemy.sprite || !enemy.sprite.active) return;
+            if (Phaser.Math.Distance.Between(tower.x, tower.y, enemy.sprite.x, enemy.sprite.y) <= tower.data.range) {
+              this.dealDamage(enemy, upgrade.burnDps * 0.5, 'barricade');
+            }
+          });
+        },
+        loop: true
+      });
+      this.towerTimerEvents.push(burnTimer);
+    }
+
+    // Tier badge — small indicator above tower
+    if (tower.tierBadge) tower.tierBadge.destroy();
+    tower.tierBadge = this.add.text(tower.x + 11, tower.y - 17, 'T' + tower.upgradeTier, {
+      fontFamily: 'monospace', fontSize: '9px', color: '#ffffff', fontStyle: 'bold'
+    }).setDepth(6);
+
+    // Flash
+    const flash = this.add.circle(tower.x, tower.y, 28, tower.data.colour, 0.45).setDepth(6);
+    this.tweens.add({ targets: flash, alpha: 0, scaleX: 2, scaleY: 2, duration: 380, onComplete: () => flash.destroy() });
+
+    // Refresh panel with updated state
+    this.showUpgradePanel(tower);
   }
 
   // ── Tutorial ──────────────────────────────────────────────────────────────
@@ -249,7 +401,6 @@ class CombatScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(33);
 
     this.tutorialElements = [overlay, card, border, label, hint, btn, btnBdr, btnTxt];
-
     btn.on('pointerdown', () => {
       this.tutorialElements.forEach(function(e) { e.destroy(); });
       this.tutorialElements = null;
@@ -298,6 +449,7 @@ class CombatScene extends Phaser.Scene {
     backBtn.on('pointerdown', () => {
       if (!this.waveActive) {
         this.hidePreview();
+        this.dismissUpgradePanel();
         this.cameras.main.fade(200, 0, 0, 0);
         this.time.delayedCall(200, () => this.scene.start('DockScene'));
       }
@@ -320,9 +472,8 @@ class CombatScene extends Phaser.Scene {
 
   updateHpBar() {
     if (!this.hpBarFill) return;
-    const pct    = this.baseHp / this.baseHpMax;
-    const maxW   = this.scale.width - 48;
-    this.hpBarFill.setSize(maxW * pct, 5);
+    const pct = this.baseHp / this.baseHpMax;
+    this.hpBarFill.setSize((this.scale.width - 48) * pct, 5);
     this.hpBarFill.setFillStyle(pct > 0.5 ? 0x5eba7d : pct > 0.25 ? 0xe8a020 : 0xc43a3a);
   }
 
@@ -355,7 +506,6 @@ class CombatScene extends Phaser.Scene {
       const countText = this.add.text(x, y + 22, 'x' + count, {
         fontFamily: 'monospace', fontSize: '14px', color: active ? colourHex : '#445566'
       }).setOrigin(0.5).setDepth(9);
-
       btn.countText = countText;
       this.towerButtons[type] = btn;
 
@@ -376,7 +526,7 @@ class CombatScene extends Phaser.Scene {
   selectTower(type) {
     if (this.loadout[type] <= 0) return;
     if (this.waveActive || this.gameOver) return;
-
+    this.dismissUpgradePanel();
     this.selectedTowerType = type;
     Object.keys(this.towerButtons).forEach(t => {
       this.towerButtons[t].setFillStyle(t === type ? 0x2a3a4a : (this.loadout[t] > 0 ? 0x1e2530 : 0x161b22));
@@ -389,8 +539,9 @@ class CombatScene extends Phaser.Scene {
     let modifier = 1.0;
     this.placedTowers.forEach(tower => {
       if (tower.type !== 'barricade') return;
-      const dist = Phaser.Math.Distance.Between(tower.x, tower.y, enemy.sprite.x, enemy.sprite.y);
-      if (dist <= tower.data.range) modifier = Math.min(modifier, tower.data.slowAmount);
+      if (Phaser.Math.Distance.Between(tower.x, tower.y, enemy.sprite.x, enemy.sprite.y) <= tower.data.range) {
+        modifier = Math.min(modifier, tower.data.slowAmount);
+      }
     });
     return modifier;
   }
@@ -416,12 +567,11 @@ class CombatScene extends Phaser.Scene {
         bullet.destroy();
         if (!target.alive) return;
         if (tower.type === 'bomber') {
-          const splashR = tower.data.splashRadius || 50;
-          const splashTargets = this.activeEnemies.filter(e => {
+          const splashR = tower.data.splashRadius || 100;
+          this.activeEnemies.filter(e => {
             if (!e.alive || !e.sprite || !e.sprite.active) return false;
             return Phaser.Math.Distance.Between(target.sprite.x, target.sprite.y, e.sprite.x, e.sprite.y) <= splashR;
-          });
-          splashTargets.forEach(e => this.dealDamage(e, tower.data.damage, 'bomber'));
+          }).forEach(e => this.dealDamage(e, tower.data.damage, 'bomber'));
           const flash = this.add.circle(target.sprite.x, target.sprite.y, splashR, 0xe8a020, 0.28).setDepth(6);
           this.tweens.add({ targets: flash, alpha: 0, scaleX: 1.5, scaleY: 1.5, duration: 280, onComplete: () => flash.destroy() });
         } else {
@@ -461,6 +611,10 @@ class CombatScene extends Phaser.Scene {
         onComplete: () => { if (enemy.sprite) enemy.sprite.destroy(); }
       });
     }
+
+    // Refresh upgrade panel if open (parts amount changed)
+    if (this.upgradePanel && this.activeTower) this.showUpgradePanel(this.activeTower);
+
     this.waveEnemyResolved++;
     this.checkWaveComplete();
   }
@@ -475,8 +629,8 @@ class CombatScene extends Phaser.Scene {
       this.tutorialElements.forEach(function(e) { e.destroy(); });
       this.tutorialElements = null;
     }
-
     this.hidePreview();
+    this.dismissUpgradePanel();
     this.selectedTowerType = null;
     Object.keys(this.towerButtons).forEach(t => {
       this.towerButtons[t].setFillStyle(this.loadout[t] > 0 ? 0x1e2530 : 0x161b22);
@@ -488,7 +642,6 @@ class CombatScene extends Phaser.Scene {
     this.startWaveBtn.setAlpha(0.5).disableInteractive();
     this.startWaveBtnLabel.setText('WAVE ' + (this.currentWave + 1));
     this.startWaveBtnSub.setText('ACTIVE');
-
     this.waveText.setText('WAVE ' + (this.currentWave + 1) + ' of ' + this.levelData.waves.length + ' — STAND BY');
     this.waveText.setStyle({ color: '#e8a020' });
 
@@ -531,7 +684,6 @@ class CombatScene extends Phaser.Scene {
     const data   = ENEMY_DATA[type];
     const start  = this.pathPoints[0];
     const sprite = this.add.circle(start.x, start.y, data.size, data.colour).setDepth(7);
-
     const barW   = Math.max(data.size * 2.5, 22);
     const hpBg   = this.add.rectangle(start.x, start.y - data.size - 7, barW, 4, 0x2a3a4a).setDepth(8);
     const hpFill = this.add.rectangle(start.x - barW / 2, start.y - data.size - 7, barW, 4, 0x5eba7d).setOrigin(0, 0.5).setDepth(8);
@@ -550,15 +702,13 @@ class CombatScene extends Phaser.Scene {
     if (!enemy.alive || this.gameOver) return;
     if (idx >= this.pathPoints.length) { this.enemyReachedEnd(enemy); return; }
 
-    const target       = this.pathPoints[idx];
-    const dist         = Phaser.Math.Distance.Between(enemy.sprite.x, enemy.sprite.y, target.x, target.y);
+    const target = this.pathPoints[idx];
+    const dist   = Phaser.Math.Distance.Between(enemy.sprite.x, enemy.sprite.y, target.x, target.y);
     enemy.pathProgress = idx;
-
-    const effectiveSpeed = enemy.data.speed * this.getSpeedModifier(enemy);
 
     this.tweens.add({
       targets: enemy.sprite, x: target.x, y: target.y,
-      duration: (dist / effectiveSpeed) * 1000, ease: 'Linear',
+      duration: (dist / (enemy.data.speed * this.getSpeedModifier(enemy))) * 1000, ease: 'Linear',
       onComplete: () => { if (enemy.alive) this.moveToWaypoint(enemy, idx + 1); }
     });
   }
@@ -568,7 +718,6 @@ class CombatScene extends Phaser.Scene {
     enemy.alive = false;
     this.activeEnemies = this.activeEnemies.filter(e => e !== enemy);
     this.enemiesEscaped++;
-
     if (enemy.hpBg)   { enemy.hpBg.destroy();   enemy.hpBg   = null; }
     if (enemy.hpFill) { enemy.hpFill.destroy();  enemy.hpFill = null; }
     if (enemy.sprite) enemy.sprite.destroy();
@@ -581,7 +730,6 @@ class CombatScene extends Phaser.Scene {
     this.cameras.main.shake(140, 0.007);
 
     if (this.baseHp <= 0) { this.triggerGameOver(false); return; }
-
     this.waveEnemyResolved++;
     this.checkWaveComplete();
   }
@@ -614,7 +762,7 @@ class CombatScene extends Phaser.Scene {
     this.gameOver   = true;
     this.waveActive = false;
     this.hidePreview();
-
+    this.dismissUpgradePanel();
     this.towerTimerEvents.forEach(e => e.remove(false));
     this.towerTimerEvents = [];
 
@@ -624,14 +772,14 @@ class CombatScene extends Phaser.Scene {
     this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.88).setDepth(20);
 
     const titleColour = victory ? '#5eba7d' : '#c43a3a';
-      this.add.text(width / 2, 168, victory ? 'VICTORY' : 'BASE LOST',
+    this.add.text(width / 2, 168, victory ? 'VICTORY' : 'BASE LOST', {
       fontFamily: 'monospace', fontSize: '44px', color: titleColour, fontStyle: 'bold'
     }).setOrigin(0.5).setDepth(21);
-      this.add.text(width / 2, 196, victory ? 'YOUR SOVEREIGNTY HOLDS'
+    this.add.text(width / 2, 216, victory ? 'YOUR SOVEREIGNTY HOLDS' : 'YOUR BASE WAS OVERWHELMED', {
       fontFamily: 'monospace', fontSize: '13px', color: '#8899aa', letterSpacing: 2
     }).setOrigin(0.5).setDepth(21);
 
-    let y = 216;
+    let y = 240;
 
     const hpColour = this.baseHp > 5 ? '#5eba7d' : this.baseHp > 2 ? '#e8a020' : '#c43a3a';
     this.add.text(28, y, 'BASE HP REMAINING', { fontFamily: 'monospace', fontSize: '10px', color: '#8899aa', letterSpacing: 2 }).setDepth(21);
@@ -662,7 +810,7 @@ class CombatScene extends Phaser.Scene {
         this.add.text(width - 28, y, 'x' + this.towersUsed[type] + ' placed', { fontFamily: 'monospace', fontSize: '12px', color: '#556677' }).setOrigin(1, 0).setDepth(21);
       } else {
         const st = this.towerStats[type];
-        this.add.text(width / 2 - 8, y, '' + (st.damageDealt || 0) + ' dmg', { fontFamily: 'monospace', fontSize: '12px', color: '#eef2f8' }).setOrigin(1, 0).setDepth(21);
+        this.add.text(width / 2 - 8, y, '' + Math.round(st.damageDealt || 0) + ' dmg', { fontFamily: 'monospace', fontSize: '12px', color: '#eef2f8' }).setOrigin(1, 0).setDepth(21);
         this.add.text(width - 28, y, (st.kills || 0) + ' kills', { fontFamily: 'monospace', fontSize: '12px', color: '#8899aa' }).setOrigin(1, 0).setDepth(21);
       }
       y += 20;
@@ -708,13 +856,15 @@ class CombatScene extends Phaser.Scene {
     }
 
     const btnY = height - 80;
-    const btn = this.add.rectangle(width / 2, btnY, 260, 68, 0x161b22).setInteractive().setDepth(22);
+    const btn  = this.add.rectangle(width / 2, btnY, 260, 68, 0x161b22).setInteractive().setDepth(22);
     this.add.rectangle(width / 2, btnY, 260, 68).setStrokeStyle(1, 0xe8a020).setDepth(22);
     this.add.text(width / 2, btnY, 'RETURN TO BASE', { fontFamily: 'monospace', fontSize: '18px', color: '#e8a020', fontStyle: 'bold' }).setOrigin(0.5).setDepth(23);
     btn.on('pointerdown', () => { this.cameras.main.fade(300, 0, 0, 0); this.time.delayedCall(300, () => this.scene.start('BaseScene')); });
     btn.on('pointerover', () => btn.setFillStyle(0x252c38));
     btn.on('pointerout',  () => btn.setFillStyle(0x161b22));
   }
+
+  // ── Save ──────────────────────────────────────────────────────────────────
 
   saveProgress() {
     const slotIndex = localStorage.getItem('factower_active_slot');
@@ -740,6 +890,8 @@ class CombatScene extends Phaser.Scene {
 
     localStorage.setItem(saveKey, JSON.stringify(save));
   }
+
+  // ── Per-frame ─────────────────────────────────────────────────────────────
 
   update() {
     this.activeEnemies.forEach(enemy => {

@@ -6,7 +6,7 @@ const TOWER_DATA = {
     tier:     1,
     damage:   15,
     range:    120,
-    fireRate: 900,
+    fireRate: 800,
     speed:    70
   },
   bomber: {
@@ -16,7 +16,7 @@ const TOWER_DATA = {
     tier:         1,
     damage:       20,
     range:        90,
-    fireRate:     2500,
+    fireRate:     1600,
     splashRadius: 100,
     speed:        50
   },

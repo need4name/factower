@@ -631,7 +631,7 @@ class CombatScene extends Phaser.Scene {
       fontFamily: 'monospace', fontSize: '13px', color: '#8899aa', letterSpacing: 2
     }).setOrigin(0.5).setDepth(21);
 
-    let y = 186;
+    let y = 216;
 
     const hpColour = this.baseHp > 5 ? '#5eba7d' : this.baseHp > 2 ? '#e8a020' : '#c43a3a';
     this.add.text(28, y, 'BASE HP REMAINING', { fontFamily: 'monospace', fontSize: '10px', color: '#8899aa', letterSpacing: 2 }).setDepth(21);

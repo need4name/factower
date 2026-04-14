@@ -34,14 +34,14 @@ class CombatScene extends Phaser.Scene {
     this.enemiesEscaped    = 0;
     this.upgradePanel      = null;
     this.activeTower       = null;
+    this.previewCircle     = null;
+    this.previewRing       = null;
+
     this.towerStats = {
       gunner:    { damageDealt: 0, kills: 0 },
       bomber:    { damageDealt: 0, kills: 0 },
       barricade: { placed: 0 }
     };
-
-    this.previewCircle = null;
-    this.previewRing   = null;
 
     const stockpile = (this.saveData && this.saveData.stockpile) ? this.saveData.stockpile : {};
     this.loadout = {
@@ -99,21 +99,21 @@ class CombatScene extends Phaser.Scene {
   distToSegment(px, py, ax, ay, bx, by) {
     const dx = bx - ax, dy = by - ay;
     const lenSq = dx * dx + dy * dy;
-    if (lenSq === 0) return Math.sqrt((px-ax)*(px-ax)+(py-ay)*(py-ay));
-    let t = Math.max(0, Math.min(1, ((px-ax)*dx+(py-ay)*dy)/lenSq));
-    return Math.sqrt((px-(ax+t*dx))*(px-(ax+t*dx))+(py-(ay+t*dy))*(py-(ay+t*dy)));
+    if (lenSq === 0) return Math.sqrt((px - ax) * (px - ax) + (py - ay) * (py - ay));
+    let t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+    return Math.sqrt((px - (ax + t * dx)) * (px - (ax + t * dx)) + (py - (ay + t * dy)) * (py - (ay + t * dy)));
   }
 
   isOnPath(x, y) {
     for (let i = 0; i < this.pathPoints.length - 1; i++) {
-      const a = this.pathPoints[i], b = this.pathPoints[i+1];
+      const a = this.pathPoints[i], b = this.pathPoints[i + 1];
       if (this.distToSegment(x, y, a.x, a.y, b.x, b.y) < 30) return true;
     }
     return false;
   }
 
   isOccupied(x, y) {
-    return this.placedTowers.some(t => Math.sqrt((t.x-x)*(t.x-x)+(t.y-y)*(t.y-y)) < 32);
+    return this.placedTowers.some(t => Math.sqrt((t.x - x) * (t.x - x) + (t.y - y) * (t.y - y)) < 32);
   }
 
   isInPlayArea(x, y) {
@@ -129,7 +129,7 @@ class CombatScene extends Phaser.Scene {
 
   setupPlacementInput() {
     this.input.on('pointermove', (pointer) => {
-      if (!this.selectedTowerType || this.waveActive || this.gameOver) return;
+      if (!this.selectedTowerType || this.gameOver) return;
       if (!this.isInPlayArea(pointer.x, pointer.y)) { this.hidePreview(); return; }
       this.updatePreview(pointer.x, pointer.y);
     });
@@ -137,23 +137,13 @@ class CombatScene extends Phaser.Scene {
     this.input.on('pointerup', (pointer) => {
       if (this.gameOver) return;
 
-      // Tapping an existing tower always opens upgrade panel
-      const tappedTower = this.placedTowers.find(t =>
-        Phaser.Math.Distance.Between(t.x, t.y, pointer.x, pointer.y) < 22
-      );
-      if (tappedTower) {
-        this.showUpgradePanel(tappedTower);
-        return;
-      }
-
-      // Tapping elsewhere dismisses upgrade panel
+      // Dismiss upgrade panel on background tap
       if (this.upgradePanel) {
         this.dismissUpgradePanel();
         return;
       }
 
-      // Tower placement — blocked during wave
-      if (!this.selectedTowerType || this.waveActive) return;
+      if (!this.selectedTowerType) return;
       if (!this.isInPlayArea(pointer.x, pointer.y)) return;
       if (this.canPlaceAt(pointer.x, pointer.y)) this.placeTower(pointer.x, pointer.y);
     });
@@ -191,6 +181,9 @@ class CombatScene extends Phaser.Scene {
     const type = this.selectedTowerType;
     const data = TOWER_DATA[type];
 
+    // Invisible interactive hit zone — sits on top, reliably catches taps on mobile
+    const hitZone = this.add.circle(x, y, 20, 0xffffff, 0).setDepth(10).setInteractive();
+
     const towerCircle = this.add.circle(x, y, 14, data.colour, 0.9).setDepth(4);
     this.add.circle(x, y, 14).setStrokeStyle(2, data.colour).setDepth(4);
     const towerLabel = this.add.text(x, y, data.name.substring(0, 3), {
@@ -214,14 +207,25 @@ class CombatScene extends Phaser.Scene {
 
     const tower = {
       type, x, y,
-      data:         { ...data },
-      lastFired:    0,
-      upgradeTier:  0,
+      data:        { ...data },
+      lastFired:   0,
+      upgradeTier: 0,
       towerCircle,
       towerLabel,
-      tierBadge:    null
+      tierBadge:   null,
+      hitZone
     };
     this.placedTowers.push(tower);
+
+    // Direct tap on tower — deselects placement mode and opens upgrade panel
+    hitZone.on('pointerup', () => {
+      this.selectedTowerType = null;
+      Object.keys(this.towerButtons).forEach(t => {
+        this.towerButtons[t].setFillStyle(this.loadout[t] > 0 ? 0x1e2530 : 0x161b22);
+      });
+      this.hidePreview();
+      this.showUpgradePanel(tower);
+    });
 
     if (type !== 'barricade') {
       const timerEvent = this.time.addEvent({ delay: 120, callback: () => this.towerShoot(tower), loop: true });
@@ -252,42 +256,40 @@ class CombatScene extends Phaser.Scene {
     const border = this.add.rectangle(width / 2, panelY, width - 24, panelH).setStrokeStyle(2, colour).setDepth(18);
     items.push(bg, border);
 
-    // Tower name + current tier
     const tierStr = tier === 0 ? 'BASE' : 'TIER ' + tier;
-    items.push(this.add.text(28, panelTop + 12, tower.data.name, {
-      fontFamily: 'monospace', fontSize: '14px', color: hex, fontStyle: 'bold'
-    }).setDepth(19));
-    items.push(this.add.text(width - 28, panelTop + 12, tierStr, {
-      fontFamily: 'monospace', fontSize: '12px', color: tier > 0 ? '#e8a020' : '#445566', fontStyle: 'bold'
-    }).setOrigin(1, 0).setDepth(19));
-
-    // Path name
-    items.push(this.add.text(28, panelTop + 30, 'PATH A: ' + path.name, {
-      fontFamily: 'monospace', fontSize: '10px', color: '#556677', letterSpacing: 2
-    }).setDepth(19));
+    items.push(
+      this.add.text(28, panelTop + 12, tower.data.name, {
+        fontFamily: 'monospace', fontSize: '14px', color: hex, fontStyle: 'bold'
+      }).setDepth(19),
+      this.add.text(width - 28, panelTop + 12, tierStr, {
+        fontFamily: 'monospace', fontSize: '12px', color: tier > 0 ? '#e8a020' : '#445566', fontStyle: 'bold'
+      }).setOrigin(1, 0).setDepth(19),
+      this.add.text(28, panelTop + 30, 'PATH A: ' + path.name, {
+        fontFamily: 'monospace', fontSize: '10px', color: '#556677', letterSpacing: 2
+      }).setDepth(19)
+    );
 
     if (tier < maxTier) {
       const nextTier  = path.tiers[tier];
       const canAfford = this.parts >= nextTier.cost;
 
-      // Description
-      items.push(this.add.text(28, panelTop + 52, nextTier.label, {
-        fontFamily: 'monospace', fontSize: '13px', color: '#eef2f8',
-        wordWrap: { width: width - 180 }
-      }).setDepth(19));
+      items.push(
+        this.add.text(28, panelTop + 52, nextTier.label, {
+          fontFamily: 'monospace', fontSize: '13px', color: '#eef2f8',
+          wordWrap: { width: width - 180 }
+        }).setDepth(19),
+        this.add.text(28, panelTop + panelH - 40, nextTier.cost + ' PARTS', {
+          fontFamily: 'monospace', fontSize: '15px',
+          color: canAfford ? '#e8a020' : '#c43a3a', fontStyle: 'bold'
+        }).setDepth(19)
+      );
 
-      // Cost
-      items.push(this.add.text(28, panelTop + panelH - 40, nextTier.cost + ' PARTS', {
-        fontFamily: 'monospace', fontSize: '15px',
-        color: canAfford ? '#e8a020' : '#c43a3a', fontStyle: 'bold'
-      }).setDepth(19));
       if (!canAfford) {
         items.push(this.add.text(28, panelTop + panelH - 20, 'not enough parts', {
           fontFamily: 'monospace', fontSize: '10px', color: '#445566'
         }).setDepth(19));
       }
 
-      // Upgrade button
       const btnBg  = canAfford ? 0x162616 : 0x161b22;
       const btnBdr = canAfford ? 0x5eba7d : 0x334455;
       const btnTxt = canAfford ? '#5eba7d' : '#445566';
@@ -309,7 +311,7 @@ class CombatScene extends Phaser.Scene {
       }).setOrigin(0.5).setDepth(19));
     }
 
-    // Range ring for this tower while panel is open
+    // Range ring visible while panel is open
     const ring  = this.add.circle(tower.x, tower.y, tower.data.range, colour, 0.08).setDepth(3);
     const ringB = this.add.circle(tower.x, tower.y, tower.data.range).setStrokeStyle(1, colour, 0.5).setDepth(3);
     items.push(ring, ringB);
@@ -327,8 +329,8 @@ class CombatScene extends Phaser.Scene {
 
   applyUpgrade(tower) {
     if (!tower) return;
-    const path    = TOWER_DATA[tower.type].upgrades.pathA;
-    const tier    = tower.upgradeTier;
+    const path = TOWER_DATA[tower.type].upgrades.pathA;
+    const tier = tower.upgradeTier;
     if (tier >= path.tiers.length) return;
 
     const upgrade = path.tiers[tier];
@@ -338,14 +340,12 @@ class CombatScene extends Phaser.Scene {
     this.partsText.setText('' + this.parts);
     tower.upgradeTier++;
 
-    // Apply stat changes
-    if (upgrade.fireRate    !== undefined) tower.data.fireRate    = upgrade.fireRate;
-    if (upgrade.damageBonus !== undefined) tower.data.damage     += upgrade.damageBonus;
-    if (upgrade.rangeBonus  !== undefined) tower.data.range      += upgrade.rangeBonus;
+    if (upgrade.fireRate     !== undefined) tower.data.fireRate     = upgrade.fireRate;
+    if (upgrade.damageBonus  !== undefined) tower.data.damage      += upgrade.damageBonus;
+    if (upgrade.rangeBonus   !== undefined) tower.data.range       += upgrade.rangeBonus;
     if (upgrade.splashRadius !== undefined) tower.data.splashRadius = upgrade.splashRadius;
-    if (upgrade.slowAmount  !== undefined) tower.data.slowAmount  = upgrade.slowAmount;
+    if (upgrade.slowAmount   !== undefined) tower.data.slowAmount   = upgrade.slowAmount;
 
-    // Burn DPS — barricade T3
     if (upgrade.burnDps) {
       tower.data.burnDps = upgrade.burnDps;
       const burnTimer = this.time.addEvent({
@@ -364,17 +364,14 @@ class CombatScene extends Phaser.Scene {
       this.towerTimerEvents.push(burnTimer);
     }
 
-    // Tier badge — small indicator above tower
     if (tower.tierBadge) tower.tierBadge.destroy();
     tower.tierBadge = this.add.text(tower.x + 11, tower.y - 17, 'T' + tower.upgradeTier, {
       fontFamily: 'monospace', fontSize: '9px', color: '#ffffff', fontStyle: 'bold'
     }).setDepth(6);
 
-    // Flash
     const flash = this.add.circle(tower.x, tower.y, 28, tower.data.colour, 0.45).setDepth(6);
     this.tweens.add({ targets: flash, alpha: 0, scaleX: 2, scaleY: 2, duration: 380, onComplete: () => flash.destroy() });
 
-    // Refresh panel with updated state
     this.showUpgradePanel(tower);
   }
 
@@ -382,7 +379,6 @@ class CombatScene extends Phaser.Scene {
 
   showTutorialHint() {
     const { width, height } = this.scale;
-    const text = this.levelData.tutorialText;
 
     const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.6).setDepth(30);
     const card    = this.add.rectangle(width / 2, height / 2, width - 48, 192, 0x0a160a).setDepth(31);
@@ -390,7 +386,7 @@ class CombatScene extends Phaser.Scene {
     const label   = this.add.text(width / 2, height / 2 - 74, 'LEVEL ' + this.levelId + ' — ' + (this.levelData.name || ''), {
       fontFamily: 'monospace', fontSize: '10px', color: '#5eba7d', letterSpacing: 2
     }).setOrigin(0.5).setDepth(32);
-    const hint = this.add.text(width / 2, height / 2 - 16, text, {
+    const hint = this.add.text(width / 2, height / 2 - 16, this.levelData.tutorialText, {
       fontFamily: 'monospace', fontSize: '12px', color: '#eef2f8',
       align: 'center', wordWrap: { width: width - 96 }, lineSpacing: 5
     }).setOrigin(0.5).setDepth(32);
@@ -525,7 +521,7 @@ class CombatScene extends Phaser.Scene {
 
   selectTower(type) {
     if (this.loadout[type] <= 0) return;
-    if (this.waveActive || this.gameOver) return;
+    if (this.gameOver) return;
     this.dismissUpgradePanel();
     this.selectedTowerType = type;
     Object.keys(this.towerButtons).forEach(t => {
@@ -612,7 +608,7 @@ class CombatScene extends Phaser.Scene {
       });
     }
 
-    // Refresh upgrade panel if open (parts amount changed)
+    // Refresh upgrade panel so parts count and button state stay current
     if (this.upgradePanel && this.activeTower) this.showUpgradePanel(this.activeTower);
 
     this.waveEnemyResolved++;
@@ -629,12 +625,6 @@ class CombatScene extends Phaser.Scene {
       this.tutorialElements.forEach(function(e) { e.destroy(); });
       this.tutorialElements = null;
     }
-    this.hidePreview();
-    this.dismissUpgradePanel();
-    this.selectedTowerType = null;
-    Object.keys(this.towerButtons).forEach(t => {
-      this.towerButtons[t].setFillStyle(this.loadout[t] > 0 ? 0x1e2530 : 0x161b22);
-    });
 
     const waveData = this.levelData.waves[this.currentWave];
     this.waveActive = true;

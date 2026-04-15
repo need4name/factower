@@ -52,8 +52,8 @@ class CombatScene extends Phaser.Scene {
     };
     this.startingLoadout = { gunner: this.loadout.gunner, bomber: this.loadout.bomber, barricade: this.loadout.barricade };
 
-    this.HY = 178;
-    this.CT = 255;
+    this.HY = 200;
+    this.CT = 278;
     this.CB = 686;
 
     this.PLAY_TOP    = this.HY + 68;

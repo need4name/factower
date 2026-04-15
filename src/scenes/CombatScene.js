@@ -135,13 +135,19 @@ class CombatScene extends Phaser.Scene {
     });
 
     this.input.on('pointerup', (pointer) => {
-      if (this.gameOver) return;
+  if (this.gameOver) return;
 
-      // Dismiss upgrade panel on background tap
-      if (this.upgradePanel) {
-        this.dismissUpgradePanel();
-        return;
-      }
+  if (this.upgradePanel) {
+    if (!this.towerTapped) this.dismissUpgradePanel();
+    this.towerTapped = false;
+    return;
+  }
+
+  if (!this.selectedTowerType) return;
+  if (!this.isInPlayArea(pointer.x, pointer.y)) return;
+  if (this.canPlaceAt(pointer.x, pointer.y)) this.placeTower(pointer.x, pointer.y);
+});
+
 
       if (!this.selectedTowerType) return;
       if (!this.isInPlayArea(pointer.x, pointer.y)) return;

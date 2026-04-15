@@ -1,9 +1,7 @@
-// All path points use:
-//   x: absolute canvas x
-//   oy: y offset from CT (scene adds CT to get absolute y)
-// UBZs: { x, oy, w, h }  — debris zones, no tower placement
-// Hotspots: { x, oy, radius, mult } — power zones (mult > 1 = boost, < 1 = drain)
-// mult colours: boost = amber (0xe8a020), drain = blue (0x1a4a8a)
+// Path points use oy (y offset from CT).
+// UBZs: { x, oy, w, h } — placed at map edges and logical dead zones.
+// Hotspots: { x, oy, radius, mult } — seeded by levelId for determinism.
+// mult > 1 = power boost (amber), mult < 1 = power drain (blue).
 
 const LEVEL_DATA = {
   storylines: [
@@ -14,7 +12,7 @@ const LEVEL_DATA = {
       faction: 'Non-Continuous Front',
       levels: [
 
-        // ── L1 ─────────────────────────────────────────────────────────────
+        // L1 — simple S-curve, gentle intro, minimal UBZs (edge debris only)
         {
           id: 1,
           name: 'THE FIRST PRESS-GANG',
@@ -22,35 +20,39 @@ const LEVEL_DATA = {
           difficulty: 1,
           baseHp: 15,
           tutorialText: 'Tap GUNNER below to select it.\nThen tap anywhere off the path to place it.',
-          tutorialOptimalSpot: { x: 175, oy: 125 },
+          tutorialOptimalSpot: { x: 175, oy: 130 },
           path: [
             { x: 195, oy: 0   },
-            { x: 195, oy: 52  },
-            { x: 75,  oy: 52  },
-            { x: 75,  oy: 185 },
-            { x: 310, oy: 185 },
-            { x: 310, oy: 308 },
-            { x: 75,  oy: 308 },
-            { x: 75,  oy: 375 },
-            { x: 195, oy: 375 },
+            { x: 195, oy: 55  },
+            { x: 72,  oy: 55  },
+            { x: 72,  oy: 190 },
+            { x: 312, oy: 190 },
+            { x: 312, oy: 310 },
+            { x: 72,  oy: 310 },
+            { x: 72,  oy: 378 },
+            { x: 195, oy: 378 },
             { x: 195, oy: 415 }
           ],
+          // L1: edge UBZs only — corners the player wouldn't reach anyway
           ubzs: [
-            { x: 128, oy: 240, w: 88,  h: 50 }
+            { x: 0,   oy: 0,   w: 30,  h: 415 }, // left edge strip
+            { x: 350, oy: 0,   w: 40,  h: 415 }, // right edge strip
+            { x: 0,   oy: 385, w: 390, h: 30  }  // bottom edge
           ],
+          // Hotspots seeded by level ID 1 — deterministic
           hotspots: [
-            { x: 175, oy: 120, radius: 55, mult: 1.20 },
-            { x: 310, oy: 245, radius: 40, mult: 0.85 }
+            { x: 175, oy: 122, radius: 58, mult: 1.22 },
+            { x: 312, oy: 250, radius: 46, mult: 0.84 }
           ],
           waves: [
             {
               preWaveDelay: 3500,
-              enemies: [ { type: 'saltChild', count: 5, interval: 3200 } ]
+              enemies: [ { type: 'saltChild', count: 5, interval: 3000 } ]
             }
           ]
         },
 
-        // ── L2 ─────────────────────────────────────────────────────────────
+        // L2 — reversed Z path
         {
           id: 2,
           name: 'HEAVY ORDNANCE',
@@ -60,40 +62,44 @@ const LEVEL_DATA = {
           tutorialText: 'Your second worker is now active in the Factory.\nMore workers means more towers — build before harder missions.',
           path: [
             { x: 195, oy: 0   },
-            { x: 195, oy: 46  },
-            { x: 315, oy: 46  },
-            { x: 315, oy: 152 },
-            { x: 80,  oy: 152 },
-            { x: 80,  oy: 260 },
-            { x: 315, oy: 260 },
-            { x: 315, oy: 352 },
-            { x: 195, oy: 352 },
+            { x: 195, oy: 44  },
+            { x: 315, oy: 44  },
+            { x: 315, oy: 150 },
+            { x: 78,  oy: 150 },
+            { x: 78,  oy: 258 },
+            { x: 315, oy: 258 },
+            { x: 315, oy: 355 },
+            { x: 195, oy: 355 },
             { x: 195, oy: 415 }
           ],
+          // L2: edges + one dead-zone island in the middle of each large open zone
           ubzs: [
-            { x: 130, oy: 65,  w: 100, h: 72 },
-            { x: 130, oy: 278, w: 100, h: 62 }
+            { x: 0,   oy: 0,   w: 28,  h: 415 },
+            { x: 362, oy: 0,   w: 28,  h: 415 },
+            { x: 0,   oy: 385, w: 390, h: 30  },
+            { x: 130, oy: 60,  w: 72,  h: 78  }, // island in upper open zone
+            { x: 130, oy: 272, w: 72,  h: 72  }  // island in lower open zone
           ],
           hotspots: [
-            { x: 195, oy: 205, radius: 65, mult: 1.25 },
-            { x: 80,  oy: 46,  radius: 42, mult: 0.82 }
+            { x: 195, oy: 200, radius: 62, mult: 1.24 },
+            { x: 78,  oy: 44,  radius: 44, mult: 0.82 }
           ],
           waves: [
             {
               preWaveDelay: 3000,
-              enemies: [ { type: 'saltChild', count: 10, interval: 1600 } ]
+              enemies: [ { type: 'saltChild', count: 10, interval: 1700 } ]
             },
             {
               preWaveDelay: 5500,
               enemies: [
-                { type: 'saltChild',   count: 8, interval: 1400 },
+                { type: 'saltChild',   count: 8, interval: 1500 },
                 { type: 'scrapRunner', count: 3, interval: 2200 }
               ]
             }
           ]
         },
 
-        // ── L3 ─────────────────────────────────────────────────────────────
+        // L3 — triple-zigzag
         {
           id: 3,
           name: 'OVERNIGHT ASSAULT',
@@ -103,10 +109,10 @@ const LEVEL_DATA = {
           tutorialText: 'PARTS are earned from every kill — shown top-left.\nKill everything you can — you\'ll need them soon.',
           path: [
             { x: 195, oy: 0   },
-            { x: 195, oy: 36  },
-            { x: 65,  oy: 36  },
-            { x: 65,  oy: 128 },
-            { x: 315, oy: 128 },
+            { x: 195, oy: 35  },
+            { x: 65,  oy: 35  },
+            { x: 65,  oy: 125 },
+            { x: 315, oy: 125 },
             { x: 315, oy: 218 },
             { x: 65,  oy: 218 },
             { x: 65,  oy: 308 },
@@ -116,13 +122,17 @@ const LEVEL_DATA = {
             { x: 195, oy: 415 }
           ],
           ubzs: [
-            { x: 140, oy: 148, w: 72, h: 60 },
-            { x: 140, oy: 268, w: 72, h: 30 }
+            { x: 0,   oy: 0,   w: 26,  h: 415 },
+            { x: 364, oy: 0,   w: 26,  h: 415 },
+            { x: 0,   oy: 385, w: 390, h: 30  },
+            // Dead zones between the three horizontal corridors
+            { x: 125, oy: 42,  w: 80,  h: 72  },
+            { x: 125, oy: 232, w: 80,  h: 65  }
           ],
           hotspots: [
-            { x: 195, oy: 128, radius: 52, mult: 1.20 },
-            { x: 65,  oy: 263, radius: 48, mult: 1.15 },
-            { x: 315, oy: 173, radius: 42, mult: 0.80 }
+            { x: 195, oy: 80,  radius: 52, mult: 1.20 },
+            { x: 65,  oy: 260, radius: 48, mult: 1.18 },
+            { x: 315, oy: 172, radius: 44, mult: 0.80 }
           ],
           waves: [
             {
@@ -146,36 +156,40 @@ const LEVEL_DATA = {
           ]
         },
 
-        // ── L4 ─────────────────────────────────────────────────────────────
+        // L4 — asymmetric spiral
         {
           id: 4,
           name: 'THE COUNTER-RAID',
-          description: 'They retaliate. Tap any placed tower to spend PARTS on upgrades.',
+          description: 'They retaliate. Upgrades now available — tap a placed tower.',
           difficulty: 3,
           baseHp: 10,
           tutorialText: 'UPGRADES UNLOCKED! Tap any placed tower during combat.\nSpend PARTS to increase its power. Upgrades reset each level.',
           path: [
             { x: 195, oy: 0   },
             { x: 195, oy: 40  },
-            { x: 320, oy: 40  },
-            { x: 320, oy: 130 },
+            { x: 318, oy: 40  },
+            { x: 318, oy: 130 },
             { x: 65,  oy: 130 },
             { x: 65,  oy: 228 },
             { x: 255, oy: 228 },
-            { x: 255, oy: 308 },
-            { x: 135, oy: 308 },
-            { x: 135, oy: 368 },
+            { x: 255, oy: 310 },
+            { x: 130, oy: 310 },
+            { x: 130, oy: 368 },
             { x: 195, oy: 368 },
             { x: 195, oy: 415 }
           ],
+          // L4: edges + larger UBZ islands — starts to feel more constrained
           ubzs: [
-            { x: 158, oy: 48,  w: 100, h: 72 },
-            { x: 158, oy: 248, w: 62,  h: 50 }
+            { x: 0,   oy: 0,   w: 26,  h: 415 },
+            { x: 364, oy: 0,   w: 26,  h: 415 },
+            { x: 0,   oy: 385, w: 390, h: 30  },
+            { x: 155, oy: 45,  w: 100, h: 75  }, // blocks easy corner placement
+            { x: 155, oy: 240, w: 70,  h: 58  }
           ],
           hotspots: [
-            { x: 320, oy: 85,  radius: 55, mult: 1.20 },
-            { x: 65,  oy: 179, radius: 52, mult: 1.20 },
-            { x: 195, oy: 338, radius: 48, mult: 0.82 }
+            { x: 318, oy: 85,  radius: 55, mult: 1.22 },
+            { x: 65,  oy: 178, radius: 52, mult: 1.22 },
+            { x: 195, oy: 340, radius: 48, mult: 0.80 }
           ],
           waves: [
             {
@@ -202,7 +216,7 @@ const LEVEL_DATA = {
           ]
         },
 
-        // ── L5 ─────────────────────────────────────────────────────────────
+        // L5 — double-back hairpin — UBZs start blocking prime spots
         {
           id: 5,
           name: 'THE DRIFTWOOD HULK',
@@ -214,26 +228,31 @@ const LEVEL_DATA = {
             { x: 195, oy: 0   },
             { x: 195, oy: 30  },
             { x: 70,  oy: 30  },
-            { x: 70,  oy: 108 },
-            { x: 310, oy: 108 },
-            { x: 310, oy: 178 },
-            { x: 155, oy: 178 },
-            { x: 155, oy: 256 },
-            { x: 310, oy: 256 },
-            { x: 310, oy: 332 },
-            { x: 70,  oy: 332 },
+            { x: 70,  oy: 110 },
+            { x: 308, oy: 110 },
+            { x: 308, oy: 180 },
+            { x: 152, oy: 180 },
+            { x: 152, oy: 258 },
+            { x: 308, oy: 258 },
+            { x: 308, oy: 335 },
+            { x: 70,  oy: 335 },
             { x: 70,  oy: 382 },
             { x: 195, oy: 382 },
             { x: 195, oy: 415 }
           ],
+          // L5: edges, islands, AND a zone that blocks the best inner bend
           ubzs: [
-            { x: 165, oy: 35,  w: 90, h: 62 },
-            { x: 165, oy: 188, w: 80, h: 58 }
+            { x: 0,   oy: 0,   w: 26,  h: 415 },
+            { x: 364, oy: 0,   w: 26,  h: 415 },
+            { x: 0,   oy: 385, w: 390, h: 30  },
+            { x: 162, oy: 35,  w: 90,  h: 68  }, // forces sub-optimal upper placement
+            { x: 80,  oy: 192, w: 58,  h: 55  }, // blocks inner hairpin
+            { x: 174, oy: 268, w: 68,  h: 55  }
           ],
           hotspots: [
-            { x: 70,  oy: 143, radius: 52, mult: 1.25 },
-            { x: 310, oy: 217, radius: 52, mult: 1.25 },
-            { x: 195, oy: 315, radius: 48, mult: 0.80 }
+            { x: 70,  oy: 143, radius: 52, mult: 1.26 },
+            { x: 308, oy: 218, radius: 52, mult: 1.26 },
+            { x: 195, oy: 320, radius: 48, mult: 0.78 }
           ],
           waves: [
             {
@@ -257,15 +276,15 @@ const LEVEL_DATA = {
             {
               preWaveDelay: 7000,
               enemies: [
-                { type: 'driftwoodHulk', count: 2, interval: 5000 },
+                { type: 'driftwoodHulk', count: 2,  interval: 5000 },
                 { type: 'saltChild',     count: 12, interval: 1200 },
-                { type: 'scrapRunner',   count: 6, interval: 1600 }
+                { type: 'scrapRunner',   count: 6,  interval: 1600 }
               ]
             }
           ]
         },
 
-        // ── L6 ─────────────────────────────────────────────────────────────
+        // L6 — figure-8 loop — UBZs cut off multiple good positions
         {
           id: 6,
           name: 'THE KING\'S VISION',
@@ -279,25 +298,28 @@ const LEVEL_DATA = {
             { x: 315, oy: 36  },
             { x: 315, oy: 118 },
             { x: 75,  oy: 118 },
-            { x: 75,  oy: 192 },
-            { x: 235, oy: 192 },
-            { x: 235, oy: 268 },
-            { x: 75,  oy: 268 },
-            { x: 75,  oy: 342 },
-            { x: 315, oy: 342 },
-            { x: 315, oy: 380 },
-            { x: 195, oy: 380 },
+            { x: 75,  oy: 195 },
+            { x: 235, oy: 195 },
+            { x: 235, oy: 270 },
+            { x: 75,  oy: 270 },
+            { x: 75,  oy: 345 },
+            { x: 315, oy: 345 },
+            { x: 315, oy: 382 },
+            { x: 195, oy: 382 },
             { x: 195, oy: 415 }
           ],
           ubzs: [
-            { x: 100, oy: 40,  w: 85, h: 68 },
-            { x: 158, oy: 200, w: 68, h: 58 },
-            { x: 100, oy: 355, w: 85, h: 50 }
+            { x: 0,   oy: 0,   w: 26,  h: 415 },
+            { x: 364, oy: 0,   w: 26,  h: 415 },
+            { x: 0,   oy: 385, w: 390, h: 30  },
+            { x: 100, oy: 42,  w: 88,  h: 68  },
+            { x: 154, oy: 202, w: 66,  h: 58  },
+            { x: 100, oy: 352, w: 88,  h: 26  }
           ],
           hotspots: [
-            { x: 195, oy: 78,  radius: 58, mult: 1.30 },
-            { x: 75,  oy: 230, radius: 52, mult: 1.20 },
-            { x: 315, oy: 155, radius: 48, mult: 0.78 }
+            { x: 195, oy: 78,  radius: 58, mult: 1.28 },
+            { x: 75,  oy: 232, radius: 55, mult: 1.22 },
+            { x: 315, oy: 157, radius: 48, mult: 0.78 }
           ],
           waves: [
             {
@@ -334,7 +356,7 @@ const LEVEL_DATA = {
           ]
         },
 
-        // ── L7 ─────────────────────────────────────────────────────────────
+        // L7 — tight corridor, heavy UBZ — placement at a real premium
         {
           id: 7,
           name: 'THE PRODUCTION LINE',
@@ -346,28 +368,32 @@ const LEVEL_DATA = {
             { x: 195, oy: 0   },
             { x: 195, oy: 26  },
             { x: 65,  oy: 26  },
-            { x: 65,  oy: 95  },
-            { x: 315, oy: 95  },
-            { x: 315, oy: 162 },
-            { x: 148, oy: 162 },
-            { x: 148, oy: 236 },
-            { x: 315, oy: 236 },
-            { x: 315, oy: 308 },
-            { x: 65,  oy: 308 },
-            { x: 65,  oy: 375 },
-            { x: 195, oy: 375 },
+            { x: 65,  oy: 96  },
+            { x: 315, oy: 96  },
+            { x: 315, oy: 165 },
+            { x: 148, oy: 165 },
+            { x: 148, oy: 238 },
+            { x: 315, oy: 238 },
+            { x: 315, oy: 310 },
+            { x: 65,  oy: 310 },
+            { x: 65,  oy: 378 },
+            { x: 195, oy: 378 },
             { x: 195, oy: 415 }
           ],
           ubzs: [
-            { x: 158, oy: 26,  w: 100, h: 58 },
-            { x: 65,  oy: 192, w: 65,  h: 38 },
-            { x: 162, oy: 288, w: 72,  h: 50 }
+            { x: 0,   oy: 0,   w: 26,  h: 415 },
+            { x: 364, oy: 0,   w: 26,  h: 415 },
+            { x: 0,   oy: 385, w: 390, h: 30  },
+            { x: 160, oy: 30,  w: 102, h: 58  }, // forces awkward upper placement
+            { x: 65,  oy: 198, w: 62,  h: 30  }, // blocks the inner hairpin sweet spot
+            { x: 165, oy: 250, w: 72,  h: 48  }, // blocks second hairpin
+            { x: 65,  oy: 320, w: 62,  h: 48  }  // blocks lower inner bend
           ],
           hotspots: [
-            { x: 65,  oy: 60,  radius: 52, mult: 1.25 },
-            { x: 315, oy: 199, radius: 52, mult: 1.25 },
-            { x: 195, oy: 342, radius: 48, mult: 1.20 },
-            { x: 148, oy: 128, radius: 42, mult: 0.82 }
+            { x: 65,  oy: 60,  radius: 52, mult: 1.24 },
+            { x: 315, oy: 200, radius: 52, mult: 1.24 },
+            { x: 195, oy: 344, radius: 48, mult: 1.20 },
+            { x: 148, oy: 130, radius: 44, mult: 0.80 }
           ],
           waves: [
             {
@@ -412,7 +438,7 @@ const LEVEL_DATA = {
           ]
         },
 
-        // ── L8 ─────────────────────────────────────────────────────────────
+        // L8 — boss level — most constrained UBZ layout
         {
           id: 8,
           name: 'THE FRONT COMMANDER',
@@ -423,29 +449,33 @@ const LEVEL_DATA = {
           path: [
             { x: 195, oy: 0   },
             { x: 195, oy: 24  },
-            { x: 320, oy: 24  },
-            { x: 320, oy: 100 },
+            { x: 318, oy: 24  },
+            { x: 318, oy: 100 },
             { x: 65,  oy: 100 },
-            { x: 65,  oy: 174 },
-            { x: 220, oy: 174 },
-            { x: 220, oy: 248 },
-            { x: 65,  oy: 248 },
-            { x: 65,  oy: 320 },
-            { x: 320, oy: 320 },
-            { x: 320, oy: 375 },
-            { x: 195, oy: 375 },
+            { x: 65,  oy: 175 },
+            { x: 220, oy: 175 },
+            { x: 220, oy: 250 },
+            { x: 65,  oy: 250 },
+            { x: 65,  oy: 322 },
+            { x: 318, oy: 322 },
+            { x: 318, oy: 378 },
+            { x: 195, oy: 378 },
             { x: 195, oy: 415 }
           ],
           ubzs: [
-            { x: 80,  oy: 24,  w: 98, h: 65 },
-            { x: 128, oy: 180, w: 78, h: 58 },
-            { x: 240, oy: 260, w: 62, h: 52 }
+            { x: 0,   oy: 0,   w: 26,  h: 415 },
+            { x: 364, oy: 0,   w: 26,  h: 415 },
+            { x: 0,   oy: 385, w: 390, h: 30  },
+            { x: 78,  oy: 28,  w: 100, h: 62  }, // upper zone left island
+            { x: 128, oy: 182, w: 78,  h: 58  }, // centre island
+            { x: 240, oy: 258, w: 62,  h: 52  }, // inner lower zone
+            { x: 78,  oy: 332, w: 100, h: 40  }  // lower zone left island
           ],
           hotspots: [
-            { x: 320, oy: 62,  radius: 58, mult: 1.30 },
-            { x: 65,  oy: 211, radius: 58, mult: 1.30 },
-            { x: 320, oy: 211, radius: 48, mult: 0.75 },
-            { x: 195, oy: 137, radius: 52, mult: 1.15 }
+            { x: 318, oy: 62,  radius: 58, mult: 1.30 },
+            { x: 65,  oy: 212, radius: 58, mult: 1.30 },
+            { x: 318, oy: 212, radius: 48, mult: 0.74 },
+            { x: 195, oy: 137, radius: 52, mult: 1.16 }
           ],
           waves: [
             {

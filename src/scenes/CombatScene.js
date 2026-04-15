@@ -53,26 +53,28 @@ class CombatScene extends Phaser.Scene {
     this.startingLoadout = { gunner: this.loadout.gunner, bomber: this.loadout.bomber, barricade: this.loadout.barricade };
 
     this.HY = 200;
-    this.CT = 278;
-    this.CB = 686;
+    this.CT = 268;
+    this.CB = 688;
+
 
     this.PLAY_TOP    = this.HY + 68;
     this.PLAY_BOTTOM = height - 156;
     this.PLAY_LEFT   = 14;
     this.PLAY_RIGHT  = width - 14;
 
-    this.pathPoints = [
-      { x: 195, y: this.CT        },
-      { x: 195, y: this.CT +  70  },
-      { x: 60,  y: this.CT +  70  },
-      { x: 60,  y: this.CT + 230  },
-      { x: 330, y: this.CT + 230  },
-      { x: 330, y: this.CT + 360  },
-      { x: 60,  y: this.CT + 360  },
-      { x: 60,  y: this.CT + 430  },
-      { x: 195, y: this.CT + 430  },
-      { x: 195, y: this.CB        }
-    ];
+   this.pathPoints = [
+  { x: 195, y: this.CT        },
+  { x: 195, y: this.CT +  65  },
+  { x: 60,  y: this.CT +  65  },
+  { x: 60,  y: this.CT + 210  },
+  { x: 330, y: this.CT + 210  },
+  { x: 330, y: this.CT + 330  },
+  { x: 60,  y: this.CT + 330  },
+  { x: 60,  y: this.CT + 400  },
+  { x: 195, y: this.CT + 400  },
+  { x: 195, y: this.CB        }
+];
+
 
     this.add.rectangle(width / 2, height / 2, width, height, 0x0d1117);
     this.drawPath();

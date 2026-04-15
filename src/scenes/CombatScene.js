@@ -36,6 +36,7 @@ class CombatScene extends Phaser.Scene {
     this.activeTower       = null;
     this.previewCircle     = null;
     this.previewRing       = null;
+    this.towerTapped       = false;
 
     this.towerStats = {
       gunner:    { damageDealt: 0, kills: 0 },
@@ -94,8 +95,6 @@ class CombatScene extends Phaser.Scene {
     }
   }
 
-  // ── Path collision ────────────────────────────────────────────────────────
-
   distToSegment(px, py, ax, ay, bx, by) {
     const dx = bx - ax, dy = by - ay;
     const lenSq = dx * dx + dy * dy;
@@ -125,8 +124,6 @@ class CombatScene extends Phaser.Scene {
     return this.isInPlayArea(x, y) && !this.isOnPath(x, y) && !this.isOccupied(x, y);
   }
 
-  // ── Input ─────────────────────────────────────────────────────────────────
-
   setupPlacementInput() {
     this.input.on('pointermove', (pointer) => {
       if (!this.selectedTowerType || this.gameOver) return;
@@ -135,19 +132,13 @@ class CombatScene extends Phaser.Scene {
     });
 
     this.input.on('pointerup', (pointer) => {
-  if (this.gameOver) return;
+      if (this.gameOver) return;
 
-  if (this.upgradePanel) {
-    if (!this.towerTapped) this.dismissUpgradePanel();
-    this.towerTapped = false;
-    return;
-  }
-
-  if (!this.selectedTowerType) return;
-  if (!this.isInPlayArea(pointer.x, pointer.y)) return;
-  if (this.canPlaceAt(pointer.x, pointer.y)) this.placeTower(pointer.x, pointer.y);
-});
-
+      if (this.upgradePanel) {
+        if (!this.towerTapped) this.dismissUpgradePanel();
+        this.towerTapped = false;
+        return;
+      }
 
       if (!this.selectedTowerType) return;
       if (!this.isInPlayArea(pointer.x, pointer.y)) return;
@@ -156,8 +147,6 @@ class CombatScene extends Phaser.Scene {
 
     this.input.on('pointerout', () => this.hidePreview());
   }
-
-  // ── Preview ───────────────────────────────────────────────────────────────
 
   updatePreview(x, y) {
     const data   = TOWER_DATA[this.selectedTowerType];
@@ -179,17 +168,13 @@ class CombatScene extends Phaser.Scene {
     if (this.previewRing)   { this.previewRing.destroy();   this.previewRing   = null; }
   }
 
-  // ── Tower placement ───────────────────────────────────────────────────────
-
   placeTower(x, y) {
     if (this.loadout[this.selectedTowerType] <= 0) return;
 
     const type = this.selectedTowerType;
     const data = TOWER_DATA[type];
 
-    // Invisible interactive hit zone — sits on top, reliably catches taps on mobile
     const hitZone = this.add.circle(x, y, 20, 0xffffff, 0).setDepth(10).setInteractive();
-
     const towerCircle = this.add.circle(x, y, 14, data.colour, 0.9).setDepth(4);
     this.add.circle(x, y, 14).setStrokeStyle(2, data.colour).setDepth(4);
     const towerLabel = this.add.text(x, y, data.name.substring(0, 3), {
@@ -223,17 +208,9 @@ class CombatScene extends Phaser.Scene {
     };
     this.placedTowers.push(tower);
 
-    // Direct tap on tower — deselects placement mode and opens upgrade panel
     hitZone.on('pointerup', () => {
-  this.towerTapped = true;
-  this.selectedTowerType = null;
-  Object.keys(this.towerButtons).forEach(t => {
-    this.towerButtons[t].setFillStyle(this.loadout[t] > 0 ? 0x1e2530 : 0x161b22);
-  });
-  this.hidePreview();
-  this.showUpgradePanel(tower);
-});
-
+      this.towerTapped = true;
+      this.selectedTowerType = null;
       Object.keys(this.towerButtons).forEach(t => {
         this.towerButtons[t].setFillStyle(this.loadout[t] > 0 ? 0x1e2530 : 0x161b22);
       });
@@ -248,8 +225,6 @@ class CombatScene extends Phaser.Scene {
 
     this.updatePreview(x, y);
   }
-
-  // ── Upgrade panel ─────────────────────────────────────────────────────────
 
   showUpgradePanel(tower) {
     this.dismissUpgradePanel();
@@ -325,7 +300,6 @@ class CombatScene extends Phaser.Scene {
       }).setOrigin(0.5).setDepth(19));
     }
 
-    // Range ring visible while panel is open
     const ring  = this.add.circle(tower.x, tower.y, tower.data.range, colour, 0.08).setDepth(3);
     const ringB = this.add.circle(tower.x, tower.y, tower.data.range).setStrokeStyle(1, colour, 0.5).setDepth(3);
     items.push(ring, ringB);
@@ -389,8 +363,6 @@ class CombatScene extends Phaser.Scene {
     this.showUpgradePanel(tower);
   }
 
-  // ── Tutorial ──────────────────────────────────────────────────────────────
-
   showTutorialHint() {
     const { width, height } = this.scale;
 
@@ -418,8 +390,6 @@ class CombatScene extends Phaser.Scene {
     btn.on('pointerover', () => btn.setFillStyle(0x1e3a1e));
     btn.on('pointerout',  () => btn.setFillStyle(0x162216));
   }
-
-  // ── Scene drawing ─────────────────────────────────────────────────────────
 
   drawPath() {
     const graphics = this.add.graphics();
@@ -543,8 +513,6 @@ class CombatScene extends Phaser.Scene {
     });
   }
 
-  // ── Combat ────────────────────────────────────────────────────────────────
-
   getSpeedModifier(enemy) {
     let modifier = 1.0;
     this.placedTowers.forEach(tower => {
@@ -621,15 +589,10 @@ class CombatScene extends Phaser.Scene {
         onComplete: () => { if (enemy.sprite) enemy.sprite.destroy(); }
       });
     }
-
-    // Refresh upgrade panel so parts count and button state stay current
     if (this.upgradePanel && this.activeTower) this.showUpgradePanel(this.activeTower);
-
     this.waveEnemyResolved++;
     this.checkWaveComplete();
   }
-
-  // ── Wave management ───────────────────────────────────────────────────────
 
   startNextWave() {
     if (this.waveActive || this.gameOver) return;
@@ -760,8 +723,6 @@ class CombatScene extends Phaser.Scene {
     });
   }
 
-  // ── Game over ─────────────────────────────────────────────────────────────
-
   triggerGameOver(victory) {
     this.gameOver   = true;
     this.waveActive = false;
@@ -868,8 +829,6 @@ class CombatScene extends Phaser.Scene {
     btn.on('pointerout',  () => btn.setFillStyle(0x161b22));
   }
 
-  // ── Save ──────────────────────────────────────────────────────────────────
-
   saveProgress() {
     const slotIndex = localStorage.getItem('factower_active_slot');
     const saveKey   = 'factower_save_' + slotIndex;
@@ -894,8 +853,6 @@ class CombatScene extends Phaser.Scene {
 
     localStorage.setItem(saveKey, JSON.stringify(save));
   }
-
-  // ── Per-frame ─────────────────────────────────────────────────────────────
 
   update() {
     this.activeEnemies.forEach(enemy => {

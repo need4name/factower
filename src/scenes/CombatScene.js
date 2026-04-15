@@ -7,6 +7,7 @@ class CombatScene extends Phaser.Scene {
     this.storylineId = data.storylineId || 1;
     this.levelId     = data.levelId     || 1;
     this.levelData   = data.levelData;
+    this.isEndless   = data.isEndless   || false;
   }
 
   create() {
@@ -16,6 +17,7 @@ class CombatScene extends Phaser.Scene {
     const saveKey   = 'factower_save_' + slotIndex;
     this.saveData   = JSON.parse(localStorage.getItem(saveKey));
 
+    // ── State ────────────────────────────────────────────────────────────
     this.parts             = 0;
     this.baseHp            = this.levelData ? this.levelData.baseHp : 10;
     this.baseHpMax         = this.baseHp;
@@ -37,6 +39,8 @@ class CombatScene extends Phaser.Scene {
     this.previewCircle     = null;
     this.previewRing       = null;
     this.towerTapped       = false;
+    this.tutorialPhase     = null;
+    this.tutorialOverlays  = [];
 
     this.towerStats = {
       gunner:    { damageDealt: 0, kills: 0 },
@@ -50,38 +54,58 @@ class CombatScene extends Phaser.Scene {
       bomber:    stockpile.bomber    || 0,
       barricade: stockpile.barricade || 0
     };
-    this.startingLoadout = { gunner: this.loadout.gunner, bomber: this.loadout.bomber, barricade: this.loadout.barricade };
+    this.startingLoadout = { ...this.loadout };
 
-    this.HY = 200;
-    this.CT = 268;
-    this.CB = 688;
-
-
-    this.PLAY_TOP    = this.HY + 68;
-    this.PLAY_BOTTOM = height - 156;
+    // ── Layout constants ─────────────────────────────────────────────────
+    this.HY          = 188;   // header centre y
+    this.CT          = 262;   // path entry y (combat top)
+    this.CB          = 680;   // path exit y  (combat bottom / BASE)
+    this.PLAY_TOP    = 265;
+    this.PLAY_BOTTOM = height - 165;
     this.PLAY_LEFT   = 14;
     this.PLAY_RIGHT  = width - 14;
 
-   this.pathPoints = [
-  { x: 195, y: this.CT        },
-  { x: 195, y: this.CT +  65  },
-  { x: 60,  y: this.CT +  65  },
-  { x: 60,  y: this.CT + 210  },
-  { x: 330, y: this.CT + 210  },
-  { x: 330, y: this.CT + 330  },
-  { x: 60,  y: this.CT + 330  },
-  { x: 60,  y: this.CT + 400  },
-  { x: 195, y: this.CT + 400  },
-  { x: 195, y: this.CB        }
-];
+    // ── Build level geometry ─────────────────────────────────────────────
+    // Path
+    this.pathPoints = (this.levelData && this.levelData.path)
+      ? this.levelData.path.map(p => ({ x: p.x, y: this.CT + p.oy }))
+      : [ // fallback S-curve
+          { x: 195, y: this.CT       },
+          { x: 195, y: this.CT + 52  },
+          { x: 75,  y: this.CT + 52  },
+          { x: 75,  y: this.CT + 185 },
+          { x: 310, y: this.CT + 185 },
+          { x: 310, y: this.CT + 308 },
+          { x: 75,  y: this.CT + 308 },
+          { x: 75,  y: this.CT + 375 },
+          { x: 195, y: this.CT + 375 },
+          { x: 195, y: this.CB       }
+        ];
 
+    // UBZs (Unstable Debris Zones)
+    this.ubzs = (this.levelData && this.levelData.ubzs)
+      ? this.levelData.ubzs.map(z => ({ x: z.x, y: this.CT + z.oy, w: z.w, h: z.h }))
+      : [];
 
+    // Hotspots — randomised in endless mode
+    if (this.isEndless) {
+      this.hotspots = this.generateRandomHotspots();
+    } else {
+      this.hotspots = (this.levelData && this.levelData.hotspots)
+        ? this.levelData.hotspots.map(h => ({ x: h.x, y: this.CT + h.oy, radius: h.radius, mult: h.mult }))
+        : [];
+    }
+
+    // ── Draw scene ───────────────────────────────────────────────────────
     this.add.rectangle(width / 2, height / 2, width, height, 0x0d1117);
+    this.drawHotspots();
+    this.drawUBZs();
     this.drawPath();
     this.drawHeader();
     this.drawBottomPanel();
     this.setupPlacementInput();
 
+    // ── Checks ───────────────────────────────────────────────────────────
     const total = this.loadout.gunner + this.loadout.bomber + this.loadout.barricade;
     if (total === 0) {
       this.add.rectangle(width / 2, height / 2, width - 48, 160, 0x1a0a0a).setDepth(20);
@@ -97,12 +121,65 @@ class CombatScene extends Phaser.Scene {
     }
   }
 
+  // ── Random hotspots for endless mode (REQ 3) ─────────────────────────
+  generateRandomHotspots() {
+    const count = 2 + Math.floor(Math.random() * 2);
+    const spots = [];
+    for (let i = 0; i < count; i++) {
+      const x    = 65 + Math.random() * 255;
+      const y    = this.CT + 40 + Math.random() * 330;
+      const r    = 44 + Math.random() * 36;
+      const mult = Math.random() < 0.65 ? 1.1 + Math.random() * 0.22 : 0.78 + Math.random() * 0.12;
+      spots.push({ x, y, radius: r, mult });
+    }
+    return spots;
+  }
+
+  // ── Draw hotspot floor colouring (REQ 3) ─────────────────────────────
+  drawHotspots() {
+    const gfx = this.add.graphics().setDepth(0);
+    this.hotspots.forEach(h => {
+      const isBoost = h.mult >= 1;
+      const col     = isBoost ? 0xe8a020 : 0x1a4a8a;
+      const alpha   = isBoost ? 0.11 : 0.10;
+      // Soft radial fill — draw concentric circles decreasing in alpha
+      for (let r = h.radius; r > 0; r -= 8) {
+        const t = 1 - (r / h.radius);
+        gfx.fillStyle(col, alpha * (0.3 + t * 0.7));
+        gfx.fillCircle(h.x, h.y, r);
+      }
+    });
+  }
+
+  // ── Draw UBZ floor markings (REQ 2) ──────────────────────────────────
+  drawUBZs() {
+    const gfx = this.add.graphics().setDepth(1);
+    this.ubzs.forEach(z => {
+      gfx.fillStyle(0x2a1e10, 0.72);
+      gfx.fillRect(z.x, z.y, z.w, z.h);
+      gfx.lineStyle(1, 0x4a3820, 0.9);
+      gfx.strokeRect(z.x, z.y, z.w, z.h);
+      // Debris cross-hatch lines
+      gfx.lineStyle(1, 0x3a2a15, 0.5);
+      for (let i = 0; i < z.w + z.h; i += 14) {
+        gfx.lineBetween(z.x + i, z.y, z.x + Math.max(0, i - z.h), z.y + Math.min(z.h, i));
+      }
+    });
+    // UBZ label on each zone
+    this.ubzs.forEach(z => {
+      this.add.text(z.x + z.w / 2, z.y + z.h / 2, 'UBZ', {
+        fontFamily: 'monospace', fontSize: '9px', color: '#4a3820'
+      }).setOrigin(0.5).setDepth(1);
+    });
+  }
+
+  // ── Path collision ────────────────────────────────────────────────────
   distToSegment(px, py, ax, ay, bx, by) {
     const dx = bx - ax, dy = by - ay;
     const lenSq = dx * dx + dy * dy;
-    if (lenSq === 0) return Math.sqrt((px - ax) * (px - ax) + (py - ay) * (py - ay));
-    let t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
-    return Math.sqrt((px - (ax + t * dx)) * (px - (ax + t * dx)) + (py - (ay + t * dy)) * (py - (ay + t * dy)));
+    if (lenSq === 0) return Math.sqrt((px - ax) ** 2 + (py - ay) ** 2);
+    const t  = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+    return Math.sqrt((px - (ax + t * dx)) ** 2 + (py - (ay + t * dy)) ** 2);
   }
 
   isOnPath(x, y) {
@@ -113,8 +190,12 @@ class CombatScene extends Phaser.Scene {
     return false;
   }
 
+  isInUBZ(x, y) {
+    return this.ubzs.some(z => x >= z.x && x <= z.x + z.w && y >= z.y && y <= z.y + z.h);
+  }
+
   isOccupied(x, y) {
-    return this.placedTowers.some(t => Math.sqrt((t.x - x) * (t.x - x) + (t.y - y) * (t.y - y)) < 32);
+    return this.placedTowers.some(t => Math.sqrt((t.x - x) ** 2 + (t.y - y) ** 2) < 32);
   }
 
   isInPlayArea(x, y) {
@@ -123,9 +204,24 @@ class CombatScene extends Phaser.Scene {
   }
 
   canPlaceAt(x, y) {
-    return this.isInPlayArea(x, y) && !this.isOnPath(x, y) && !this.isOccupied(x, y);
+    return this.isInPlayArea(x, y) && !this.isOnPath(x, y) && !this.isOccupied(x, y) && !this.isInUBZ(x, y);
   }
 
+  // ── Power multiplier from hotspots (REQ 3) ───────────────────────────
+  getPowerMultiplier(x, y) {
+    let best = 1.0;
+    this.hotspots.forEach(h => {
+      const dist = Math.sqrt((x - h.x) ** 2 + (y - h.y) ** 2);
+      if (dist <= h.radius) {
+        const t    = 1 - dist / h.radius;
+        const mult = 1 + (h.mult - 1) * t;
+        if (Math.abs(mult - 1) > Math.abs(best - 1)) best = mult;
+      }
+    });
+    return best;
+  }
+
+  // ── Input ─────────────────────────────────────────────────────────────
   setupPlacementInput() {
     this.input.on('pointermove', (pointer) => {
       if (!this.selectedTowerType || this.gameOver) return;
@@ -150,9 +246,11 @@ class CombatScene extends Phaser.Scene {
     this.input.on('pointerout', () => this.hidePreview());
   }
 
+  // ── Preview (REQ 8 — clears on placement) ────────────────────────────
   updatePreview(x, y) {
     const data   = TOWER_DATA[this.selectedTowerType];
     const valid  = this.canPlaceAt(x, y);
+    const mult   = valid ? this.getPowerMultiplier(x, y) : 1;
     const colour = valid ? data.colour : 0xc43a3a;
 
     if (!this.previewCircle) {
@@ -163,20 +261,42 @@ class CombatScene extends Phaser.Scene {
       this.previewRing.setPosition(x, y).setStrokeStyle(1, colour, 0.4);
       this.previewRing.setRadius(data.range);
     }
+
+    // Power multiplier hint in preview
+    if (this.previewMultText) { this.previewMultText.destroy(); this.previewMultText = null; }
+    if (valid && Math.abs(mult - 1) > 0.04) {
+      const sign = mult > 1 ? '+' : '';
+      const pct  = sign + Math.round((mult - 1) * 100) + '%';
+      const col  = mult > 1 ? '#e8a020' : '#4a8aba';
+      this.previewMultText = this.add.text(x + 18, y - 18, pct, {
+        fontFamily: 'monospace', fontSize: '11px', color: col, fontStyle: 'bold'
+      }).setDepth(16);
+    }
   }
 
   hidePreview() {
-    if (this.previewCircle) { this.previewCircle.destroy(); this.previewCircle = null; }
-    if (this.previewRing)   { this.previewRing.destroy();   this.previewRing   = null; }
+    if (this.previewCircle)   { this.previewCircle.destroy();   this.previewCircle   = null; }
+    if (this.previewRing)     { this.previewRing.destroy();     this.previewRing     = null; }
+    if (this.previewMultText) { this.previewMultText.destroy(); this.previewMultText = null; }
   }
 
+  // ── Tower placement (REQ 3, 8) ────────────────────────────────────────
   placeTower(x, y) {
     if (this.loadout[this.selectedTowerType] <= 0) return;
 
     const type = this.selectedTowerType;
     const data = TOWER_DATA[type];
+    const mult = this.getPowerMultiplier(x, y);
 
-    const hitZone = this.add.circle(x, y, 20, 0xffffff, 0).setDepth(10).setInteractive();
+    // Apply power multiplier to tower stats (REQ 3)
+    const towerData = { ...data };
+    if (Math.abs(mult - 1) > 0.04) {
+      towerData.damage = Math.round(towerData.damage * mult);
+      towerData.range  = Math.round(towerData.range  * mult);
+      if (towerData.slowAmount) towerData.slowAmount = parseFloat((towerData.slowAmount / mult).toFixed(3));
+    }
+
+    const hitZone    = this.add.circle(x, y, 20, 0xffffff, 0).setDepth(10).setInteractive();
     const towerCircle = this.add.circle(x, y, 14, data.colour, 0.9).setDepth(4);
     this.add.circle(x, y, 14).setStrokeStyle(2, data.colour).setDepth(4);
     const towerLabel = this.add.text(x, y, data.name.substring(0, 3), {
@@ -184,13 +304,25 @@ class CombatScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(5);
 
     if (type === 'barricade') {
-      this.add.circle(x, y, data.range, data.colour, 0.04).setDepth(2);
-      this.add.circle(x, y, data.range).setStrokeStyle(1, data.colour, 0.2).setDepth(2);
+      this.add.circle(x, y, towerData.range, data.colour, 0.04).setDepth(2);
+      this.add.circle(x, y, towerData.range).setStrokeStyle(1, data.colour, 0.2).setDepth(2);
       this.towerStats.barricade.placed++;
     } else {
-      const ring = this.add.circle(x, y, data.range, data.colour, 0.08).setDepth(2);
-      const rb   = this.add.circle(x, y, data.range).setStrokeStyle(1, data.colour, 0.3).setDepth(2);
+      const ring = this.add.circle(x, y, towerData.range, data.colour, 0.08).setDepth(2);
+      const rb   = this.add.circle(x, y, towerData.range).setStrokeStyle(1, data.colour, 0.3).setDepth(2);
       this.time.delayedCall(1400, () => { ring.destroy(); rb.destroy(); });
+    }
+
+    // Power multiplier badge on tower
+    let powerBadge = null;
+    if (Math.abs(mult - 1) > 0.04) {
+      const sign  = mult > 1 ? '+' : '';
+      const pct   = sign + Math.round((mult - 1) * 100) + '%';
+      const col   = mult > 1 ? '#e8a020' : '#4a8aba';
+      powerBadge = this.add.text(x + 15, y - 15, pct, {
+        fontFamily: 'monospace', fontSize: '9px', color: col, fontStyle: 'bold'
+      }).setDepth(6);
+      this.time.delayedCall(2200, () => { if (powerBadge) { this.tweens.add({ targets: powerBadge, alpha: 0, duration: 400, onComplete: () => powerBadge.destroy() }); } });
     }
 
     this.loadout[type]--;
@@ -198,16 +330,7 @@ class CombatScene extends Phaser.Scene {
     if (this.loadout[type] === 0) this.towerButtons[type].setFillStyle(0x161b22);
     this.towersUsed[type] = (this.towersUsed[type] || 0) + 1;
 
-    const tower = {
-      type, x, y,
-      data:        { ...data },
-      lastFired:   0,
-      upgradeTier: 0,
-      towerCircle,
-      towerLabel,
-      tierBadge:   null,
-      hitZone
-    };
+    const tower = { type, x, y, data: towerData, lastFired: 0, upgradeTier: 0, towerCircle, towerLabel, tierBadge: null, hitZone, powerMult: mult };
     this.placedTowers.push(tower);
 
     hitZone.on('pointerup', () => {
@@ -225,16 +348,28 @@ class CombatScene extends Phaser.Scene {
       this.towerTimerEvents.push(timerEvent);
     }
 
-    this.updatePreview(x, y);
+    // REQ 8: clear preview after placing — hidePreview not updatePreview
+    this.hidePreview();
+
+    // L1 tutorial: advance phase when tower placed near optimal spot (REQ 9)
+    if (this.tutorialPhase === 'showPlacement' && this.levelId === 1 && this.storylineId === 1) {
+      const opt = this.levelData.tutorialOptimalSpot;
+      if (opt) {
+        const optY = this.CT + opt.oy;
+        const dist = Math.sqrt((x - opt.x) ** 2 + (y - optY) ** 2);
+        if (dist < 80) this.advanceTutorialPhase('highlightStart');
+      }
+    }
   }
 
+  // ── Upgrade panel (REQ 4, 5) ──────────────────────────────────────────
   showUpgradePanel(tower) {
     this.dismissUpgradePanel();
     this.activeTower = tower;
 
     const { width, height } = this.scale;
-    const panelH   = 152;
-    const panelY   = height - 152 - 10 - panelH / 2;
+    const panelH   = 158;
+    const panelY   = height - 165 - panelH / 2 - 4;
     const panelTop = panelY - panelH / 2;
     const colour   = tower.data.colour;
     const hex      = '#' + colour.toString(16).padStart(6, '0');
@@ -243,54 +378,77 @@ class CombatScene extends Phaser.Scene {
     const maxTier  = path.tiers.length;
     const items    = [];
 
-    const bg     = this.add.rectangle(width / 2, panelY, width - 24, panelH, 0x080e08).setDepth(18);
+    const bg     = this.add.rectangle(width / 2, panelY, width - 24, panelH, 0x060c06).setDepth(18);
     const border = this.add.rectangle(width / 2, panelY, width - 24, panelH).setStrokeStyle(2, colour).setDepth(18);
     items.push(bg, border);
 
+    // REQ 5: persistent range ring while panel open
+    const ring  = this.add.circle(tower.x, tower.y, tower.data.range, colour, 0.10).setDepth(3);
+    const ringB = this.add.circle(tower.x, tower.y, tower.data.range).setStrokeStyle(2, colour, 0.6).setDepth(3);
+    items.push(ring, ringB);
+
+    // Tower name + tier + power multiplier
     const tierStr = tier === 0 ? 'BASE' : 'TIER ' + tier;
     items.push(
-      this.add.text(28, panelTop + 12, tower.data.name, {
+      this.add.text(28, panelTop + 10, tower.data.name, {
         fontFamily: 'monospace', fontSize: '14px', color: hex, fontStyle: 'bold'
       }).setDepth(19),
-      this.add.text(width - 28, panelTop + 12, tierStr, {
+      this.add.text(width - 28, panelTop + 10, tierStr, {
         fontFamily: 'monospace', fontSize: '12px', color: tier > 0 ? '#e8a020' : '#445566', fontStyle: 'bold'
       }).setOrigin(1, 0).setDepth(19),
-      this.add.text(28, panelTop + 30, 'PATH A: ' + path.name, {
+      this.add.text(28, panelTop + 28, 'PATH A: ' + path.name, {
         fontFamily: 'monospace', fontSize: '10px', color: '#556677', letterSpacing: 2
       }).setDepth(19)
     );
 
-    if (tier < maxTier) {
+    // Power mult indicator
+    if (tower.powerMult && Math.abs(tower.powerMult - 1) > 0.04) {
+      const sign = tower.powerMult > 1 ? '+' : '';
+      const pct  = sign + Math.round((tower.powerMult - 1) * 100) + '%';
+      const col  = tower.powerMult > 1 ? '#e8a020' : '#4a8aba';
+      items.push(this.add.text(28, panelTop + 44, 'POWER ZONE ' + pct, {
+        fontFamily: 'monospace', fontSize: '10px', color: col
+      }).setDepth(19));
+    }
+
+    // REQ 4: check if upgrades are unlocked
+    const completed       = (this.saveData && this.saveData.completedLevels && this.saveData.completedLevels.storyline1) ? this.saveData.completedLevels.storyline1 : [];
+    const upgradesUnlocked = completed.includes(3) || this.isEndless || this.storylineId !== 1;
+
+    if (!upgradesUnlocked) {
+      items.push(
+        this.add.text(width / 2, panelTop + 88, 'UPGRADES LOCKED', {
+          fontFamily: 'monospace', fontSize: '14px', color: '#556677', fontStyle: 'bold', letterSpacing: 2
+        }).setOrigin(0.5).setDepth(19),
+        this.add.text(width / 2, panelTop + 112, 'Complete Level 3 to unlock', {
+          fontFamily: 'monospace', fontSize: '11px', color: '#334455'
+        }).setOrigin(0.5).setDepth(19)
+      );
+    } else if (tier < maxTier) {
       const nextTier  = path.tiers[tier];
       const canAfford = this.parts >= nextTier.cost;
 
       items.push(
-        this.add.text(28, panelTop + 52, nextTier.label, {
-          fontFamily: 'monospace', fontSize: '13px', color: '#eef2f8',
-          wordWrap: { width: width - 180 }
+        this.add.text(28, panelTop + 55, nextTier.label, {
+          fontFamily: 'monospace', fontSize: '13px', color: '#eef2f8', wordWrap: { width: width - 180 }
         }).setDepth(19),
-        this.add.text(28, panelTop + panelH - 40, nextTier.cost + ' PARTS', {
-          fontFamily: 'monospace', fontSize: '15px',
-          color: canAfford ? '#e8a020' : '#c43a3a', fontStyle: 'bold'
+        this.add.text(28, panelTop + panelH - 42, nextTier.cost + ' PARTS', {
+          fontFamily: 'monospace', fontSize: '15px', color: canAfford ? '#e8a020' : '#c43a3a', fontStyle: 'bold'
         }).setDepth(19)
       );
-
       if (!canAfford) {
-        items.push(this.add.text(28, panelTop + panelH - 20, 'not enough parts', {
+        items.push(this.add.text(28, panelTop + panelH - 22, 'not enough parts', {
           fontFamily: 'monospace', fontSize: '10px', color: '#445566'
         }).setDepth(19));
       }
 
-      const btnBg  = canAfford ? 0x162616 : 0x161b22;
-      const btnBdr = canAfford ? 0x5eba7d : 0x334455;
-      const btnTxt = canAfford ? '#5eba7d' : '#445566';
-      const btn    = this.add.rectangle(width - 72, panelTop + panelH - 32, 108, 52, btnBg).setInteractive().setDepth(19);
-      const btnB   = this.add.rectangle(width - 72, panelTop + panelH - 32, 108, 52).setStrokeStyle(1, btnBdr).setDepth(19);
-      const btnL   = this.add.text(width - 72, panelTop + panelH - 32, 'UPGRADE', {
-        fontFamily: 'monospace', fontSize: '13px', color: btnTxt, fontStyle: 'bold'
+      const btnBg = canAfford ? 0x162616 : 0x161b22;
+      const btn   = this.add.rectangle(width - 72, panelTop + panelH - 32, 108, 52, btnBg).setInteractive().setDepth(19);
+      const btnB  = this.add.rectangle(width - 72, panelTop + panelH - 32, 108, 52).setStrokeStyle(1, canAfford ? 0x5eba7d : 0x334455).setDepth(19);
+      const btnL  = this.add.text(width - 72, panelTop + panelH - 32, 'UPGRADE', {
+        fontFamily: 'monospace', fontSize: '13px', color: canAfford ? '#5eba7d' : '#445566', fontStyle: 'bold'
       }).setOrigin(0.5).setDepth(20);
       items.push(btn, btnB, btnL);
-
       if (canAfford) {
         btn.on('pointerdown', () => this.applyUpgrade(tower));
         btn.on('pointerover', () => btn.setFillStyle(0x1e3a1e));
@@ -301,10 +459,6 @@ class CombatScene extends Phaser.Scene {
         fontFamily: 'monospace', fontSize: '15px', color: hex, fontStyle: 'bold', letterSpacing: 3
       }).setOrigin(0.5).setDepth(19));
     }
-
-    const ring  = this.add.circle(tower.x, tower.y, tower.data.range, colour, 0.08).setDepth(3);
-    const ringB = this.add.circle(tower.x, tower.y, tower.data.range).setStrokeStyle(1, colour, 0.5).setDepth(3);
-    items.push(ring, ringB);
 
     this.upgradePanel = items;
   }
@@ -320,10 +474,8 @@ class CombatScene extends Phaser.Scene {
   applyUpgrade(tower) {
     if (!tower) return;
     const path = TOWER_DATA[tower.type].upgrades.pathA;
-    const tier = tower.upgradeTier;
-    if (tier >= path.tiers.length) return;
-
-    const upgrade = path.tiers[tier];
+    if (tower.upgradeTier >= path.tiers.length) return;
+    const upgrade = path.tiers[tower.upgradeTier];
     if (this.parts < upgrade.cost) return;
 
     this.parts -= upgrade.cost;
@@ -338,7 +490,7 @@ class CombatScene extends Phaser.Scene {
 
     if (upgrade.burnDps) {
       tower.data.burnDps = upgrade.burnDps;
-      const burnTimer = this.time.addEvent({
+      const bt = this.time.addEvent({
         delay: 500,
         callback: () => {
           if (!this.waveActive || this.gameOver) return;
@@ -351,11 +503,11 @@ class CombatScene extends Phaser.Scene {
         },
         loop: true
       });
-      this.towerTimerEvents.push(burnTimer);
+      this.towerTimerEvents.push(bt);
     }
 
     if (tower.tierBadge) tower.tierBadge.destroy();
-    tower.tierBadge = this.add.text(tower.x + 11, tower.y - 17, 'T' + tower.upgradeTier, {
+    tower.tierBadge = this.add.text(tower.x + 12, tower.y - 18, 'T' + tower.upgradeTier, {
       fontFamily: 'monospace', fontSize: '9px', color: '#ffffff', fontStyle: 'bold'
     }).setDepth(6);
 
@@ -365,6 +517,7 @@ class CombatScene extends Phaser.Scene {
     this.showUpgradePanel(tower);
   }
 
+  // ── Level 1 tutorial system (REQ 9) ──────────────────────────────────
   showTutorialHint() {
     const { width, height } = this.scale;
 
@@ -386,28 +539,81 @@ class CombatScene extends Phaser.Scene {
 
     this.tutorialElements = [overlay, card, border, label, hint, btn, btnBdr, btnTxt];
     btn.on('pointerdown', () => {
-      this.tutorialElements.forEach(function(e) { e.destroy(); });
+      this.tutorialElements.forEach(e => e.destroy());
       this.tutorialElements = null;
+      // Start guided tutorial for L1 storyline 1
+      if (this.levelId === 1 && this.storylineId === 1) {
+        this.advanceTutorialPhase('highlightGunner');
+      }
     });
     btn.on('pointerover', () => btn.setFillStyle(0x1e3a1e));
     btn.on('pointerout',  () => btn.setFillStyle(0x162216));
   }
 
+  advanceTutorialPhase(phase) {
+    // Clear existing tutorial overlays
+    this.tutorialOverlays.forEach(e => { if (e && e.destroy) e.destroy(); });
+    this.tutorialOverlays = [];
+    this.tutorialPhase = phase;
+
+    const { width, height } = this.scale;
+
+    if (phase === 'highlightGunner') {
+      // Pulsing ring around GUNNER button + instruction text
+      const gunnerBtn = this.towerButtons['gunner'];
+      if (!gunnerBtn) return;
+      const gx = gunnerBtn.x, gy = gunnerBtn.y;
+      const ring = this.add.circle(gx, gy, 50).setStrokeStyle(3, 0x5eba7d, 1).setDepth(25);
+      const txt  = this.add.text(width / 2, height - 200, 'TAP GUNNER TO SELECT IT', {
+        fontFamily: 'monospace', fontSize: '13px', color: '#5eba7d', fontStyle: 'bold'
+      }).setOrigin(0.5).setDepth(25);
+      this.tweens.add({ targets: ring, scaleX: 1.2, scaleY: 1.2, alpha: 0.5, duration: 700, yoyo: true, repeat: -1 });
+      this.tutorialOverlays = [ring, txt];
+
+    } else if (phase === 'showPlacement') {
+      // Pulsing marker at optimal position + instruction
+      const opt  = this.levelData.tutorialOptimalSpot;
+      if (!opt) return;
+      const optX = opt.x, optY = this.CT + opt.oy;
+      const dot  = this.add.circle(optX, optY, 22).setStrokeStyle(3, 0x5eba7d, 1).setDepth(25);
+      const dot2 = this.add.circle(optX, optY, 8, 0x5eba7d, 0.9).setDepth(25);
+      const txt  = this.add.text(width / 2, this.PLAY_TOP + 20, 'PLACE YOUR TOWER HERE', {
+        fontFamily: 'monospace', fontSize: '13px', color: '#5eba7d', fontStyle: 'bold'
+      }).setOrigin(0.5).setDepth(25);
+      this.tweens.add({ targets: [dot, dot2], scaleX: 1.3, scaleY: 1.3, alpha: 0.6, duration: 600, yoyo: true, repeat: -1 });
+      this.tutorialOverlays = [dot, dot2, txt];
+
+    } else if (phase === 'highlightStart') {
+      // Pulsing ring around START WAVE button
+      const sx = this.startWaveBtn.x, sy = this.startWaveBtn.y;
+      const ring = this.add.circle(sx, sy, 55).setStrokeStyle(3, 0x5eba7d, 1).setDepth(25);
+      const txt  = this.add.text(width / 2, height - 200, 'NOW START THE WAVE', {
+        fontFamily: 'monospace', fontSize: '13px', color: '#5eba7d', fontStyle: 'bold'
+      }).setOrigin(0.5).setDepth(25);
+      this.tweens.add({ targets: ring, scaleX: 1.2, scaleY: 1.2, alpha: 0.5, duration: 700, yoyo: true, repeat: -1 });
+      this.tutorialOverlays = [ring, txt];
+
+    } else if (phase === 'complete') {
+      this.tutorialOverlays = [];
+    }
+  }
+
+  // ── Scene drawing ─────────────────────────────────────────────────────
   drawPath() {
     const graphics = this.add.graphics();
     graphics.lineStyle(40, 0x161b22, 1);
     graphics.beginPath();
     graphics.moveTo(this.pathPoints[0].x, this.pathPoints[0].y);
-    this.pathPoints.forEach(function(p) { graphics.lineTo(p.x, p.y); });
+    this.pathPoints.forEach(p => graphics.lineTo(p.x, p.y));
     graphics.strokePath();
 
     graphics.lineStyle(40, 0x1e2530, 0.5);
     graphics.beginPath();
     graphics.moveTo(this.pathPoints[0].x, this.pathPoints[0].y);
-    this.pathPoints.forEach(function(p) { graphics.lineTo(p.x, p.y); });
+    this.pathPoints.forEach(p => graphics.lineTo(p.x, p.y));
     graphics.strokePath();
 
-    this.add.text(195, this.CT + 4, 'v ENTRY', {
+    this.add.text(this.pathPoints[0].x, this.CT + 4, 'v ENTRY', {
       fontFamily: 'monospace', fontSize: '10px', color: '#c43a3a', letterSpacing: 2
     }).setOrigin(0.5);
     this.add.text(195, this.CB - 6, '^ BASE', {
@@ -415,55 +621,82 @@ class CombatScene extends Phaser.Scene {
     }).setOrigin(0.5);
   }
 
+  // ── Header redesign (REQ 7) ───────────────────────────────────────────
+  // Row 1: BACK | level name | wave X/Y
+  // Row 2: ◈ parts counter  (prominent, left)
+  // HP bar strip (3px)
+  // HP near BASE at the bottom
   drawHeader() {
     const { width } = this.scale;
     const HY = this.HY;
 
-    this.add.rectangle(width / 2, HY, width, 98, 0x161b22);
-    this.add.rectangle(width / 2, HY + 49, width, 1, 0x334455);
+    this.add.rectangle(width / 2, HY, width, 92, 0x161b22);
+    this.add.rectangle(width / 2, HY + 46, width, 1, 0x334455);
 
-    const barW = width - 48;
-    this.add.rectangle(width / 2, HY + 60, barW, 5, 0x1e2530);
-    this.hpBarFill = this.add.rectangle(24, HY + 60, barW, 5, 0x5eba7d).setOrigin(0, 0.5);
-
-    const backBtn = this.add.rectangle(36, HY - 18, 54, 28, 0x1e2530).setInteractive();
-    this.add.text(36, HY - 18, '<- BACK', { fontFamily: 'monospace', fontSize: '10px', color: '#8899aa' }).setOrigin(0.5);
+    // ← BACK
+    const backBtn = this.add.rectangle(34, HY - 18, 52, 26, 0x1e2530).setInteractive();
+    this.add.text(34, HY - 18, '<- BACK', { fontFamily: 'monospace', fontSize: '10px', color: '#8899aa' }).setOrigin(0.5);
     backBtn.on('pointerdown', () => {
       if (!this.waveActive) {
-        this.hidePreview();
-        this.dismissUpgradePanel();
+        this.hidePreview(); this.dismissUpgradePanel();
         this.cameras.main.fade(200, 0, 0, 0);
         this.time.delayedCall(200, () => this.scene.start('DockScene'));
       }
     });
 
-    this.add.text(width / 2, HY - 26, this.levelData ? this.levelData.name : 'LEVEL', {
+    // Level name (top centre)
+    this.add.text(width / 2, HY - 22, this.levelData ? this.levelData.name : 'LEVEL', {
       fontFamily: 'monospace', fontSize: '10px', color: '#8899aa', letterSpacing: 3
     }).setOrigin(0.5);
 
-    this.add.text(82, HY - 26, 'PARTS', { fontFamily: 'monospace', fontSize: '9px', color: '#8899aa', letterSpacing: 2 }).setOrigin(0.5);
-    this.partsText = this.add.text(82, HY - 5, '0', { fontFamily: 'monospace', fontSize: '20px', color: '#e8a020', fontStyle: 'bold' }).setOrigin(0.5);
+    // Wave indicator (top right)
+    this.waveIndicator = this.add.text(width - 14, HY - 22, 'WAVE -/-', {
+      fontFamily: 'monospace', fontSize: '10px', color: '#445566', letterSpacing: 1
+    }).setOrigin(1, 0.5);
 
-    this.add.text(width - 54, HY - 26, 'BASE HP', { fontFamily: 'monospace', fontSize: '9px', color: '#8899aa', letterSpacing: 1 }).setOrigin(0.5);
-    this.hpText = this.add.text(width - 54, HY - 5, '' + this.baseHp, { fontFamily: 'monospace', fontSize: '20px', color: '#5eba7d', fontStyle: 'bold' }).setOrigin(0.5);
+    // Row 2: ◈ Parts (amber, prominent)
+    // Small amber diamond drawn before text
+    const gfx = this.add.graphics();
+    gfx.fillStyle(0xe8a020, 1);
+    gfx.fillRect(20, HY + 3, 10, 10);
+    this.partsText = this.add.text(36, HY + 8, '0', {
+      fontFamily: 'monospace', fontSize: '18px', color: '#e8a020', fontStyle: 'bold'
+    }).setOrigin(0, 0.5);
+    this.add.text(36, HY + 24, 'PARTS', {
+      fontFamily: 'monospace', fontSize: '9px', color: '#556677', letterSpacing: 2
+    }).setOrigin(0, 0.5);
 
-    this.waveText = this.add.text(width / 2, HY + 25, 'PLACE TOWERS — THEN START WAVE', {
-      fontFamily: 'monospace', fontSize: '11px', color: '#eef2f8', fontStyle: 'bold'
+    // Wave status text (centre row 2)
+    this.waveText = this.add.text(width / 2, HY + 16, 'PLACE TOWERS — THEN START WAVE', {
+      fontFamily: 'monospace', fontSize: '10px', color: '#eef2f8', fontStyle: 'bold'
     }).setOrigin(0.5);
   }
 
-  updateHpBar() {
-    if (!this.hpBarFill) return;
-    const pct = this.baseHp / this.baseHpMax;
-    this.hpBarFill.setSize((this.scale.width - 48) * pct, 5);
-    this.hpBarFill.setFillStyle(pct > 0.5 ? 0x5eba7d : pct > 0.25 ? 0xe8a020 : 0xc43a3a);
-  }
-
+  // ── Bottom panel (REQ 7 — HP near base) ──────────────────────────────
   drawBottomPanel() {
     const { width, height } = this.scale;
-    const panelY = height - 152;
 
-    this.add.rectangle(width / 2, height - 76, width, 152, 0x161b22).setDepth(8);
+    // BASE HP strip — sits just above tower buttons, near the BASE exit at screen bottom
+    const hpStripY = height - 162;
+    this.add.rectangle(width / 2, hpStripY, width, 38, 0x10180f);
+    this.add.rectangle(width / 2, hpStripY - 19, width, 1, 0x334455);
+
+    // Small base icon
+    this.add.circle(28, hpStripY, 8, 0x3a8fc4).setDepth(9);
+    this.add.text(28, hpStripY, 'B', { fontFamily: 'monospace', fontSize: '8px', color: '#0d1117', fontStyle: 'bold' }).setOrigin(0.5).setDepth(9);
+    this.add.text(44, hpStripY - 6, 'BASE HP', { fontFamily: 'monospace', fontSize: '9px', color: '#8899aa', letterSpacing: 1 }).setDepth(9);
+    this.hpText = this.add.text(44, hpStripY + 7, '' + this.baseHp + ' / ' + this.baseHpMax, {
+      fontFamily: 'monospace', fontSize: '13px', color: '#5eba7d', fontStyle: 'bold'
+    }).setDepth(9);
+
+    // HP bar
+    const barX = 118, barW = width - 132;
+    this.add.rectangle(barX + barW / 2, hpStripY, barW, 10, 0x1e2530).setDepth(9);
+    this.hpBarFill = this.add.rectangle(barX, hpStripY, barW, 10, 0x5eba7d).setOrigin(0, 0.5).setDepth(9);
+
+    // Tower button panel
+    const panelY = height - 124;
+    this.add.rectangle(width / 2, height - 62, width, 124, 0x161b22).setDepth(8);
     this.add.rectangle(width / 2, panelY, width, 1, 0x334455).setDepth(8);
 
     const towerTypes = ['gunner', 'bomber', 'barricade'];
@@ -471,22 +704,21 @@ class CombatScene extends Phaser.Scene {
 
     towerTypes.forEach((type, i) => {
       const data      = TOWER_DATA[type];
-      const x         = 52 + i * 96;
-      const y         = panelY + 60;
+      const x         = 50 + i * 94;
+      const y         = panelY + 52;
       const colourHex = '#' + data.colour.toString(16).padStart(6, '0');
       const count     = this.loadout[type];
       const active    = count > 0;
 
-      const btn = this.add.rectangle(x, y, 86, 86, active ? 0x1e2530 : 0x161b22).setInteractive().setDepth(9);
+      const btn = this.add.rectangle(x, y, 82, 80, active ? 0x1e2530 : 0x161b22).setInteractive().setDepth(9);
       btn.towerType = type;
-      this.add.rectangle(x, y, 86, 86).setStrokeStyle(1, active ? data.colour : 0x334455).setDepth(9);
-      this.add.circle(x, y - 26, 9, active ? data.colour : 0x334455).setDepth(9);
+      this.add.rectangle(x, y, 82, 80).setStrokeStyle(1, active ? data.colour : 0x334455).setDepth(9);
+      this.add.circle(x, y - 23, 8, active ? data.colour : 0x334455).setDepth(9);
       this.add.text(x, y + 2, data.name, {
-        fontFamily: 'monospace', fontSize: '12px', color: active ? '#eef2f8' : '#556677', fontStyle: 'bold'
+        fontFamily: 'monospace', fontSize: '11px', color: active ? '#eef2f8' : '#556677', fontStyle: 'bold'
       }).setOrigin(0.5).setDepth(9);
-
-      const countText = this.add.text(x, y + 22, 'x' + count, {
-        fontFamily: 'monospace', fontSize: '14px', color: active ? colourHex : '#445566'
+      const countText = this.add.text(x, y + 20, 'x' + count, {
+        fontFamily: 'monospace', fontSize: '13px', color: active ? colourHex : '#445566'
       }).setOrigin(0.5).setDepth(9);
       btn.countText = countText;
       this.towerButtons[type] = btn;
@@ -496,13 +728,25 @@ class CombatScene extends Phaser.Scene {
       btn.on('pointerout',  () => { if (this.selectedTowerType !== type) btn.setFillStyle(active ? 0x1e2530 : 0x161b22); });
     });
 
-    this.startWaveBtn = this.add.rectangle(width - 60, panelY + 60, 88, 86, 0x0d1a0d).setInteractive().setDepth(9);
-    this.add.rectangle(width - 60, panelY + 60, 88, 86).setStrokeStyle(1, 0x5eba7d).setDepth(9);
-    this.startWaveBtnLabel = this.add.text(width - 60, panelY + 48, 'START', { fontFamily: 'monospace', fontSize: '15px', color: '#5eba7d', fontStyle: 'bold' }).setOrigin(0.5).setDepth(9);
-    this.startWaveBtnSub   = this.add.text(width - 60, panelY + 68, 'WAVE 1', { fontFamily: 'monospace', fontSize: '11px', color: '#5eba7d' }).setOrigin(0.5).setDepth(9);
+    // START WAVE button
+    this.startWaveBtn = this.add.rectangle(width - 56, panelY + 52, 84, 80, 0x0d1a0d).setInteractive().setDepth(9);
+    this.add.rectangle(width - 56, panelY + 52, 84, 80).setStrokeStyle(1, 0x5eba7d).setDepth(9);
+    this.startWaveBtnLabel = this.add.text(width - 56, panelY + 40, 'START', {
+      fontFamily: 'monospace', fontSize: '14px', color: '#5eba7d', fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(9);
+    this.startWaveBtnSub = this.add.text(width - 56, panelY + 60, 'WAVE 1', {
+      fontFamily: 'monospace', fontSize: '10px', color: '#5eba7d'
+    }).setOrigin(0.5).setDepth(9);
     this.startWaveBtn.on('pointerdown', () => this.startNextWave());
     this.startWaveBtn.on('pointerover', () => this.startWaveBtn.setFillStyle(0x162616));
     this.startWaveBtn.on('pointerout',  () => this.startWaveBtn.setFillStyle(0x0d1a0d));
+  }
+
+  updateHpBar() {
+    if (!this.hpBarFill) return;
+    const pct = this.baseHp / this.baseHpMax;
+    this.hpBarFill.setSize((this.scale.width - 132) * pct, 10);
+    this.hpBarFill.setFillStyle(pct > 0.5 ? 0x5eba7d : pct > 0.25 ? 0xe8a020 : 0xc43a3a);
   }
 
   selectTower(type) {
@@ -513,8 +757,13 @@ class CombatScene extends Phaser.Scene {
     Object.keys(this.towerButtons).forEach(t => {
       this.towerButtons[t].setFillStyle(t === type ? 0x2a3a4a : (this.loadout[t] > 0 ? 0x1e2530 : 0x161b22));
     });
+    // Advance tutorial: gunner selected → show placement
+    if (this.tutorialPhase === 'highlightGunner' && type === 'gunner') {
+      this.advanceTutorialPhase('showPlacement');
+    }
   }
 
+  // ── Combat ────────────────────────────────────────────────────────────
   getSpeedModifier(enemy) {
     let modifier = 1.0;
     this.placedTowers.forEach(tower => {
@@ -547,7 +796,7 @@ class CombatScene extends Phaser.Scene {
         bullet.destroy();
         if (!target.alive) return;
         if (tower.type === 'bomber') {
-          const splashR = tower.data.splashRadius || 100;
+          const splashR = tower.data.splashRadius || 80;
           this.activeEnemies.filter(e => {
             if (!e.alive || !e.sprite || !e.sprite.active) return false;
             return Phaser.Math.Distance.Between(target.sprite.x, target.sprite.y, e.sprite.x, e.sprite.y) <= splashR;
@@ -596,14 +845,26 @@ class CombatScene extends Phaser.Scene {
     this.checkWaveComplete();
   }
 
+  // ── Wave management ───────────────────────────────────────────────────
   startNextWave() {
     if (this.waveActive || this.gameOver) return;
     if (this.currentWave >= this.levelData.waves.length) return;
 
     if (this.tutorialElements) {
-      this.tutorialElements.forEach(function(e) { e.destroy(); });
+      this.tutorialElements.forEach(e => e.destroy());
       this.tutorialElements = null;
     }
+    // Advance tutorial when wave starts
+    if (this.tutorialPhase === 'highlightStart') {
+      this.advanceTutorialPhase('complete');
+    }
+
+    this.hidePreview();
+    this.dismissUpgradePanel();
+    this.selectedTowerType = null;
+    Object.keys(this.towerButtons).forEach(t => {
+      this.towerButtons[t].setFillStyle(this.loadout[t] > 0 ? 0x1e2530 : 0x161b22);
+    });
 
     const waveData = this.levelData.waves[this.currentWave];
     this.waveActive = true;
@@ -611,12 +872,13 @@ class CombatScene extends Phaser.Scene {
     this.startWaveBtn.setAlpha(0.5).disableInteractive();
     this.startWaveBtnLabel.setText('WAVE ' + (this.currentWave + 1));
     this.startWaveBtnSub.setText('ACTIVE');
-    this.waveText.setText('WAVE ' + (this.currentWave + 1) + ' of ' + this.levelData.waves.length + ' — STAND BY');
+    this.waveText.setText('WAVE ' + (this.currentWave + 1) + ' of ' + this.levelData.waves.length);
     this.waveText.setStyle({ color: '#e8a020' });
+    if (this.waveIndicator) this.waveIndicator.setText('WAVE ' + (this.currentWave + 1) + '/' + this.levelData.waves.length);
 
     const { width, height } = this.scale;
-    const incoming = this.add.text(width / 2, height / 2 - 40, 'WAVE ' + (this.currentWave + 1) + '\nINCOMING', {
-      fontFamily: 'monospace', fontSize: '40px', color: '#c43a3a', fontStyle: 'bold', align: 'center'
+    const incoming = this.add.text(width / 2, height / 2 - 50, 'WAVE ' + (this.currentWave + 1) + '\nINCOMING', {
+      fontFamily: 'monospace', fontSize: '38px', color: '#c43a3a', fontStyle: 'bold', align: 'center'
     }).setOrigin(0.5).setAlpha(0).setDepth(25);
     this.tweens.add({
       targets: incoming, alpha: 1, duration: 250,
@@ -632,19 +894,39 @@ class CombatScene extends Phaser.Scene {
     });
   }
 
+  // REQ 10: Irregular rhythm — burst spawning with variable gaps
   spawnWave(waveData) {
     let totalDelay = 0;
-    this.waveEnemyTotal    = waveData.enemies.reduce(function(s, g) { return s + g.count; }, 0);
+    this.waveEnemyTotal    = waveData.enemies.reduce((s, g) => s + g.count, 0);
     this.waveEnemyResolved = 0;
 
     waveData.enemies.forEach(group => {
-      for (let i = 0; i < group.count; i++) {
-        const jitter = group.interval * 0.2 * (Math.random() * 2 - 1);
-        const delay  = Math.max(150, group.interval + jitter);
-        this.time.delayedCall(totalDelay, () => {
-          if (!this.gameOver) this.spawnEnemy(group.type);
-        });
-        totalDelay += delay;
+      let i = 0;
+      while (i < group.count) {
+        // 28% chance of burst: 2-3 enemies very close together
+        const canBurst  = (i + 2) < group.count;
+        const doBurst   = canBurst && Math.random() < 0.28;
+        const burstSize = doBurst ? (Math.random() < 0.5 ? 2 : 3) : 1;
+
+        for (let b = 0; b < burstSize && i < group.count; b++, i++) {
+          const burstOffset = b > 0 ? 120 + Math.random() * 280 : 0;
+          const spawnDelay  = totalDelay + burstOffset;
+          this.time.delayedCall(spawnDelay, () => {
+            if (!this.gameOver) this.spawnEnemy(group.type);
+          });
+        }
+
+        // Gap after this cluster: longer after burst, irregular otherwise
+        if (doBurst) {
+          totalDelay += group.interval * (1.3 + Math.random() * 0.9);
+        } else {
+          // Irregular: sometimes short (0.55x), sometimes long (1.45x)
+          const r = Math.random();
+          const gapMult = r < 0.2 ? 0.45 + Math.random() * 0.2
+                        : r < 0.8 ? 0.75 + Math.random() * 0.5
+                        : 1.3    + Math.random() * 0.6;
+          totalDelay += Math.max(140, group.interval * gapMult);
+        }
       }
     });
   }
@@ -657,12 +939,7 @@ class CombatScene extends Phaser.Scene {
     const hpBg   = this.add.rectangle(start.x, start.y - data.size - 7, barW, 4, 0x2a3a4a).setDepth(8);
     const hpFill = this.add.rectangle(start.x - barW / 2, start.y - data.size - 7, barW, 4, 0x5eba7d).setOrigin(0, 0.5).setDepth(8);
 
-    const enemy = {
-      type, data: { ...data }, sprite,
-      hp: data.hp, maxHp: data.hp,
-      alive: true, pathProgress: 0,
-      hpBg, hpFill
-    };
+    const enemy = { type, data: { ...data }, sprite, hp: data.hp, maxHp: data.hp, alive: true, pathProgress: 0, hpBg, hpFill };
     this.activeEnemies.push(enemy);
     this.moveToWaypoint(enemy, 1);
   }
@@ -671,8 +948,8 @@ class CombatScene extends Phaser.Scene {
     if (!enemy.alive || this.gameOver) return;
     if (idx >= this.pathPoints.length) { this.enemyReachedEnd(enemy); return; }
 
-    const target = this.pathPoints[idx];
-    const dist   = Phaser.Math.Distance.Between(enemy.sprite.x, enemy.sprite.y, target.x, target.y);
+    const target       = this.pathPoints[idx];
+    const dist         = Phaser.Math.Distance.Between(enemy.sprite.x, enemy.sprite.y, target.x, target.y);
     enemy.pathProgress = idx;
 
     this.tweens.add({
@@ -693,7 +970,7 @@ class CombatScene extends Phaser.Scene {
 
     this.baseHp -= enemy.data.baseDamage;
     if (this.baseHp < 0) this.baseHp = 0;
-    this.hpText.setText('' + this.baseHp);
+    this.hpText.setText('' + this.baseHp + ' / ' + this.baseHpMax);
     if (this.baseHp <= 3) this.hpText.setStyle({ color: '#c43a3a' });
     this.updateHpBar();
     this.cameras.main.shake(140, 0.007);
@@ -725,11 +1002,13 @@ class CombatScene extends Phaser.Scene {
     });
   }
 
+  // ── Game over ─────────────────────────────────────────────────────────
   triggerGameOver(victory) {
     this.gameOver   = true;
     this.waveActive = false;
     this.hidePreview();
     this.dismissUpgradePanel();
+    this.tutorialOverlays.forEach(e => { if (e && e.destroy) e.destroy(); });
     this.towerTimerEvents.forEach(e => e.remove(false));
     this.towerTimerEvents = [];
 
@@ -738,22 +1017,22 @@ class CombatScene extends Phaser.Scene {
     const { width, height } = this.scale;
     this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.88).setDepth(20);
 
-    const titleColour = victory ? '#5eba7d' : '#c43a3a';
-    this.add.text(width / 2, 168, victory ? 'VICTORY' : 'BASE LOST', {
-      fontFamily: 'monospace', fontSize: '44px', color: titleColour, fontStyle: 'bold'
+    const tc = victory ? '#5eba7d' : '#c43a3a';
+    this.add.text(width / 2, 172, victory ? 'VICTORY' : 'BASE LOST', {
+      fontFamily: 'monospace', fontSize: '44px', color: tc, fontStyle: 'bold'
     }).setOrigin(0.5).setDepth(21);
-    this.add.text(width / 2, 216, victory ? 'YOUR SOVEREIGNTY HOLDS' : 'YOUR BASE WAS OVERWHELMED', {
+    this.add.text(width / 2, 220, victory ? 'YOUR SOVEREIGNTY HOLDS' : 'YOUR BASE WAS OVERWHELMED', {
       fontFamily: 'monospace', fontSize: '13px', color: '#8899aa', letterSpacing: 2
     }).setOrigin(0.5).setDepth(21);
 
-    let y = 240;
+    let y = 248;
 
-    const hpColour = this.baseHp > 5 ? '#5eba7d' : this.baseHp > 2 ? '#e8a020' : '#c43a3a';
+    const hpCol = this.baseHp > 5 ? '#5eba7d' : this.baseHp > 2 ? '#e8a020' : '#c43a3a';
     this.add.text(28, y, 'BASE HP REMAINING', { fontFamily: 'monospace', fontSize: '10px', color: '#8899aa', letterSpacing: 2 }).setDepth(21);
-    this.add.text(28, y + 18, this.baseHp + ' / ' + this.baseHpMax, { fontFamily: 'monospace', fontSize: '22px', color: hpColour, fontStyle: 'bold' }).setDepth(21);
-    const barMaxW = width - 56;
-    this.add.rectangle(width / 2, y + 56, barMaxW, 8, 0x2a3a4a).setDepth(21);
-    this.add.rectangle(28, y + 56, barMaxW * (this.baseHp / this.baseHpMax), 8, Phaser.Display.Color.HexStringToColor(hpColour).color).setOrigin(0, 0.5).setDepth(21);
+    this.add.text(28, y + 18, this.baseHp + ' / ' + this.baseHpMax, { fontFamily: 'monospace', fontSize: '22px', color: hpCol, fontStyle: 'bold' }).setDepth(21);
+    const bw = width - 56;
+    this.add.rectangle(width / 2, y + 56, bw, 8, 0x2a3a4a).setDepth(21);
+    this.add.rectangle(28, y + 56, bw * (this.baseHp / this.baseHpMax), 8, Phaser.Display.Color.HexStringToColor(hpCol).color).setOrigin(0, 0.5).setDepth(21);
     y += 76;
 
     this.add.rectangle(width / 2, y, width - 48, 1, 0x334455).setDepth(21);
@@ -770,9 +1049,9 @@ class CombatScene extends Phaser.Scene {
     y += 18;
     ['gunner', 'bomber', 'barricade'].forEach(type => {
       if (!this.towersUsed[type]) return;
-      const data      = TOWER_DATA[type];
-      const colourHex = '#' + data.colour.toString(16).padStart(6, '0');
-      this.add.text(28, y, data.name, { fontFamily: 'monospace', fontSize: '13px', color: colourHex, fontStyle: 'bold' }).setDepth(21);
+      const d   = TOWER_DATA[type];
+      const ch  = '#' + d.colour.toString(16).padStart(6, '0');
+      this.add.text(28, y, d.name, { fontFamily: 'monospace', fontSize: '13px', color: ch, fontStyle: 'bold' }).setDepth(21);
       if (type === 'barricade') {
         this.add.text(width - 28, y, 'x' + this.towersUsed[type] + ' placed', { fontFamily: 'monospace', fontSize: '12px', color: '#556677' }).setOrigin(1, 0).setDepth(21);
       } else {
@@ -785,20 +1064,20 @@ class CombatScene extends Phaser.Scene {
 
     this.add.rectangle(width / 2, y + 4, width - 48, 1, 0x334455).setDepth(21);
     y += 16;
-    const totalKills = Object.values(this.killStats).reduce(function(s, v) { return s + v; }, 0);
+    const totalKills = Object.values(this.killStats).reduce((s, v) => s + v, 0);
     this.add.text(28, y, 'ENEMIES ELIMINATED', { fontFamily: 'monospace', fontSize: '10px', color: '#8899aa', letterSpacing: 2 }).setDepth(21);
     this.add.text(width - 28, y, totalKills + ' TOTAL', { fontFamily: 'monospace', fontSize: '13px', color: '#eef2f8', fontStyle: 'bold' }).setOrigin(1, 0).setDepth(21);
     y += 18;
     Object.entries(this.killStats).forEach(function(entry) {
-      const type  = entry[0];
-      const count = entry[1];
+      const type  = entry[0]; const count = entry[1];
       const name  = ENEMY_DATA[type] ? ENEMY_DATA[type].name : type.toUpperCase();
       this.add.text(28, y, name, { fontFamily: 'monospace', fontSize: '11px', color: '#556677' }).setDepth(21);
       this.add.text(width - 28, y, 'x' + count, { fontFamily: 'monospace', fontSize: '11px', color: '#eef2f8' }).setOrigin(1, 0).setDepth(21);
       y += 18;
     }.bind(this));
 
-    if (victory && this.levelId === 1) {
+    // Reward cards
+    if (victory && this.levelId === 1 && this.storylineId === 1) {
       y += 8;
       this.add.rectangle(width / 2, y + 28, width - 48, 56, 0x0d1e2e).setDepth(21);
       this.add.rectangle(width / 2, y + 28, width - 48, 56).setStrokeStyle(1, 0x3a8fc4).setDepth(21);
@@ -806,13 +1085,24 @@ class CombatScene extends Phaser.Scene {
       this.add.text(48, y + 28, 'W2', { fontFamily: 'monospace', fontSize: '10px', color: '#0d1117', fontStyle: 'bold' }).setOrigin(0.5).setDepth(22);
       this.add.text(72, y + 16, 'NEW RECRUIT', { fontFamily: 'monospace', fontSize: '13px', color: '#3a8fc4', fontStyle: 'bold' }).setDepth(22);
       this.add.text(72, y + 34, 'A second worker awaits at the factory.', { fontFamily: 'monospace', fontSize: '11px', color: '#8899aa' }).setDepth(22);
+      y += 64;
     }
-    if (victory && this.levelId === 2) {
+    if (victory && this.levelId === 3 && this.storylineId === 1) {
+      y += 8;
+      this.add.rectangle(width / 2, y + 32, width - 48, 64, 0x0a1a08).setDepth(21);
+      this.add.rectangle(width / 2, y + 32, width - 48, 64).setStrokeStyle(1, 0x5eba7d).setDepth(21);
+      this.add.text(28, y + 12, 'UPGRADES UNLOCKED', { fontFamily: 'monospace', fontSize: '13px', color: '#5eba7d', fontStyle: 'bold' }).setDepth(22);
+      this.add.text(28, y + 32, 'Tap any placed tower during combat', { fontFamily: 'monospace', fontSize: '11px', color: '#8899aa' }).setDepth(22);
+      this.add.text(28, y + 48, 'to spend PARTS and increase its power.', { fontFamily: 'monospace', fontSize: '11px', color: '#8899aa' }).setDepth(22);
+      y += 72;
+    }
+    if (victory && this.levelId === 2 && this.storylineId === 1) {
       y += 8;
       this.add.rectangle(width / 2, y + 28, width - 48, 56, 0x1a1200).setDepth(21);
       this.add.rectangle(width / 2, y + 28, width - 48, 56).setStrokeStyle(1, 0xe8a020).setDepth(21);
       this.add.text(28, y + 16, 'FACTORY UNLOCK', { fontFamily: 'monospace', fontSize: '13px', color: '#e8a020', fontStyle: 'bold' }).setDepth(22);
       this.add.text(28, y + 34, 'Bomber and Barricade assembly now available.', { fontFamily: 'monospace', fontSize: '11px', color: '#8899aa' }).setDepth(22);
+      y += 64;
     }
     if (victory && this.levelId === 8) {
       y += 8;
@@ -837,7 +1127,7 @@ class CombatScene extends Phaser.Scene {
     const save      = JSON.parse(localStorage.getItem(saveKey));
 
     if (!save.completedLevels) save.completedLevels = {};
-    const key = 'storyline' + this.storylineId;
+    const key = this.isEndless ? 'endless' : 'storyline' + this.storylineId;
     if (!save.completedLevels[key]) save.completedLevels[key] = [];
     if (!save.completedLevels[key].includes(this.levelId)) save.completedLevels[key].push(this.levelId);
 
@@ -850,8 +1140,8 @@ class CombatScene extends Phaser.Scene {
       });
     }
 
-    if (this.levelId === 1 && !save.workers) save.workers = 2;
-    if (this.levelId === 8) save.factionOneComplete = true;
+    if (this.levelId === 1 && this.storylineId === 1 && !save.workers) save.workers = 2;
+    if (this.levelId === 8 && this.storylineId === 1) save.factionOneComplete = true;
 
     localStorage.setItem(saveKey, JSON.stringify(save));
   }

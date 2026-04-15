@@ -225,7 +225,15 @@ class CombatScene extends Phaser.Scene {
 
     // Direct tap on tower — deselects placement mode and opens upgrade panel
     hitZone.on('pointerup', () => {
-      this.selectedTowerType = null;
+  this.towerTapped = true;
+  this.selectedTowerType = null;
+  Object.keys(this.towerButtons).forEach(t => {
+    this.towerButtons[t].setFillStyle(this.loadout[t] > 0 ? 0x1e2530 : 0x161b22);
+  });
+  this.hidePreview();
+  this.showUpgradePanel(tower);
+});
+
       Object.keys(this.towerButtons).forEach(t => {
         this.towerButtons[t].setFillStyle(this.loadout[t] > 0 ? 0x1e2530 : 0x161b22);
       });

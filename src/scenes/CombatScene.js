@@ -387,10 +387,12 @@ class CombatScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(5);
 
     if (type === 'barricade') {
-      this.add.circle(x, y, towerData.range, data.colour, 0.04).setDepth(2);
-      this.add.circle(x, y, towerData.range).setStrokeStyle(1, data.colour, 0.2).setDepth(2);
-      this.towerStats.barricade.placed++;
-    } else {
+  const ring = this.add.circle(x, y, towerData.range, data.colour, 0.06).setDepth(2);
+  const rb   = this.add.circle(x, y, towerData.range).setStrokeStyle(1, data.colour, 0.25).setDepth(2);
+  this.time.delayedCall(1400, () => { ring.destroy(); rb.destroy(); });
+  this.towerStats.barricade.placed++;
+}
+    else {
       const ring = this.add.circle(x, y, towerData.range, data.colour, 0.08).setDepth(2);
       const rb   = this.add.circle(x, y, towerData.range).setStrokeStyle(1, data.colour, 0.3).setDepth(2);
       this.time.delayedCall(1400, () => { ring.destroy(); rb.destroy(); });

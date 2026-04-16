@@ -13,6 +13,7 @@ class DockScene extends Phaser.Scene {
 
     this.add.rectangle(width / 2, height / 2, width, height, 0x0d1117);
 
+    // Fixed header background
     this.add.rectangle(width / 2, TOP + 94, width, 100, 0x161b22).setDepth(10);
     this.add.rectangle(width / 2, TOP + 144, width, 1, 0x334455).setDepth(10);
 
@@ -20,6 +21,7 @@ class DockScene extends Phaser.Scene {
     this.add.text(44, TOP + 94, '<- BACK', {
       fontFamily: 'monospace', fontSize: '14px', color: '#e8a020'
     }).setOrigin(0.5).setDepth(11);
+    
     backBtn.on('pointerdown', () => {
       if (this.currentView === 'levels') {
         this.showCampaignSelect();
@@ -39,12 +41,20 @@ class DockScene extends Phaser.Scene {
       fontFamily: 'monospace', fontSize: '12px', color: '#8899aa', letterSpacing: 2
     }).setOrigin(0.5).setDepth(11);
 
+    // --- NEW CURRENCY DISPLAY (PINNED TO HEADER) ---
+    const currentNuts = this.saveData.nuts || 0;
+    const currentBolts = this.saveData.bolts || 0;
+    this.add.text(width - 24, TOP + 94, `${currentNuts} NUTS\n${currentBolts} BOLTS`, {
+      fontFamily: 'monospace', fontSize: '12px', color: '#eef2f8', fontStyle: 'bold', align: 'right'
+    }).setOrigin(1, 0.5).setDepth(11);
+    // -----------------------------------------------
+
     this.contentContainer = null;
     this.currentView      = 'campaigns';
     this.scrollY          = 0;
     this.scrollMinY       = 0;
 
-    // Named scroll handlers so they can be removed cleanly
+    // Named scroll handlers
     this._onDown  = (p) => { this._dragStart = p.y; this._dragBase = this.scrollY; this._dragging = false; };
     this._onMove  = (p) => {
       if (this._dragStart === null || this._dragStart === undefined) return;
@@ -83,11 +93,9 @@ class DockScene extends Phaser.Scene {
     this.input.on('pointerup',    this._onUp);
   }
 
-  // ── Campaign select ───────────────────────────────────────────────────
   showCampaignSelect() {
     this.clearContent();
     this.currentView = 'campaigns';
-    const { width } = this.scale;
     const TOP = 55;
 
     this.headerTitle.setText('DOCK');
@@ -123,8 +131,6 @@ class DockScene extends Phaser.Scene {
       unlocked: anyCompleted,
       onTap:    anyCompleted ? () => this.startEndless() : null
     });
-
-    // No scrolling needed on campaign select — it fits on screen
   }
 
   addCampaignCard(y, { title, tag, tagCol, colour, sub, progress, unlocked, onTap }) {
@@ -156,7 +162,6 @@ class DockScene extends Phaser.Scene {
     }
   }
 
-  // ── Endless ───────────────────────────────────────────────────────────
   startEndless() {
     const ids = (this.saveData && this.saveData.completedLevels && this.saveData.completedLevels.storyline1)
       ? this.saveData.completedLevels.storyline1 : [];
@@ -193,7 +198,6 @@ class DockScene extends Phaser.Scene {
     return waves;
   }
 
-  // ── Level list ────────────────────────────────────────────────────────
   showLevelList(storyline) {
     this.clearContent();
     this.currentView = 'levels';
@@ -250,7 +254,6 @@ class DockScene extends Phaser.Scene {
     }
 
     const totalWaves = level.waves ? level.waves.length : 1;
-
     const tLvl  = this.add.text(48, cardY + 9,  'LEVEL ' + level.id, { fontFamily: 'monospace', fontSize: '10px', color: '#8899aa', letterSpacing: 3 });
     const tName = this.add.text(48, cardY + 23, level.name,           { fontFamily: 'monospace', fontSize: '15px', color: titCol, fontStyle: 'bold' });
     const tDesc = this.add.text(48, cardY + 44, level.description,    { fontFamily: 'monospace', fontSize: '10px', color: '#556677', wordWrap: { width: width - 200 } });
@@ -263,13 +266,6 @@ class DockScene extends Phaser.Scene {
 
     const tW = this.add.text(width - 36, cardY + 28, totalWaves + ' WAVES', { fontFamily: 'monospace', fontSize: '9px', color: '#556677', letterSpacing: 1 }).setOrigin(1, 0);
     this.contentContainer.add(tW);
-
-    if (level.hotspots && level.hotspots.length > 0) {
-      const b   = level.hotspots.filter(h => h.mult >= 1).length;
-      const d   = level.hotspots.filter(h => h.mult < 1).length;
-      const str = (b > 0 ? b + 'B' : '') + (b > 0 && d > 0 ? ' ' : '') + (d > 0 ? d + 'D' : '');
-      this.contentContainer.add(this.add.text(width - 36, cardY + 42, str, { fontFamily: 'monospace', fontSize: '9px', color: '#445566' }).setOrigin(1, 0));
-    }
 
     if (isCompleted) {
       this.contentContainer.add(this.add.text(width - 36, cardY + 60, 'v DONE', { fontFamily: 'monospace', fontSize: '9px', color: '#5eba7d', letterSpacing: 1 }).setOrigin(1, 0));

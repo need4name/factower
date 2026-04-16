@@ -52,21 +52,28 @@ class SaveScene extends Phaser.Scene {
       this.add.text(x, y - 28, data.playerName || 'THE PIRATE KING', {
         fontFamily: 'monospace', fontSize: '20px', color: '#e8a020', fontStyle: 'bold'
       }).setOrigin(0.5);
-      this.add.text(x, y + 4, 'STORYLINE ' + (data.storyline || 1) + ' · LEVEL ' + (data.level || 1), {
+      
+      // Display Currency Summary on Slot
+      const nuts = data.nuts || 0;
+      const bolts = data.bolts || 0;
+      this.add.text(x, y + 4, `NUTS: ${nuts} · BOLTS: ${bolts}`, {
         fontFamily: 'monospace', fontSize: '12px', color: '#8899aa', letterSpacing: 2
       }).setOrigin(0.5);
+
       this.add.text(x, y + 28, 'POWER SCORE: ' + (data.powerScore || 0), {
         fontFamily: 'monospace', fontSize: '12px', color: '#3a8fc4', letterSpacing: 2
       }).setOrigin(0.5);
 
       const delBtn = this.add.rectangle(x + (width - 48) / 2 - 36, y - 54, 56, 28, 0x2a1a1a).setInteractive();
       this.add.rectangle(x + (width - 48) / 2 - 36, y - 54, 56, 28).setStrokeStyle(1, 0x552222);
-      this.add.text(x + (width - 48) / 2 - 36, y - 54, 'DELETE', {
-        fontFamily: 'monospace', fontSize: '10px', color: '#aa4444', letterSpacing: 1
+      this.add.text(x + (width - 48) / 2 - 36, y - 54, 'DEL', {
+        fontFamily: 'monospace', fontSize: '10px', color: '#aa4444'
       }).setOrigin(0.5);
-      delBtn.on('pointerdown', () => this.deleteSlot(index));
-      delBtn.on('pointerover', () => delBtn.setFillStyle(0x3a1a1a));
-      delBtn.on('pointerout',  () => delBtn.setFillStyle(0x2a1a1a));
+
+      delBtn.on('pointerdown', (pointer, localX, localY, event) => {
+        event.stopPropagation(); // Prevent slot selection when deleting
+        this.deleteSlot(index);
+      });
     }
 
     bg.on('pointerdown', () => this.selectSlot(index, isEmpty));
@@ -91,7 +98,9 @@ class SaveScene extends Phaser.Scene {
         powerScore: 0,
         materials: { plasticScrap: 0, refinedPlastic: 0, salvagedMetal: 0 },
         stockpile: { gunner: 10, bomber: 10, barricade: 10 },
-        nuts: 0, bolts: 0, parts: 0,
+        nuts: 500, // Starting currency for testing Armoury
+        bolts: 0,
+        parts: 0,
         completedLevels: {},
         createdAt: Date.now()
       };

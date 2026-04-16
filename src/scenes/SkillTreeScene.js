@@ -9,7 +9,9 @@ class SkillTreeScene extends Phaser.Scene {
 
     const slotIndex = localStorage.getItem('factower_active_slot');
     this.saveKey    = 'factower_save_' + slotIndex;
-    this.saveData   = JSON.parse(localStorage.getItem(this.saveKey));
+    
+    // FIX: Fallback to an empty object if no save data exists
+    this.saveData   = JSON.parse(localStorage.getItem(this.saveKey)) || {};
 
     if (!this.saveData.skillTree) this.saveData.skillTree = {};
     if (this.saveData.bolts === undefined) this.saveData.bolts = 0;
@@ -28,6 +30,7 @@ class SkillTreeScene extends Phaser.Scene {
     this.add.text(44, TOP + 94, '<- BACK', {
       fontFamily: 'monospace', fontSize: '14px', color: '#e8a020'
     }).setOrigin(0.5).setDepth(11);
+    
     backBtn.on('pointerdown', () => {
       this.cameras.main.fade(200, 0, 0, 0);
       this.time.delayedCall(200, () => this.scene.start('BaseScene'));
@@ -67,16 +70,30 @@ class SkillTreeScene extends Phaser.Scene {
     this._onMove = (p) => {
       if (this._dragStart === undefined) return;
       const dy = p.y - this._dragStart;
-      if (Math.abs(dy) > 5) this._dragging = true;
+      
+      // FIX: Increased threshold to 10 for better touch/click leniency
+      if (Math.abs(dy) > 10) this._dragging = true; 
+      
       if (!this._dragging) return;
       const ny = Phaser.Math.Clamp(this._dragBase + dy, this.scrollMinY, 0);
       if (this.contentContainer) this.contentContainer.setY(ny);
       this.scrollY = ny;
     };
     this._onUp = () => { this._dragStart = undefined; };
+    
     this.input.on('pointerdown', this._onDown);
     this.input.on('pointermove', this._onMove);
     this.input.on('pointerup',   this._onUp);
+    // FIX: Added pointerupoutside to catch drags that leave the canvas
+    this.input.on('pointerupoutside', this._onUp); 
+
+    // FIX: Clean up global input listeners when the scene shuts down to prevent memory leaks
+    this.events.on('shutdown', () => {
+      this.input.off('pointerdown', this._onDown);
+      this.input.off('pointermove', this._onMove);
+      this.input.off('pointerup', this._onUp);
+      this.input.off('pointerupoutside', this._onUp);
+    });
   }
 
   // ── Tab bar ──────────────────────────────────────────────────────────
@@ -115,8 +132,12 @@ class SkillTreeScene extends Phaser.Scene {
         this.activeBranchIndex = i;
         this.scrollY    = 0;
         if (this.contentContainer) this.contentContainer.setY(0);
-        this.drawTabs();
-        this.drawBranch(i);
+        
+        // FIX: Defer the redraw to safely allow the current pointerdown event to finish resolving
+        this.time.delayedCall(0, () => {
+          this.drawTabs();
+          this.drawBranch(i);
+        });
       });
 
       this.tabButtons.push(bg, bdr, label, countLabel);

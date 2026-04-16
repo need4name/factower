@@ -33,6 +33,14 @@ class ArmouryScene extends Phaser.Scene {
       fontFamily: 'monospace', fontSize: '12px', color: '#8899aa', letterSpacing: 2
     }).setOrigin(0.5);
 
+    // --- NEW CURRENCY DISPLAY ---
+    const currentNuts = this.saveData.nuts || 0;
+    const currentBolts = this.saveData.bolts || 0;
+    this.add.text(width - 24, TOP + 94, `${currentNuts} NUTS\n${currentBolts} BOLTS`, {
+      fontFamily: 'monospace', fontSize: '12px', color: '#eef2f8', fontStyle: 'bold', align: 'right'
+    }).setOrigin(1, 0.5);
+    // ----------------------------
+
     this.add.text(24, TOP + 164, 'AVAILABLE TOWERS', {
       fontFamily: 'monospace', fontSize: '12px', color: '#8899aa', letterSpacing: 3
     });
@@ -67,6 +75,32 @@ class ArmouryScene extends Phaser.Scene {
       this.add.text(width - 36, y + 28, 'IN STOCK', {
         fontFamily: 'monospace', fontSize: '10px', color: active ? '#8899aa' : '#334455', letterSpacing: 2
       }).setOrigin(1, 0.5);
+
+      // --- NEW SCRAP LOGIC ---
+      if (active && count >= 10) {
+        const scrapYield = data.tier === 1 ? 100 : 250; 
+        
+        const scrapBtnBg = this.add.rectangle(width - 120, y + 10, 80, 32, 0x1e2530).setOrigin(0.5).setInteractive();
+        this.add.rectangle(width - 120, y + 10, 80, 32).setOrigin(0.5).setStrokeStyle(1, 0x556677);
+        
+        this.add.text(width - 120, y + 10, `SCRAP 10\n(+${scrapYield} NUTS)`, {
+          fontFamily: 'monospace', fontSize: '9px', color: '#8899aa', align: 'center'
+        }).setOrigin(0.5);
+
+        scrapBtnBg.on('pointerover', () => scrapBtnBg.setFillStyle(0x252c38));
+        scrapBtnBg.on('pointerout',  () => scrapBtnBg.setFillStyle(0x1e2530));
+        
+        scrapBtnBg.on('pointerdown', () => {
+          if (this.saveData.stockpile[type] >= 10) {
+            this.saveData.stockpile[type] -= 10;
+            this.saveData.nuts = (this.saveData.nuts || 0) + scrapYield;
+            
+            localStorage.setItem(saveKey, JSON.stringify(this.saveData));
+            this.scene.restart(); 
+          }
+        });
+      }
+      // -----------------------
     });
 
     const dockBtn = this.add.rectangle(width / 2, height - 80, width - 48, 72, 0x1a2210).setInteractive();

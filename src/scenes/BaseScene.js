@@ -13,9 +13,11 @@ class BaseScene extends Phaser.Scene {
 
     this.add.rectangle(width / 2, height / 2, width, height, 0x0d1117);
 
+    // Header Background
     this.add.rectangle(width / 2, TOP + 50, width, 100, 0x161b22);
     this.add.rectangle(width / 2, TOP + 100, width, 1, 0x334455);
 
+    // Identity
     this.add.text(24, TOP + 18, 'THE PIRATE KING', {
       fontFamily: 'monospace', fontSize: '11px', color: '#8899aa', letterSpacing: 3
     });
@@ -23,6 +25,15 @@ class BaseScene extends Phaser.Scene {
       fontFamily: 'monospace', fontSize: '22px', color: '#eef2f8', fontStyle: 'bold'
     });
 
+    // --- NEW CURRENCY DISPLAY ---
+    const nuts = this.saveData.nuts || 0;
+    const bolts = this.saveData.bolts || 0;
+    this.add.text(width / 2 + 10, TOP + 46, `${nuts} NUTS  /  ${bolts} BOLTS`, {
+      fontFamily: 'monospace', fontSize: '10px', color: '#8899aa', letterSpacing: 1
+    }).setOrigin(0.5);
+    // ----------------------------
+
+    // Power Score
     const powerScore = (this.saveData && this.saveData.powerScore) ? this.saveData.powerScore : 0;
     this.add.text(width - 24, TOP + 18, 'POWER', {
       fontFamily: 'monospace', fontSize: '11px', color: '#8899aa', letterSpacing: 3

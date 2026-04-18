@@ -129,7 +129,7 @@ class SaveScene extends Phaser.Scene {
           barricade: 10
         },
         nuts:             0,
-        bolts:            0,
+        bolts:            100,
         parts:            0,
         completedLevels:  {},
         skillTree:        {},   // { 'ars_01': true, 'sup_03': true, ... }
@@ -145,7 +145,7 @@ class SaveScene extends Phaser.Scene {
         },
         flags: {              // persistent unlock & tutorial state
           armouryUnlocked:   false,
-          skillTreeUnlocked: false,
+          skillTreeUnlocked: true,
           baseTutDone:       false
         },
         createdAt: Date.now()

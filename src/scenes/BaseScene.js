@@ -98,12 +98,12 @@ class BaseScene extends Phaser.Scene {
 
     if (skillMatrixUnlocked) {
       zones.push({
-        key: 'skillTree', title: 'SKILL MATRIX', subtitle: 'SPEND BOLTS',
+        key: 'skillTree', title: 'UPLINK', subtitle: 'SPEND BOLTS',
         colour: '#e8a020', unlocked: true
       });
     } else {
       zones.push({
-        key: null, title: 'SKILL MATRIX', subtitle: 'EARN BOLTS TO UNLOCK',
+        key: null, title: 'UPLINK', subtitle: 'EARN BOLTS TO UNLOCK',
         colour: '#445566', unlocked: false, hint: 'LOCKED — EARN BOLTS FROM MERCHANTS'
       });
     }
@@ -123,8 +123,11 @@ class BaseScene extends Phaser.Scene {
     });
 
     // ── Tutorial overlay ──────────────────────────────────────────────────
-    if (isFirstVisit || !armouryUnlocked) {
-      this._showTutorial(armouryUnlocked, skillMatrixUnlocked);
+    if (isFirstVisit) {
+      this._showTutorial(armouryUnlocked);
+      // Mark done immediately — overlay only appears once
+      this.saveData.flags.baseTutDone = true;
+      localStorage.setItem(saveKey, JSON.stringify(this.saveData));
     }
   }
 
@@ -164,22 +167,21 @@ class BaseScene extends Phaser.Scene {
     }
   }
 
-  _showTutorial(armouryUnlocked, skillMatrixUnlocked) {
+  _showTutorial(armouryUnlocked) {
     const { width } = this.scale;
+    const zoneW = width - 48;
+
+    // Always highlight Factory Floor — it's the start of everything
+    const factoryY = this.zoneObjects.factory;
+    if (factoryY !== undefined) {
+      const pulse = this.add.rectangle(width / 2, factoryY, zoneW + 8, 104)
+        .setStrokeStyle(2, 0xe8a020, 0.9).setDepth(15);
+      this.tweens.add({ targets: pulse, alpha: 0.3, duration: 700, yoyo: true, repeat: -1 });
+    }
 
     if (!armouryUnlocked) {
-      // New player — only factory unlocked. Highlight it.
-      const factoryY = this.zoneObjects.factory;
-      if (factoryY === undefined) return;
-
-      // Pulsing amber border around the factory zone card
-      const zoneW = width - 48;
-      const pulse = this.add.rectangle(width / 2, factoryY, zoneW + 8, 104).setDepth(15)
-        .setStrokeStyle(2, 0xe8a020, 0.9);
-      this.tweens.add({ targets: pulse, alpha: 0.4, duration: 700, yoyo: true, repeat: -1 });
-
-      // Small instruction card directly below the zone
-      const cardY = factoryY + 68;
+      // Truly fresh — no towers yet. Tell them to build.
+      const cardY = (factoryY || 220) + 68;
       this.add.rectangle(width / 2, cardY, zoneW, 38, 0x0d1520, 0.95).setDepth(15);
       this.add.rectangle(width / 2, cardY, zoneW, 38).setStrokeStyle(1, 0xe8a020, 0.5).setDepth(15);
       this.add.text(width / 2, cardY - 7, 'START HERE — BUILD YOUR FIRST TOWER', {
@@ -188,31 +190,23 @@ class BaseScene extends Phaser.Scene {
       this.add.text(width / 2, cardY + 9, 'ARMOURY AND DOCK UNLOCK ONCE YOU HAVE TOWERS', {
         fontFamily: 'monospace', fontSize: '8px', color: '#556677', letterSpacing: 1
       }).setOrigin(0.5).setDepth(16);
-
-    } else if (!skillMatrixUnlocked) {
-      // Armoury / Dock just became available — guide player to dock
+    } else {
+      // Has towers — guide the flow: factory → armoury → dock
       const dockY = this.zoneObjects.dock;
-      if (dockY === undefined) return;
-
-      const zoneW = width - 48;
-      const pulse = this.add.rectangle(width / 2, dockY, zoneW + 8, 104).setDepth(15)
-        .setStrokeStyle(2, 0xc43a3a, 0.9);
-      this.tweens.add({ targets: pulse, alpha: 0.4, duration: 700, yoyo: true, repeat: -1 });
-
-      const cardY = dockY + 68;
+      if (dockY !== undefined) {
+        const pulseDock = this.add.rectangle(width / 2, dockY, zoneW + 8, 104)
+          .setStrokeStyle(2, 0xc43a3a, 0.9).setDepth(15);
+        this.tweens.add({ targets: pulseDock, alpha: 0.3, duration: 700, yoyo: true, repeat: -1 });
+      }
+      const cardY = (dockY || 550) + 68;
       this.add.rectangle(width / 2, cardY, zoneW, 38, 0x140808, 0.95).setDepth(15);
       this.add.rectangle(width / 2, cardY, zoneW, 38).setStrokeStyle(1, 0xc43a3a, 0.5).setDepth(15);
-      this.add.text(width / 2, cardY - 7, 'YOU\'RE ARMED — LAUNCH YOUR FIRST MISSION', {
-        fontFamily: 'monospace', fontSize: '10px', color: '#c43a3a', fontStyle: 'bold', letterSpacing: 1
+      this.add.text(width / 2, cardY - 7, 'FACTORY BUILDS TOWERS  ·  DOCK LAUNCHES MISSIONS', {
+        fontFamily: 'monospace', fontSize: '9px', color: '#c43a3a', fontStyle: 'bold', letterSpacing: 1
       }).setOrigin(0.5).setDepth(16);
-      this.add.text(width / 2, cardY + 9, 'HEAD TO THE DOCK TO SELECT A LEVEL', {
+      this.add.text(width / 2, cardY + 9, 'START IN THE FACTORY, THEN HEAD TO THE DOCK', {
         fontFamily: 'monospace', fontSize: '8px', color: '#556677', letterSpacing: 1
       }).setOrigin(0.5).setDepth(16);
-
-      if (!this.saveData.flags.baseTutDone) {
-        this.saveData.flags.baseTutDone = true;
-        localStorage.setItem(this.saveKey, JSON.stringify(this.saveData));
-      }
     }
   }
 

@@ -109,7 +109,8 @@ class BaseScene extends Phaser.Scene {
     }
 
     // Future zones — always locked for now
-    zones.push({ key: null, title: 'MARKETPLACE',    subtitle: 'UNLOCK VIA STORY', colour: '#445566', unlocked: false });
+    zones.push({ key: 'marketplace', title: 'MARKETPLACE', subtitle: 'MERCHANT GUILD',
+      colour: '#7a5fc4', unlocked: true });
     zones.push({ key: null, title: 'WORKER HOUSING', subtitle: 'UNLOCK VIA STORY', colour: '#445566', unlocked: false });
 
     // Layout
@@ -214,10 +215,11 @@ class BaseScene extends Phaser.Scene {
     this.cameras.main.flash(150, 0, 0, 0);
     this.time.delayedCall(150, () => {
       switch (key) {
-        case 'factory':   this.scene.start('FactoryScene');    break;
-        case 'armoury':   this.scene.start('ArmouryScene');    break;
-        case 'dock':      this.scene.start('DockScene');       break;
-        case 'skillTree': this.scene.start('SkillTreeScene');  break;
+        case 'factory':     this.scene.start('FactoryScene');      break;
+        case 'armoury':     this.scene.start('ArmouryScene');      break;
+        case 'dock':        this.scene.start('DockScene');         break;
+        case 'skillTree':   this.scene.start('SkillTreeScene');    break;
+        case 'marketplace': this.scene.start('MarketplaceScene'); break;
       }
     });
   }

@@ -22,9 +22,8 @@ class BaseScene extends Phaser.Scene {
       || stockTotal > 0
       || completedLevels.length > 0;
 
-    // Skill Matrix: ever had a bolt (could have spent them all, so use flag)
-    const skillMatrixUnlocked = this.saveData.flags.skillTreeUnlocked
-      || (this.saveData.bolts || 0) > 0;
+    // Skill Matrix: always unlocked in current build (gates will be enforced when merchants ship)
+    const skillMatrixUnlocked = true;
 
     // Persist newly-derived flags so future checks are instant
     let flagsDirty = false;
@@ -169,46 +168,47 @@ class BaseScene extends Phaser.Scene {
     const { width } = this.scale;
 
     if (!armouryUnlocked) {
-      // New player — only factory unlocked. Point them there.
+      // New player — only factory unlocked. Highlight it.
       const factoryY = this.zoneObjects.factory;
       if (factoryY === undefined) return;
 
-      // Pulsing ring around factory zone
-      const ring = this.add.circle(width / 2, factoryY, 180)
-        .setStrokeStyle(2, 0x3a8fc4, 0.8).setDepth(15);
-      this.tweens.add({ targets: ring, scaleX: 1.05, scaleY: 1.05, alpha: 0.4, duration: 800, yoyo: true, repeat: -1 });
+      // Pulsing amber border around the factory zone card
+      const zoneW = width - 48;
+      const pulse = this.add.rectangle(width / 2, factoryY, zoneW + 8, 104).setDepth(15)
+        .setStrokeStyle(2, 0xe8a020, 0.9);
+      this.tweens.add({ targets: pulse, alpha: 0.4, duration: 700, yoyo: true, repeat: -1 });
 
-      // Instruction card below the zone
-      const cardY = factoryY + 72;
-      const card  = this.add.rectangle(width / 2, cardY, width - 60, 48, 0x0a1520, 0.95).setDepth(15);
-      this.add.rectangle(width / 2, cardY, width - 60, 48).setStrokeStyle(1, 0x3a8fc4).setDepth(15);
-      this.add.text(width / 2, cardY - 8, 'START HERE', {
-        fontFamily: 'monospace', fontSize: '12px', color: '#3a8fc4', fontStyle: 'bold', letterSpacing: 3
+      // Small instruction card directly below the zone
+      const cardY = factoryY + 68;
+      this.add.rectangle(width / 2, cardY, zoneW, 38, 0x0d1520, 0.95).setDepth(15);
+      this.add.rectangle(width / 2, cardY, zoneW, 38).setStrokeStyle(1, 0xe8a020, 0.5).setDepth(15);
+      this.add.text(width / 2, cardY - 7, 'START HERE — BUILD YOUR FIRST TOWER', {
+        fontFamily: 'monospace', fontSize: '10px', color: '#e8a020', fontStyle: 'bold', letterSpacing: 2
       }).setOrigin(0.5).setDepth(16);
-      this.add.text(width / 2, cardY + 10, 'BUILD YOUR FIRST TOWER IN THE FACTORY', {
-        fontFamily: 'monospace', fontSize: '9px', color: '#8899aa', letterSpacing: 1
+      this.add.text(width / 2, cardY + 9, 'ARMOURY AND DOCK UNLOCK ONCE YOU HAVE TOWERS', {
+        fontFamily: 'monospace', fontSize: '8px', color: '#556677', letterSpacing: 1
       }).setOrigin(0.5).setDepth(16);
 
     } else if (!skillMatrixUnlocked) {
-      // Armoury/Dock just unlocked — guide player to dock
+      // Armoury / Dock just became available — guide player to dock
       const dockY = this.zoneObjects.dock;
       if (dockY === undefined) return;
 
-      const ring = this.add.circle(width / 2, dockY, 180)
-        .setStrokeStyle(2, 0xc43a3a, 0.8).setDepth(15);
-      this.tweens.add({ targets: ring, scaleX: 1.05, scaleY: 1.05, alpha: 0.4, duration: 800, yoyo: true, repeat: -1 });
+      const zoneW = width - 48;
+      const pulse = this.add.rectangle(width / 2, dockY, zoneW + 8, 104).setDepth(15)
+        .setStrokeStyle(2, 0xc43a3a, 0.9);
+      this.tweens.add({ targets: pulse, alpha: 0.4, duration: 700, yoyo: true, repeat: -1 });
 
-      const cardY = dockY + 72;
-      this.add.rectangle(width / 2, cardY, width - 60, 48, 0x1a0808, 0.95).setDepth(15);
-      this.add.rectangle(width / 2, cardY, width - 60, 48).setStrokeStyle(1, 0xc43a3a).setDepth(15);
-      this.add.text(width / 2, cardY - 8, 'YOU\'RE ARMED', {
-        fontFamily: 'monospace', fontSize: '12px', color: '#c43a3a', fontStyle: 'bold', letterSpacing: 3
+      const cardY = dockY + 68;
+      this.add.rectangle(width / 2, cardY, zoneW, 38, 0x140808, 0.95).setDepth(15);
+      this.add.rectangle(width / 2, cardY, zoneW, 38).setStrokeStyle(1, 0xc43a3a, 0.5).setDepth(15);
+      this.add.text(width / 2, cardY - 7, 'YOU\'RE ARMED — LAUNCH YOUR FIRST MISSION', {
+        fontFamily: 'monospace', fontSize: '10px', color: '#c43a3a', fontStyle: 'bold', letterSpacing: 1
       }).setOrigin(0.5).setDepth(16);
-      this.add.text(width / 2, cardY + 10, 'HEAD TO THE DOCK AND LAUNCH YOUR FIRST MISSION', {
-        fontFamily: 'monospace', fontSize: '9px', color: '#8899aa', letterSpacing: 1
+      this.add.text(width / 2, cardY + 9, 'HEAD TO THE DOCK TO SELECT A LEVEL', {
+        fontFamily: 'monospace', fontSize: '8px', color: '#556677', letterSpacing: 1
       }).setOrigin(0.5).setDepth(16);
 
-      // Mark tutorial done so hint doesn't show every visit
       if (!this.saveData.flags.baseTutDone) {
         this.saveData.flags.baseTutDone = true;
         localStorage.setItem(this.saveKey, JSON.stringify(this.saveData));

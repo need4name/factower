@@ -138,11 +138,12 @@ class SaveScene extends Phaser.Scene {
           ricochet:  0,
           doubleDown: 0
         },
-        merchantUnlocks:  {     // false until unlock trigger fires
+        merchantUnlocks:  {
           chrome:    false,
           ricochet:  false,
           doubleDown: false
         },
+        chromeState:      { pityCount: 0 },
         flags: {              // persistent unlock & tutorial state
           armouryUnlocked:   false,
           skillTreeUnlocked: true,
@@ -160,6 +161,7 @@ class SaveScene extends Phaser.Scene {
       if (existing.skillTree       === undefined) { existing.skillTree       = {}; dirty = true; }
       if (existing.merchantFatigue === undefined) { existing.merchantFatigue = { chrome: 0, ricochet: 0, doubleDown: 0 }; dirty = true; }
       if (existing.merchantUnlocks === undefined) { existing.merchantUnlocks = { chrome: false, ricochet: false, doubleDown: false }; dirty = true; }
+      if (existing.chromeState     === undefined) { existing.chromeState     = { pityCount: 0 }; dirty = true; }
       if (existing.flags           === undefined) { existing.flags           = { armouryUnlocked: false, skillTreeUnlocked: false, baseTutDone: false }; dirty = true; }
       if (dirty) localStorage.setItem(saveKey, JSON.stringify(existing));
     }

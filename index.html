@@ -1,53 +1,54 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>Factower</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-   body {
-  background: #0a0c0f;
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  padding-top: env(safe-area-inset-top, 44px);
-  height: 100vh;
-  overflow: hidden;
+<title>Factower</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+background: #0a0c0f;
+display: flex;
+justify-content: center;
+align-items: flex-start;
+padding-top: env(safe-area-inset-top, 44px);
+height: 100vh;
+overflow: hidden;
 }
-  
-    canvas { display: block; }
-  </style>
+  canvas { display: block; }
+</style>
 </head>
 <body>
-  <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
-  <script src="src/systems/Factory.js"></script>
-  <script src="src/data/towers.js"></script>
-  <script src="src/data/enemies.js"></script>
-  <script src="src/data/levels.js"></script>
-  <script src="src/scenes/Boot.js"></script>
-  <script src="src/scenes/SaveScene.js"></script>
-  <script src="src/scenes/BaseScene.js"></script>
-  <script src="src/scenes/FactoryScene.js"></script>
-  <script src="src/scenes/ArmouryScene.js"></script>
-  <script src="src/scenes/DockScene.js"></script>
-  <script src="src/scenes/CombatScene.js"></script>
-  <script>
-    const config = {
-      type: Phaser.AUTO,
-      width: 390,
-      height: 844,
-      backgroundColor: '#0a0c0f',
-      scene: [BootScene, SaveScene, BaseScene, FactoryScene, ArmouryScene, DockScene, CombatScene],
-      scale: {
-        mode: Phaser.Scale.FIT,
-        autoCenter: Phaser.Scale.CENTER_BOTH
-      },
-      input: {
-        touch: { capture: true }
-      }
-    };
-    const game = new Phaser.Game(config);
-  </script>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+<script src="src/systems/Factory.js"></script>
+<script src="src/data/towers.js"></script>
+<script src="src/data/enemies.js"></script>
+<script src="src/data/levels.js"></script>
+<script src="src/data/skillTree.js"></script>
+<script src="src/scenes/Boot.js"></script>
+<script src="src/scenes/SaveScene.js"></script>
+<script src="src/scenes/BaseScene.js"></script>
+<script src="src/scenes/FactoryScene.js"></script>
+<script src="src/scenes/ArmouryScene.js"></script>
+<script src="src/scenes/DockScene.js"></script>
+<script src="src/scenes/CombatScene.js"></script>
+<script src="src/scenes/SkillTreeScene.js"></script>
+<script>
+const config = {
+  type: Phaser.AUTO,
+  width: 390,
+  height: 844,
+  backgroundColor: '#0a0c0f',
+  scene: [BootScene, SaveScene, BaseScene, FactoryScene, ArmouryScene, DockScene, CombatScene, SkillTreeScene],
+  scale: {
+    mode: Phaser.Scale.FIT,
+    autoCenter: Phaser.Scale.CENTER_BOTH
+  },
+  input: {
+    touch: { capture: true }
+  }
+};
+const game = new Phaser.Game(config);
+</script>
 </body>
 </html>

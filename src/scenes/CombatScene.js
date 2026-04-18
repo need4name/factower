@@ -159,10 +159,17 @@ class CombatScene extends Phaser.Scene {
       gfx.fillRect(z.x, z.y, z.w, z.h);
       gfx.lineStyle(1, 0x4a3820, 0.9);
       gfx.strokeRect(z.x, z.y, z.w, z.h);
-      // Debris cross-hatch lines
+      // Diagonal hatch — properly clipped to rect bounds
       gfx.lineStyle(1, 0x3a2a15, 0.5);
-      for (let i = 0; i < z.w + z.h; i += 14) {
-        gfx.lineBetween(z.x + i, z.y, z.x + Math.max(0, i - z.h), z.y + Math.min(z.h, i));
+      // Lines starting on the top edge
+      for (let sx = 0; sx < z.w; sx += 14) {
+        const len = Math.min(z.w - sx, z.h);
+        gfx.lineBetween(z.x + sx, z.y, z.x + sx + len, z.y + len);
+      }
+      // Lines starting on the left edge (skip corner already covered)
+      for (let sy = 14; sy < z.h; sy += 14) {
+        const len = Math.min(z.h - sy, z.w);
+        gfx.lineBetween(z.x, z.y + sy, z.x + len, z.y + sy + len);
       }
     });
     // UBZ label on each zone
@@ -172,6 +179,7 @@ class CombatScene extends Phaser.Scene {
       }).setOrigin(0.5).setDepth(1);
     });
   }
+
 
   // ── Path collision ────────────────────────────────────────────────────
   distToSegment(px, py, ax, ay, bx, by) {
@@ -649,11 +657,9 @@ class CombatScene extends Phaser.Scene {
     const backBtn = this.add.rectangle(34, HY - 18, 52, 26, 0x1e2530).setInteractive();
     this.add.text(34, HY - 18, '<- BACK', { fontFamily: 'monospace', fontSize: '10px', color: '#8899aa' }).setOrigin(0.5);
     backBtn.on('pointerdown', () => {
-      if (!this.waveActive) {
-        this.hidePreview(); this.dismissUpgradePanel();
-        this.cameras.main.fade(200, 0, 0, 0);
-        this.time.delayedCall(200, () => this.scene.start('DockScene'));
-      }
+      this.hidePreview(); this.dismissUpgradePanel();
+      this.cameras.main.fade(200, 0, 0, 0);
+      this.time.delayedCall(200, () => this.scene.start('DockScene'));
     });
 
     // Level name (top centre)
@@ -1013,11 +1019,44 @@ class CombatScene extends Phaser.Scene {
         return;
       }
 
+      this._showWaveFlavour(this.currentWave);
+
       this.waveText.setText('WAVE ' + this.currentWave + ' COMPLETE — PLACE MORE TOWERS');
       this.waveText.setStyle({ color: '#eef2f8' });
       this.startWaveBtn.setAlpha(1).setInteractive();
       this.startWaveBtnLabel.setText('START');
       this.startWaveBtnSub.setText('WAVE ' + (this.currentWave + 1));
+    });
+  }
+
+  _showWaveFlavour(wavesDone) {
+    const { width } = this.scale;
+    const lines = [
+      'THEY PULLED BACK. MORE ARE COMING.',
+      'SALVAGE WHAT YOU CAN. THEY WON\'T STOP.',
+      'YOUR LINE HELD — THIS TIME.',
+      'THE OCEAN GIVES THEM MORE EVERY TIDE.',
+      'RELOAD. REINFORCE. SURVIVE.',
+      'INTEL SAYS FOUR MORE WAVES. INTEL IS OPTIMISTIC.',
+      'WHOEVER SENT THEM IS WATCHING.',
+      'THE PLASTIC HOLDS. FOR NOW.',
+    ];
+    const flavour = lines[(wavesDone - 1) % lines.length];
+
+    const cardY = this.CT + 30;
+    const card  = this.add.rectangle(width / 2, cardY, width - 32, 44, 0x0a0e14, 0.95).setDepth(18);
+    const bdr   = this.add.rectangle(width / 2, cardY, width - 32, 44).setStrokeStyle(1, 0xe8a020, 0.6).setDepth(18);
+    const txt   = this.add.text(width / 2, cardY, flavour, {
+      fontFamily: 'monospace', fontSize: '11px', color: '#e8a020', letterSpacing: 1, align: 'center',
+      wordWrap: { width: width - 56 }
+    }).setOrigin(0.5).setDepth(19).setAlpha(0);
+
+    this.tweens.add({ targets: txt, alpha: 1, duration: 200 });
+    this.time.delayedCall(2400, () => {
+      this.tweens.add({
+        targets: [card, bdr, txt], alpha: 0, duration: 300,
+        onComplete: () => { card.destroy(); bdr.destroy(); txt.destroy(); }
+      });
     });
   }
 

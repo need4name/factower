@@ -24,6 +24,7 @@ class ChromeScene extends Phaser.Scene {
     if (!this.saveData.bolts)           this.saveData.bolts = 0;
     if (!this.saveData.merchantFatigue) this.saveData.merchantFatigue = { chrome: 0, ricochet: 0, doubleDown: 0 };
     if (!this.saveData.chromeState)     this.saveData.chromeState = { pityCount: 0 };
+    if (!this.saveData.tutorials)       this.saveData.tutorials = {};
 
     this.fatigue        = this.saveData.merchantFatigue.chrome || 0;
     this.pityCount      = this.saveData.chromeState.pityCount  || 0;
@@ -116,6 +117,10 @@ class ChromeScene extends Phaser.Scene {
     this.spinBg.on('pointerover', () => this.spinBg.setFillStyle(0x261a00));
     this.spinBg.on('pointerout',  () => this.spinBg.setFillStyle(0x1a1200));
     this._refreshSpinButton();
+
+    if (!this.saveData.tutorials.chrome) {
+      this.time.delayedCall(200, () => this._showTutorial());
+    }
   }
 
   _rollCost() {
@@ -257,5 +262,65 @@ class ChromeScene extends Phaser.Scene {
     this.saveData.merchantFatigue.chrome = this.fatigue;
     this.saveData.chromeState.pityCount  = this.pityCount;
     localStorage.setItem(this.saveKey, JSON.stringify(this.saveData));
+  }
+
+  _showTutorial() {
+    const { width, height } = this.scale;
+    const cabY = 445, cabH = 300, reelY = 445, reelW = 82, reelH = 110, gap = 96;
+    const steps = [
+      {
+        tx: width / 2, ty: cabY, tw: width - 24, th: cabH,
+        title: 'THE MACHINE',
+        body: 'THREE REELS SPIN WHEN YOU\nPRESS SPIN. EACH STOPS\nAUTOMATICALLY — OR TAP EARLY.'
+      },
+      {
+        tx: width / 2 - gap, ty: reelY, tw: reelW + 8, th: reelH + 8,
+        title: 'TAP TO STOP',
+        body: 'TAP ANY SPINNING REEL TO\nSTOP IT EARLY. REELS AUTO-STOP\nAT 3.5s, 6s, AND 8.5s.'
+      },
+      {
+        tx: width / 2, ty: cabY + cabH / 2 + 54, tw: width - 60, th: 36,
+        title: 'FATIGUE',
+        body: 'ROLLING MANY TIMES INCREASES\nCOST AND REDUCES PAYOUTS.\nTAKE A BREAK TO RESET.'
+      },
+      {
+        tx: width / 2, ty: height - 90, tw: width - 48, th: 68,
+        title: 'SPIN',
+        body: 'COSTS NUTS. MATCH SYMBOLS\nACROSS ALL 3 REELS FOR BOLTS.\nPAIRS PAY A CONSOLATION BOLT.'
+      },
+    ];
+
+    let step = 0;
+    const overlay  = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.72).setDepth(50);
+    const pulse    = this.add.rectangle(0, 0, 0, 0).setStrokeStyle(2, 0xe8a020).setDepth(51);
+    this.tweens.add({ targets: pulse, alpha: 0.4, duration: 600, yoyo: true, repeat: -1 });
+
+    const cardY   = height - 148;
+    const card    = this.add.rectangle(width / 2, cardY, width - 32, 88, 0x0a0e14, 0.98).setDepth(52);
+    this.add.rectangle(width / 2, cardY, width - 32, 88).setStrokeStyle(1, 0xe8a020, 0.6).setDepth(52);
+    const tTitle  = this.add.text(width / 2, cardY - 24, '', { fontFamily: 'monospace', fontSize: '13px', color: '#e8a020', fontStyle: 'bold', letterSpacing: 3 }).setOrigin(0.5).setDepth(53);
+    const tBody   = this.add.text(width / 2, cardY + 4,  '', { fontFamily: 'monospace', fontSize: '11px', color: '#8899aa', align: 'center', wordWrap: { width: width - 60 } }).setOrigin(0.5).setDepth(53);
+    this.add.text(width / 2, cardY + 34, 'TAP TO CONTINUE', { fontFamily: 'monospace', fontSize: '9px', color: '#334455', letterSpacing: 3 }).setOrigin(0.5).setDepth(53);
+
+    const show = (i) => {
+      const s = steps[i];
+      pulse.setPosition(s.tx, s.ty).setSize(s.tw + 10, s.th + 10);
+      tTitle.setText(s.title);
+      tBody.setText(s.body);
+    };
+    show(0);
+
+    const next = () => {
+      step++;
+      if (step >= steps.length) {
+        [overlay, pulse, card, tTitle, tBody].forEach(e => e.destroy());
+        this.saveData.tutorials.chrome = true;
+        this._save();
+        return;
+      }
+      show(step);
+    };
+    overlay.setInteractive();
+    overlay.on('pointerdown', next);
   }
 }

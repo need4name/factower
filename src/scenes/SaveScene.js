@@ -128,7 +128,7 @@ class SaveScene extends Phaser.Scene {
           bomber:    10,
           barricade: 10
         },
-        nuts:             500,
+        nuts:             100,
         bolts:            100,
         parts:            0,
         completedLevels:  {},
@@ -146,6 +146,7 @@ class SaveScene extends Phaser.Scene {
         chromeState:      { pityCount: 0 },
         ricochetState:    {},
         ddState:          {},
+        tutorials:        {},
         flags: {              // persistent unlock & tutorial state
           armouryUnlocked:   false,
           skillTreeUnlocked: true,
@@ -166,6 +167,7 @@ class SaveScene extends Phaser.Scene {
       if (existing.chromeState     === undefined) { existing.chromeState     = { pityCount: 0 }; dirty = true; }
       if (existing.ricochetState   === undefined) { existing.ricochetState   = {}; dirty = true; }
       if (existing.ddState         === undefined) { existing.ddState         = {}; dirty = true; }
+      if (existing.tutorials       === undefined) { existing.tutorials       = {}; dirty = true; }
       if (existing.flags           === undefined) { existing.flags           = { armouryUnlocked: false, skillTreeUnlocked: false, baseTutDone: false }; dirty = true; }
       if (dirty) localStorage.setItem(saveKey, JSON.stringify(existing));
     }

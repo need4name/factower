@@ -128,7 +128,7 @@ class SaveScene extends Phaser.Scene {
           bomber:    10,
           barricade: 10
         },
-        nuts:             100,
+        nuts:             0,
         bolts:            100,
         parts:            0,
         completedLevels:  {},

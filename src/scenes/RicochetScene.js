@@ -104,9 +104,12 @@ class RicochetScene extends Phaser.Scene {
       r: PEG_R, lit: false
     }));
 
-    // Ball: physics state tracked as plain object — never driven by Phaser tweens
-    this.ball      = { x:0, y:0, vx:0, vy:0 };
-    this.ballVis   = { x:0, y:0, alpha:0 };   // tweens target this; ballGfx reads it
+    // Ball physics state
+    this.ball         = { x:0, y:0, vx:0, vy:0 };
+    // Sink state — driven by manual timer in update(), NO tweens touch ball rendering
+    this.ballSinkX     = 0;
+    this.ballSinkY     = 0;
+    this.ballSinkTimer = 0;   // counts down in seconds; >0 = sinking animation active
 
     // ── Background & header ──────────────────────────────────────────────────
     this.add.rectangle(width/2, height/2, width, height, 0x0d1117);
@@ -155,21 +158,23 @@ class RicochetScene extends Phaser.Scene {
     // Tier boxes (depth 3)
     this._buildTierDisplay();
 
-    // Hit counter strip inside play area (hidden until shot fires)
-    const sY = this.PLAY_TOP + 18;
-    this.hitStripBg  = this.add.rectangle(this.PLAY_LEFT+this.PLAY_W/2, sY, this.PLAY_W, 34, 0x070b0e, 0.94).setDepth(8).setAlpha(0);
-    this.hitCountTxt = this.add.text(this.PLAY_LEFT+14, sY, '0 HITS', {
-      fontFamily:'monospace', fontSize:'13px', color:'#8899aa', fontStyle:'bold', letterSpacing:2
-    }).setOrigin(0,0.5).setDepth(9).setAlpha(0);
-    this.hitTierTxt  = this.add.text(this.PLAY_RIGHT-14, sY, 'BUST', {
-      fontFamily:'monospace', fontSize:'12px', color:'#553333', fontStyle:'bold'
-    }).setOrigin(1,0.5).setDepth(9).setAlpha(0);
-
-    // Preview / launcher / ball
+    // Preview / launcher — below ball
     this.previewGfx  = this.add.graphics().setDepth(3);
     this.launcherGfx = this.add.graphics().setDepth(5);
     this._drawLauncher(false);
-    this.ballGfx     = this.add.graphics().setDepth(6);   // rendered from ballVis every frame
+
+    // Ball — depth 20: always on top of everything including hit strip
+    this.ballGfx = this.add.graphics().setDepth(20);
+
+    // Hit counter strip inside play area (depth 15 — below ball)
+    const sY = this.PLAY_TOP + 18;
+    this.hitStripBg  = this.add.rectangle(this.PLAY_LEFT+this.PLAY_W/2, sY, this.PLAY_W, 34, 0x070b0e, 0.94).setDepth(15).setAlpha(0);
+    this.hitCountTxt = this.add.text(this.PLAY_LEFT+14, sY, '0 HITS', {
+      fontFamily:'monospace', fontSize:'13px', color:'#8899aa', fontStyle:'bold', letterSpacing:2
+    }).setOrigin(0,0.5).setDepth(16).setAlpha(0);
+    this.hitTierTxt  = this.add.text(this.PLAY_RIGHT-14, sY, 'BUST', {
+      fontFamily:'monospace', fontSize:'12px', color:'#553333', fontStyle:'bold'
+    }).setOrigin(1,0.5).setDepth(16).setAlpha(0);
 
     // Result text
     this.resultText = this.add.text(width/2, this.PLAY_TOP+58, '', {
@@ -373,14 +378,12 @@ class RicochetScene extends Phaser.Scene {
     this.pegHitCount=0;
     this.pegsHitThisShot=new Set();
 
-    // Start ball at launcher centre — clamp immediately to play-area ceiling
+    // Start ball just inside play-area ceiling regardless of launcher y
     this.ball.x  = this.LAUNCHER_X;
-    this.ball.y  = Math.max(this.BOUND_T, this.LAUNCHER_Y + Math.sin(this.aimAngle)*22);
+    this.ball.y  = this.BOUND_T;
     this.ball.vx = Math.cos(this.aimAngle)*BALL_SPEED;
-    this.ball.vy = Math.sin(this.aimAngle)*BALL_SPEED;
-
-    // Sync visual position
-    this.ballVis.x=this.ball.x; this.ballVis.y=this.ball.y; this.ballVis.alpha=1;
+    this.ball.vy = Math.abs(Math.sin(this.aimAngle)*BALL_SPEED); // always downward
+    this.ballSinkTimer = 0;   // cancel any leftover sink animation
 
     // Show hit strip
     this.hitStripBg.setAlpha(1); this.hitCountTxt.setAlpha(1); this.hitTierTxt.setAlpha(1);
@@ -401,11 +404,22 @@ class RicochetScene extends Phaser.Scene {
     if (this.bucketX-this.bucketW/2<this.PLAY_LEFT) {this.bucketX=this.PLAY_LEFT +this.bucketW/2;this.bucketDir= 1;}
     this._drawBucket();
 
-    // Render ball from ballVis (always, so the sink tween works after resolve too)
+    // ── Ball rendering — entirely manual, no tweens ──────────────────────
     this.ballGfx.clear();
-    if (this.ballVis.alpha>0.01) {
-      this.ballGfx.fillStyle(0x5eba7d, this.ballVis.alpha);
-      this.ballGfx.fillCircle(this.ballVis.x, this.ballVis.y, BALL_R);
+    if (this.ballActive) {
+      // Live flight: render at current physics position
+      this.ballGfx.fillStyle(0x5eba7d, 1);
+      this.ballGfx.fillCircle(this.ball.x, this.ball.y, BALL_R);
+    } else if (this.ballSinkTimer > 0) {
+      // Sink animation: fade + drop, driven by timer not tween
+      const SINK_DUR = 0.35;
+      const progress = 1 - (this.ballSinkTimer / SINK_DUR);   // 0→1
+      const alpha    = 1 - progress;
+      const sinkY    = this.ballSinkY + progress * 28;
+      this.ballGfx.fillStyle(0x5eba7d, alpha);
+      this.ballGfx.fillCircle(this.ballSinkX, sinkY, BALL_R);
+      this.ballSinkTimer -= delta / 1000;
+      if (this.ballSinkTimer < 0) this.ballSinkTimer = 0;
     }
 
     if (!this.ballActive) return;
@@ -456,11 +470,6 @@ class RicochetScene extends Phaser.Scene {
     });
     if (pegDirty) this._drawPegs();
 
-    // Sync visual position to physics (only while active)
-    this.ballVis.x=this.ball.x;
-    this.ballVis.y=this.ball.y;
-    this.ballVis.alpha=1;
-
     if (this.ball.y>=this.PLAY_BOTTOM-BALL_R) this._resolve();
   }
 
@@ -495,8 +504,10 @@ class RicochetScene extends Phaser.Scene {
     this.resultText.setText(msg).setStyle({color:col}).setAlpha(0);
     this.tweens.add({ targets:this.resultText, alpha:1, duration:250 });
 
-    // Sink tween on ballVis (plain object — safe)
-    this.tweens.add({ targets:this.ballVis, alpha:0, y:this.ball.y+28, duration:350 });
+    // Start manual sink animation
+    this.ballSinkX     = this.ball.x;
+    this.ballSinkY     = this.ball.y;
+    this.ballSinkTimer = 0.35;
 
     this.time.delayedCall(1400,()=>{
       this.tweens.add({ targets:[this.hitStripBg,this.hitCountTxt,this.hitTierTxt], alpha:0, duration:400 });

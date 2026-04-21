@@ -81,11 +81,15 @@ class RicochetScene extends Phaser.Scene {
     this.PLAY_W      = this.PLAY_RIGHT - this.PLAY_LEFT;   // 362
     this.PLAY_H      = this.PLAY_BOTTOM - this.PLAY_TOP;   // 386
 
+    // DRAIN_Y: the visible bottom line of the playfield where the ball collects.
+    // Ball must physically reach this line before resolve fires.
+    this.DRAIN_Y = this.PLAY_BOTTOM - 4;
+
     // Strict physics bounds (ball centre must stay inside these)
     this.BOUND_L = this.PLAY_LEFT   + BALL_R;
     this.BOUND_R = this.PLAY_RIGHT  - BALL_R;
-    this.BOUND_T = this.PLAY_TOP    + BALL_R;   // hard ceiling — ball never escapes above
-    this.BOUND_B = this.PLAY_BOTTOM - BALL_R;
+    this.BOUND_T = this.PLAY_TOP    + BALL_R;
+    this.BOUND_B = this.DRAIN_Y     - BALL_R;
 
     this.LAUNCHER_X  = width / 2;
     this.LAUNCHER_Y  = this.PLAY_TOP - 18;      // visually just above play area top
@@ -146,6 +150,19 @@ class RicochetScene extends Phaser.Scene {
     // Pegs (depth 2)
     this.pegGfx = this.add.graphics().setDepth(2);
     this._drawPegs();
+
+    // Drain line — the visible bottom of the playfield where the ball collects.
+    // Gives the ball something to physically hit, like a pinball drain.
+    const drainGfx = this.add.graphics().setDepth(2);
+    drainGfx.fillStyle(0x1a2530, 1);
+    drainGfx.fillRect(this.PLAY_LEFT, this.DRAIN_Y, this.PLAY_W, 4);
+    drainGfx.lineStyle(1, 0x3d5a6e, 0.8);
+    drainGfx.lineBetween(this.PLAY_LEFT, this.DRAIN_Y, this.PLAY_RIGHT, this.DRAIN_Y);
+    // Amber warning stripes on the drain bar
+    drainGfx.lineStyle(1, 0xe8a020, 0.35);
+    for (let x = this.PLAY_LEFT; x < this.PLAY_RIGHT; x += 12) {
+      drainGfx.lineBetween(x, this.DRAIN_Y+1, x+6, this.DRAIN_Y+3);
+    }
 
     // Bucket (depth 4)
     this.bucketGfx = this.add.graphics().setDepth(4);
@@ -411,13 +428,33 @@ class RicochetScene extends Phaser.Scene {
       this.ballGfx.fillStyle(0x5eba7d, 1);
       this.ballGfx.fillCircle(this.ball.x, this.ball.y, BALL_R);
     } else if (this.ballSinkTimer > 0) {
-      // Sink animation: fade + drop, driven by timer not tween
-      const SINK_DUR = 0.35;
-      const progress = 1 - (this.ballSinkTimer / SINK_DUR);   // 0→1
-      const alpha    = 1 - progress;
-      const sinkY    = this.ballSinkY + progress * 28;
-      this.ballGfx.fillStyle(0x5eba7d, alpha);
-      this.ballGfx.fillCircle(this.ballSinkX, sinkY, BALL_R);
+      // Collection animation: ball has arrived at the drain line.
+      // Phase 1 (0.0 - 0.15s): squash against the drain — horizontal squish
+      // Phase 2 (0.15 - 0.45s): shrink + fade as it's pulled into the slot
+      const SINK_DUR = 0.45;
+      const elapsed  = SINK_DUR - this.ballSinkTimer;
+      const t        = elapsed / SINK_DUR;  // 0→1 overall
+
+      let rx = BALL_R, ry = BALL_R, alpha = 1;
+      if (elapsed < 0.15) {
+        // Squash phase
+        const p = elapsed / 0.15;
+        rx = BALL_R * (1 + p * 0.35);
+        ry = BALL_R * (1 - p * 0.35);
+        alpha = 1;
+      } else {
+        // Shrink phase
+        const p = (elapsed - 0.15) / 0.30;
+        rx = BALL_R * (1.35 - p * 1.35);
+        ry = BALL_R * (0.65 - p * 0.65);
+        alpha = 1 - p;
+      }
+
+      if (alpha > 0.01 && rx > 0.5 && ry > 0.5) {
+        this.ballGfx.fillStyle(0x5eba7d, alpha);
+        this.ballGfx.fillEllipse(this.ballSinkX, this.DRAIN_Y - ry + 1, rx * 2, ry * 2);
+      }
+
       this.ballSinkTimer -= delta / 1000;
       if (this.ballSinkTimer < 0) this.ballSinkTimer = 0;
     }
@@ -434,9 +471,9 @@ class RicochetScene extends Phaser.Scene {
     if (this.ball.x < this.BOUND_L) { this.ball.vx= Math.abs(this.ball.vx)*0.78; this.ball.x=this.BOUND_L; }
     if (this.ball.x > this.BOUND_R) { this.ball.vx=-Math.abs(this.ball.vx)*0.78; this.ball.x=this.BOUND_R; }
     if (this.ball.y < this.BOUND_T) { this.ball.vy= Math.abs(this.ball.vy)*0.78; this.ball.y=this.BOUND_T; }
-    // No ceiling clamp needed for bottom — that's the resolve trigger
 
-    // Hard clamp — catches any edge case where velocity was too large for dt
+    // Hard clamp X to play area. Y is NOT clamped to BOUND_B here — we need
+    // the ball to actually reach the drain line to trigger resolve.
     this.ball.x = Phaser.Math.Clamp(this.ball.x, this.BOUND_L, this.BOUND_R);
     this.ball.y = Math.max(this.ball.y, this.BOUND_T);
 
@@ -454,9 +491,10 @@ class RicochetScene extends Phaser.Scene {
         }
         this.ball.x+=nx*(minD-dist);
         this.ball.y+=ny*(minD-dist);
-        // Re-clamp after peg pushout
+        // Hard clamp within ALL four bounds after pushout — critical to prevent
+        // a peg pushing the ball past the drain line and triggering a false resolve.
         this.ball.x=Phaser.Math.Clamp(this.ball.x,this.BOUND_L,this.BOUND_R);
-        this.ball.y=Math.max(this.ball.y,this.BOUND_T);
+        this.ball.y=Phaser.Math.Clamp(this.ball.y,this.BOUND_T,this.BOUND_B);
         if (!this.pegsHitThisShot.has(i)) {
           this.pegsHitThisShot.add(i);
           this.pegHitCount++;
@@ -470,7 +508,9 @@ class RicochetScene extends Phaser.Scene {
     });
     if (pegDirty) this._drawPegs();
 
-    if (this.ball.y>=this.PLAY_BOTTOM-BALL_R) this._resolve();
+    // Resolve ONLY when ball physically reaches the drain — not when pushed
+    // there artificially. Use >= BOUND_B strictly.
+    if (this.ball.y >= this.BOUND_B) this._resolve();
   }
 
   // ── Resolve ───────────────────────────────────────────────────────────────
@@ -504,10 +544,10 @@ class RicochetScene extends Phaser.Scene {
     this.resultText.setText(msg).setStyle({color:col}).setAlpha(0);
     this.tweens.add({ targets:this.resultText, alpha:1, duration:250 });
 
-    // Start manual sink animation
+    // Start collection animation: ball sits at drain line at its landing X
     this.ballSinkX     = this.ball.x;
-    this.ballSinkY     = this.ball.y;
-    this.ballSinkTimer = 0.35;
+    this.ballSinkY     = this.DRAIN_Y;     // always the drain line
+    this.ballSinkTimer = 0.45;
 
     this.time.delayedCall(1400,()=>{
       this.tweens.add({ targets:[this.hitStripBg,this.hitCountTxt,this.hitTierTxt], alpha:0, duration:400 });

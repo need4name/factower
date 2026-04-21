@@ -1,9 +1,9 @@
 // ── RicochetScene.js ─────────────────────────────────────────────────────────
-// Hold anywhere to aim, release to fire. Preview arc shown while pressing.
-// Score by hitting as many unique pegs as possible — more hits = higher tier.
-// Landing in the moving bucket adds +2 bonus hits.
-// Peg layout: Tianxia Integrated Holdings corporate gate logo.
-// Ball rendered via Graphics every frame — no Arc tween conflicts.
+// Hold anywhere to aim, release to fire.
+// Score by hitting as many unique pegs as possible.
+// Pegs form the Tianxia Integrated Holdings gate logo in the LOWER 2/3 of the
+// play field — top third is a clear entry zone so all angles are viable.
+// Ball clamped strictly within play bounds every frame to prevent escape.
 
 const RICOCHET_BASE_COST = 3;
 const BALL_SPEED         = 300;
@@ -12,7 +12,7 @@ const PEG_R              = 7;
 const BALL_R             = 8;
 const BUCKET_HIT_BONUS   = 2;
 
-// Payout tiers: [min unique hits to qualify, bolts payout]
+// Payout tiers: min unique hits required → bolts awarded
 const HIT_TIERS = [
   { min:0,  bolts:0, label:'BUST', range:'0-3'   },
   { min:4,  bolts:1, label:'1 B',  range:'4-7'   },
@@ -22,30 +22,36 @@ const HIT_TIERS = [
   { min:17, bolts:6, label:'6 B',  range:'17+'   },
 ];
 
-// ── Tianxia Integrated Holdings — gate logo peg layout ────────────────────────
-// Coordinates relative to (PLAY_LEFT, PLAY_TOP).
-// Index groups:
-//   0-8   outer arch (9)      9-12  left pillar (4)
-//   13-16 right pillar (4)    17-23 inner arch (7)
-//   24-28 crossbar (5)        29-30 centre post (2)
-//   31-33 base accents (3)
+// ── Tianxia gate — coords relative to (PLAY_LEFT, PLAY_TOP) ──────────────────
+// Clear entry zone: y=0 to y=100 (no pegs here at all).
+// Gate logo occupies y=100 to y=340.
+//
+// Structure:
+//   Outer arch   (9)  — wide parabolic crown
+//   Left pillar  (3)  — vertical left support
+//   Right pillar (3)  — vertical right support
+//   Inner arch   (7)  — smaller inset arch
+//   Crossbar     (5)  — horizontal gate beam
+//   Centre post  (2)  — vertical spine
+//   Base accents (3)  — foundation detail
+
 const PEG_LAYOUT = [
-  // Outer arch — parabolic crown spanning the full gate width
-  {x:50,y:130},{x:80,y:89},{x:116,y:55},{x:148,y:36},{x:181,y:30},
-  {x:214,y:36},{x:246,y:55},{x:282,y:89},{x:312,y:130},
+  // Outer arch — parabola peak at (181, 108), feet at (50,200) and (312,200)
+  {x:50, y:200},{x:82, y:157},{x:116,y:128},{x:150,y:112},{x:181,y:106},
+  {x:212,y:112},{x:246,y:128},{x:280,y:157},{x:312,y:200},
   // Left outer pillar
-  {x:50,y:170},{x:50,y:212},{x:50,y:256},{x:50,y:310},
+  {x:50, y:238},{x:50, y:278},{x:50, y:318},
   // Right outer pillar
-  {x:312,y:170},{x:312,y:212},{x:312,y:256},{x:312,y:310},
-  // Inner arch — smaller parabola inset within the gate
-  {x:100,y:160},{x:130,y:127},{x:155,y:111},{x:181,y:105},
-  {x:207,y:111},{x:232,y:127},{x:262,y:160},
-  // Horizontal crossbar — the gate beam
-  {x:100,y:222},{x:140,y:222},{x:181,y:222},{x:222,y:222},{x:262,y:222},
-  // Centre post — vertical spine
-  {x:181,y:167},{x:181,y:262},
-  // Base accents — foundation detail
-  {x:100,y:322},{x:181,y:342},{x:262,y:322},
+  {x:312,y:238},{x:312,y:278},{x:312,y:318},
+  // Inner arch — smaller parabola inside: peak at (181,188), feet at (100,228) and (262,228)
+  {x:100,y:228},{x:128,y:207},{x:153,y:195},{x:181,y:191},
+  {x:209,y:195},{x:234,y:207},{x:262,y:228},
+  // Crossbar — horizontal beam linking inner arch feet
+  {x:100,y:264},{x:140,y:264},{x:181,y:264},{x:222,y:264},{x:262,y:264},
+  // Centre post — vertical from inner arch peak to crossbar
+  {x:181,y:228},{x:181,y:306},
+  // Base accents
+  {x:100,y:326},{x:181,y:338},{x:262,y:326},
 ];
 
 class RicochetScene extends Phaser.Scene {
@@ -67,16 +73,22 @@ class RicochetScene extends Phaser.Scene {
     this.pegHitCount     = 0;
     this.pegsHitThisShot = new Set();
 
-    // ── Play area bounds ────────────────────────────────────────────────────
+    // ── Play area ────────────────────────────────────────────────────────────
     this.PLAY_LEFT   = 14;
     this.PLAY_RIGHT  = 376;
     this.PLAY_TOP    = 252;
     this.PLAY_BOTTOM = 638;
-    this.PLAY_W      = this.PLAY_RIGHT - this.PLAY_LEFT;  // 362
-    this.PLAY_H      = this.PLAY_BOTTOM - this.PLAY_TOP;  // 386
+    this.PLAY_W      = this.PLAY_RIGHT - this.PLAY_LEFT;   // 362
+    this.PLAY_H      = this.PLAY_BOTTOM - this.PLAY_TOP;   // 386
+
+    // Strict physics bounds (ball centre must stay inside these)
+    this.BOUND_L = this.PLAY_LEFT   + BALL_R;
+    this.BOUND_R = this.PLAY_RIGHT  - BALL_R;
+    this.BOUND_T = this.PLAY_TOP    + BALL_R;   // hard ceiling — ball never escapes above
+    this.BOUND_B = this.PLAY_BOTTOM - BALL_R;
 
     this.LAUNCHER_X  = width / 2;
-    this.LAUNCHER_Y  = 234;
+    this.LAUNCHER_Y  = this.PLAY_TOP - 18;      // visually just above play area top
     this.aimAngle    = Math.PI / 2;
 
     // Bucket
@@ -87,28 +99,24 @@ class RicochetScene extends Phaser.Scene {
 
     // Build world-coord pegs
     this.pegs = PEG_LAYOUT.map(p => ({
-      x: this.PLAY_LEFT + p.x, y: this.PLAY_TOP  + p.y,
+      x: this.PLAY_LEFT + p.x,
+      y: this.PLAY_TOP  + p.y,
       r: PEG_R, lit: false
     }));
 
-    // Ball: physics state + render state (plain JS objects — tween-safe)
+    // Ball: physics state tracked as plain object — never driven by Phaser tweens
     this.ball      = { x:0, y:0, vx:0, vy:0 };
-    this.ballState = { x:0, y:0, alpha:0 };
+    this.ballVis   = { x:0, y:0, alpha:0 };   // tweens target this; ballGfx reads it
 
-    // ── Background & header ─────────────────────────────────────────────────
+    // ── Background & header ──────────────────────────────────────────────────
     this.add.rectangle(width/2, height/2, width, height, 0x0d1117);
     this.add.rectangle(width/2, 0, width, 4, 0x5eba7d, 0.4);
     this.add.rectangle(width/2, 144, width, 100, 0x161b22);
     this.add.rectangle(width/2, 194, width, 1, 0x334455);
 
-    // Back — no gate
     const back = this.add.rectangle(44, 144, 72, 48, 0x1e2530).setInteractive();
     this.add.text(44, 144, '<- BACK', { fontFamily:'monospace', fontSize:'14px', color:'#e8a020' }).setOrigin(0.5);
-    back.on('pointerdown', () => {
-      this._save();
-      this.cameras.main.fade(200,0,0,0);
-      this.time.delayedCall(200, () => this.scene.start('MarketplaceScene'));
-    });
+    back.on('pointerdown', () => { this._save(); this.cameras.main.fade(200,0,0,0); this.time.delayedCall(200,()=>this.scene.start('MarketplaceScene')); });
     back.on('pointerover', () => back.setFillStyle(0x252c38));
     back.on('pointerout',  () => back.setFillStyle(0x1e2530));
 
@@ -119,17 +127,17 @@ class RicochetScene extends Phaser.Scene {
     this.add.text(width/2, 216, '\xb7', { fontFamily:'monospace', fontSize:'12px', color:'#334455' }).setOrigin(0.5);
     this.boltsText = this.add.text(width/2+72, 216, this.saveData.bolts +' BOLTS', { fontFamily:'monospace', fontSize:'12px', color:'#8ab4cc', fontStyle:'bold' }).setOrigin(0.5);
 
-    // ── Play field ──────────────────────────────────────────────────────────
+    // ── Play field ───────────────────────────────────────────────────────────
     this.add.rectangle(this.PLAY_LEFT+this.PLAY_W/2, this.PLAY_TOP+this.PLAY_H/2, this.PLAY_W, this.PLAY_H, 0x0a0e14);
     this.add.rectangle(this.PLAY_LEFT+this.PLAY_W/2, this.PLAY_TOP+this.PLAY_H/2, this.PLAY_W, this.PLAY_H).setStrokeStyle(1,0x5eba7d,0.25);
 
     // Corporate watermark
-    this.add.text(width/2, this.PLAY_TOP+this.PLAY_H/2, 'TIANXIA\nINTEGRATED\nHOLDINGS', {
-      fontFamily:'monospace', fontSize:'30px', color:'#e8a020',
-      align:'center', lineSpacing:6
+    this.add.text(width/2, this.PLAY_TOP + this.PLAY_H*0.6, 'TIANXIA\nINTEGRATED\nHOLDINGS', {
+      fontFamily:'monospace', fontSize:'28px', color:'#e8a020',
+      align:'center', lineSpacing:4
     }).setOrigin(0.5).setAlpha(0.04).setDepth(1);
 
-    // Gate logo connector lines (depth 1, static)
+    // Faint amber connector lines tracing gate structure
     this._drawLogoLines();
 
     // Pegs (depth 2)
@@ -139,16 +147,17 @@ class RicochetScene extends Phaser.Scene {
     // Bucket (depth 4)
     this.bucketGfx = this.add.graphics().setDepth(4);
     this._drawBucket();
-    this.add.text(this.PLAY_LEFT+this.PLAY_W/2, this.PLAY_BOTTOM-14, '+' + BUCKET_HIT_BONUS + ' HIT BONUS', {
-      fontFamily:'monospace', fontSize:'9px', color:'#334455', letterSpacing:2
-    }).setOrigin(0.5).setDepth(4);
+    this.add.text(this.PLAY_LEFT+this.PLAY_W/2, this.PLAY_BOTTOM-14,
+      '+'+BUCKET_HIT_BONUS+' HIT BONUS',
+      { fontFamily:'monospace', fontSize:'9px', color:'#334455', letterSpacing:2 }
+    ).setOrigin(0.5).setDepth(4);
 
-    // ── Tier display (replaces bins) ─────────────────────────────────────────
+    // Tier boxes (depth 3)
     this._buildTierDisplay();
 
-    // ── Hit counter strip (inside play area top, hidden until shot fires) ───
+    // Hit counter strip inside play area (hidden until shot fires)
     const sY = this.PLAY_TOP + 18;
-    this.hitStripBg  = this.add.rectangle(this.PLAY_LEFT+this.PLAY_W/2, sY, this.PLAY_W, 34, 0x070b0e, 0.92).setDepth(8).setAlpha(0);
+    this.hitStripBg  = this.add.rectangle(this.PLAY_LEFT+this.PLAY_W/2, sY, this.PLAY_W, 34, 0x070b0e, 0.94).setDepth(8).setAlpha(0);
     this.hitCountTxt = this.add.text(this.PLAY_LEFT+14, sY, '0 HITS', {
       fontFamily:'monospace', fontSize:'13px', color:'#8899aa', fontStyle:'bold', letterSpacing:2
     }).setOrigin(0,0.5).setDepth(9).setAlpha(0);
@@ -156,18 +165,18 @@ class RicochetScene extends Phaser.Scene {
       fontFamily:'monospace', fontSize:'12px', color:'#553333', fontStyle:'bold'
     }).setOrigin(1,0.5).setDepth(9).setAlpha(0);
 
-    // ── Preview / launcher / ball (depth 3/5/6) ─────────────────────────────
+    // Preview / launcher / ball
     this.previewGfx  = this.add.graphics().setDepth(3);
     this.launcherGfx = this.add.graphics().setDepth(5);
     this._drawLauncher(false);
-    this.ballGfx     = this.add.graphics().setDepth(6);   // drawn from ballState every frame
+    this.ballGfx     = this.add.graphics().setDepth(6);   // rendered from ballVis every frame
 
-    // ── Result text ─────────────────────────────────────────────────────────
+    // Result text
     this.resultText = this.add.text(width/2, this.PLAY_TOP+58, '', {
       fontFamily:'monospace', fontSize:'15px', color:'#5eba7d', fontStyle:'bold', letterSpacing:2
     }).setOrigin(0.5).setAlpha(0).setDepth(10);
 
-    // ── Fatigue strip ────────────────────────────────────────────────────────
+    // ── Fatigue strip ─────────────────────────────────────────────────────────
     const fatY = 692;
     this.add.text(width/2, fatY, 'FATIGUE', { fontFamily:'monospace', fontSize:'9px', color:'#445566', letterSpacing:3 }).setOrigin(0.5);
     const bW = width-80, bY = fatY+14;
@@ -176,17 +185,18 @@ class RicochetScene extends Phaser.Scene {
     this.fatigueLabel = this.add.text(width/2, bY+13, this._fatigueText(), { fontFamily:'monospace', fontSize:'9px', color:'#556677' }).setOrigin(0.5);
     this._updateFatigueBar(bW);
 
-    // ── Bottom hint (no fire button — hold/release is the mechanic) ──────────
+    // ── Bottom strip ──────────────────────────────────────────────────────────
     this.add.rectangle(width/2, height-76, width-48, 60, 0x0a0e14);
     this.add.rectangle(width/2, height-76, width-48, 60).setStrokeStyle(1,0x1e3028);
     this.hintTxt = this.add.text(width/2, height-76-10, 'HOLD & DRAG TO AIM', {
       fontFamily:'monospace', fontSize:'13px', color:'#2a5538', fontStyle:'bold', letterSpacing:2
     }).setOrigin(0.5);
-    this.costTxt = this.add.text(width/2, height-76+12, 'RELEASE TO FIRE  \xb7  COSTS '+this._rollCost()+' NUTS', {
-      fontFamily:'monospace', fontSize:'10px', color:'#334455', letterSpacing:1
-    }).setOrigin(0.5);
+    this.costTxt = this.add.text(width/2, height-76+12,
+      'RELEASE TO FIRE  \xb7  COSTS '+this._rollCost()+' NUTS',
+      { fontFamily:'monospace', fontSize:'10px', color:'#334455', letterSpacing:1 }
+    ).setOrigin(0.5);
 
-    // ── Input: hold = aim + preview, release = fire ───────────────────────────
+    // ── Input: hold = aim, release = fire ─────────────────────────────────────
     this._onDown = (p) => {
       if (this.ballActive || p.y < 200) return;
       if (this.saveData.nuts < this._rollCost()) { this._flashMsg('NOT ENOUGH NUTS'); return; }
@@ -194,11 +204,8 @@ class RicochetScene extends Phaser.Scene {
       this._updateAim(p);
       this.hintTxt.setStyle({ color:'#5eba7d' });
     };
-    this._onMove = (p) => {
-      if (!this._isAiming || this.ballActive) return;
-      this._updateAim(p);
-    };
-    this._onUp = () => {
+    this._onMove = (p) => { if (!this._isAiming||this.ballActive) return; this._updateAim(p); };
+    this._onUp   = () => {
       if (!this._isAiming) return;
       this._isAiming = false;
       this.previewGfx.clear();
@@ -219,126 +226,105 @@ class RicochetScene extends Phaser.Scene {
     });
 
     this._refreshCostText();
-
     if (!this.saveData.tutorials.ricochet) {
       this.time.delayedCall(200, () => this._showTutorial());
     }
   }
 
-  // ── Logo connector lines ───────────────────────────────────────────────────
-  // Faint amber lines trace the gate structure behind the pegs.
+  // ── Logo connector lines (static, depth 1) ────────────────────────────────
 
   _drawLogoLines() {
     const gfx = this.add.graphics().setDepth(1);
     const pl = this.PLAY_LEFT, pt = this.PLAY_TOP;
 
-    const chain = (pts, alpha) => {
+    const chain = (indices, alpha) => {
       gfx.lineStyle(1, 0xe8a020, alpha);
-      for (let i = 0; i < pts.length-1; i++) {
-        gfx.lineBetween(pl+pts[i].x, pt+pts[i].y, pl+pts[i+1].x, pt+pts[i+1].y);
+      for (let i=0; i<indices.length-1; i++) {
+        const a = PEG_LAYOUT[indices[i]], b = PEG_LAYOUT[indices[i+1]];
+        gfx.lineBetween(pl+a.x, pt+a.y, pl+b.x, pt+b.y);
       }
     };
 
-    const OA = PEG_LAYOUT.slice(0,9);
-    const LP = PEG_LAYOUT.slice(9,13);
-    const RP = PEG_LAYOUT.slice(13,17);
-    const IA = PEG_LAYOUT.slice(17,24);
-    const CB = PEG_LAYOUT.slice(24,29);
-    const PP = PEG_LAYOUT.slice(29,31);
-
-    chain(OA,                  0.22);   // outer arch crown
-    chain([OA[0],...LP],       0.22);   // left pillar from arch foot
-    chain([OA[8],...RP],       0.22);   // right pillar from arch foot
-    chain(IA,                  0.16);   // inner arch
-    chain(CB,                  0.16);   // crossbar
-    chain([IA[3],...PP],       0.13);   // centre post from inner arch peak
-
-    // Vertical supports connecting inner arch ends to crossbar ends
-    gfx.lineStyle(1, 0xe8a020, 0.10);
-    gfx.lineBetween(pl+IA[0].x, pt+IA[0].y, pl+CB[0].x, pt+CB[0].y);
-    gfx.lineBetween(pl+IA[6].x, pt+IA[6].y, pl+CB[4].x, pt+CB[4].y);
+    chain([0,1,2,3,4,5,6,7,8],        0.22);  // outer arch
+    chain([0,9,10,11],                 0.22);  // left pillar from arch foot
+    chain([8,12,13,14],                0.22);  // right pillar from arch foot
+    chain([15,16,17,18,19,20,21],      0.18);  // inner arch
+    chain([22,23,24,25,26],            0.16);  // crossbar
+    chain([18,27,28],                  0.14);  // centre post
+    gfx.lineStyle(1,0xe8a020,0.10);
+    gfx.lineBetween(pl+PEG_LAYOUT[15].x, pt+PEG_LAYOUT[15].y, pl+PEG_LAYOUT[22].x, pt+PEG_LAYOUT[22].y);
+    gfx.lineBetween(pl+PEG_LAYOUT[21].x, pt+PEG_LAYOUT[21].y, pl+PEG_LAYOUT[26].x, pt+PEG_LAYOUT[26].y);
   }
 
-  // ── Tier display (replaces bins) ───────────────────────────────────────────
+  // ── Tier display ──────────────────────────────────────────────────────────
 
   _buildTierDisplay() {
-    const boxW  = this.PLAY_W / HIT_TIERS.length;   // ~60px
-    const boxH  = 44;
+    const boxW = this.PLAY_W / HIT_TIERS.length;
     this.tierGfxArr = [];
     this.tierLblArr = [];
     this.tierRngArr = [];
 
     HIT_TIERS.forEach((tier, i) => {
-      const bx = this.PLAY_LEFT + i * boxW;
-      const cx = bx + boxW / 2;
-
-      const gfx = this.add.graphics().setDepth(3);
-      this._drawTierBox(gfx, bx, this.PLAY_BOTTOM, boxW, boxH, false, tier);
-
-      const lbl = this.add.text(cx, this.PLAY_BOTTOM+13, tier.label, {
+      const bx = this.PLAY_LEFT + i*boxW;
+      const cx = bx + boxW/2;
+      const g  = this.add.graphics().setDepth(3);
+      this._drawTierBox(g, bx, this.PLAY_BOTTOM, boxW, 44, false, tier);
+      this.tierGfxArr.push(g);
+      this.tierLblArr.push(this.add.text(cx, this.PLAY_BOTTOM+13, tier.label, {
         fontFamily:'monospace', fontSize:'11px',
-        color: tier.bolts===0 ? '#442222' : '#445566', fontStyle:'bold'
-      }).setOrigin(0.5).setDepth(4);
-
-      const rng = this.add.text(cx, this.PLAY_BOTTOM+29, tier.range, {
+        color: tier.bolts===0?'#442222':'#445566', fontStyle:'bold'
+      }).setOrigin(0.5).setDepth(4));
+      this.tierRngArr.push(this.add.text(cx, this.PLAY_BOTTOM+29, tier.range, {
         fontFamily:'monospace', fontSize:'8px', color:'#222d38', letterSpacing:1
-      }).setOrigin(0.5).setDepth(4);
-
-      this.tierGfxArr.push(gfx);
-      this.tierLblArr.push(lbl);
-      this.tierRngArr.push(rng);
+      }).setOrigin(0.5).setDepth(4));
     });
   }
 
   _drawTierBox(gfx, bx, by, bw, bh, active, tier) {
     gfx.clear();
-    const bgCol = active ? (tier.bolts===0 ? 0x200808 : 0x081410) : 0x070b0e;
-    const bdCol = active ? (tier.bolts===0 ? 0xc43a3a : 0x5eba7d) : (tier.bolts===0 ? 0x2a1010 : 0x1a2530);
-    gfx.fillStyle(bgCol, 1);
-    gfx.fillRect(bx+1, by, bw-2, bh);
-    gfx.lineStyle(active?2:1, bdCol, active?0.9:0.5);
-    gfx.strokeRect(bx+1, by, bw-2, bh);
+    const bgCol = active?(tier.bolts===0?0x200808:0x081410):0x070b0e;
+    const bdCol = active?(tier.bolts===0?0xc43a3a:0x5eba7d):(tier.bolts===0?0x2a1010:0x1a2530);
+    gfx.fillStyle(bgCol,1); gfx.fillRect(bx+1,by,bw-2,bh);
+    gfx.lineStyle(active?2:1,bdCol,active?0.9:0.5); gfx.strokeRect(bx+1,by,bw-2,bh);
   }
 
-  _highlightTier(idx) {
+  _highlightTier(activeIdx) {
     const boxW = this.PLAY_W / HIT_TIERS.length;
-    HIT_TIERS.forEach((tier, i) => {
-      const active = i === idx;
-      this._drawTierBox(this.tierGfxArr[i], this.PLAY_LEFT+i*boxW, this.PLAY_BOTTOM, boxW, 44, active, tier);
-      const lCol = active ? (tier.bolts===0 ? '#c43a3a' : '#5eba7d') : (tier.bolts===0 ? '#442222' : '#445566');
-      const rCol = active ? '#8899aa' : '#222d38';
-      this.tierLblArr[i].setStyle({ color: lCol });
-      this.tierRngArr[i].setStyle({ color: rCol });
+    HIT_TIERS.forEach((tier,i) => {
+      const on = i===activeIdx;
+      this._drawTierBox(this.tierGfxArr[i], this.PLAY_LEFT+i*boxW, this.PLAY_BOTTOM, boxW, 44, on, tier);
+      this.tierLblArr[i].setStyle({ color: on?(tier.bolts===0?'#c43a3a':'#5eba7d'):(tier.bolts===0?'#442222':'#445566') });
+      this.tierRngArr[i].setStyle({ color: on?'#8899aa':'#222d38' });
     });
   }
 
   // ── Hit counter ───────────────────────────────────────────────────────────
 
-  _updateHitCounter(overrideHits) {
-    const h    = overrideHits !== undefined ? overrideHits : this.pegHitCount;
+  _updateHitCounter(override) {
+    const h    = override !== undefined ? override : this.pegHitCount;
     const tier = this._getTier(h);
-    const col  = tier.bolts===0 ? '#553333' : tier.bolts<3 ? '#e8a020' : '#5eba7d';
-    this.hitCountTxt.setText(h+' HIT'+(h===1?'':'S')).setStyle({ color: col });
-    this.hitTierTxt.setText(tier.bolts>0 ? '\u2192 '+tier.bolts+' B' : 'BUST').setStyle({ color: col });
+    const col  = tier.bolts===0?'#553333':tier.bolts<3?'#e8a020':'#5eba7d';
+    this.hitCountTxt.setText(h+' HIT'+(h===1?'':'S')).setStyle({ color:col });
+    this.hitTierTxt.setText(tier.bolts>0?'\u2192 '+tier.bolts+' B':'BUST').setStyle({ color:col });
     this._highlightTier(this._getTierIndex(h));
   }
 
-  // ── Draw helpers ───────────────────────────────────────────────────────────
+  // ── Draw helpers ──────────────────────────────────────────────────────────
 
   _drawPegs() {
     this.pegGfx.clear();
     this.pegs.forEach(peg => {
-      this.pegGfx.fillStyle(peg.lit ? 0x5eba7d : 0x2a3a4a, 1);
-      this.pegGfx.fillCircle(peg.x, peg.y, peg.r + (peg.lit ? 2 : 0));
+      this.pegGfx.fillStyle(peg.lit?0x5eba7d:0x2a3a4a,1);
+      this.pegGfx.fillCircle(peg.x, peg.y, peg.r+(peg.lit?2:0));
     });
   }
 
   _drawBucket() {
     this.bucketGfx.clear();
-    const by = this.PLAY_BOTTOM - 4;
-    this.bucketGfx.fillStyle(0x5eba7d, 0.22);
+    const by = this.PLAY_BOTTOM-4;
+    this.bucketGfx.fillStyle(0x5eba7d,0.22);
     this.bucketGfx.fillRect(this.bucketX-this.bucketW/2, by-8, this.bucketW, 12);
-    this.bucketGfx.lineStyle(2, 0x5eba7d, 0.85);
+    this.bucketGfx.lineStyle(2,0x5eba7d,0.85);
     this.bucketGfx.strokeRect(this.bucketX-this.bucketW/2, by-8, this.bucketW, 12);
   }
 
@@ -346,13 +332,11 @@ class RicochetScene extends Phaser.Scene {
     this.launcherGfx.clear();
     const lx=this.LAUNCHER_X, ly=this.LAUNCHER_Y, a=active?0.95:0.5;
     this.launcherGfx.fillStyle(active?0x1a3028:0x1e2a38,1);
-    this.launcherGfx.fillCircle(lx, ly, 18);
-    this.launcherGfx.lineStyle(2, 0x5eba7d, a);
-    this.launcherGfx.strokeCircle(lx, ly, 18);
-    this.launcherGfx.lineStyle(4, 0x5eba7d, a);
-    this.launcherGfx.lineBetween(lx, ly, lx+Math.cos(this.aimAngle)*30, ly+Math.sin(this.aimAngle)*30);
-    this.launcherGfx.fillStyle(0x5eba7d, a);
-    this.launcherGfx.fillCircle(lx, ly, 5);
+    this.launcherGfx.fillCircle(lx,ly,18);
+    this.launcherGfx.lineStyle(2,0x5eba7d,a); this.launcherGfx.strokeCircle(lx,ly,18);
+    this.launcherGfx.lineStyle(4,0x5eba7d,a);
+    this.launcherGfx.lineBetween(lx,ly, lx+Math.cos(this.aimAngle)*30, ly+Math.sin(this.aimAngle)*30);
+    this.launcherGfx.fillStyle(0x5eba7d,a); this.launcherGfx.fillCircle(lx,ly,5);
   }
 
   _drawPreview() {
@@ -360,105 +344,105 @@ class RicochetScene extends Phaser.Scene {
     if (!this._isAiming) return;
     const lx=this.LAUNCHER_X, ly=this.LAUNCHER_Y;
     const dx=Math.cos(this.aimAngle), dy=Math.sin(this.aimAngle);
-    for (let i=1; i<=24; i++) {
+    for (let i=1; i<=28; i++) {
       const t=i*0.04;
       const px=lx+dx*BALL_SPEED*t, py=ly+dy*BALL_SPEED*t+0.5*GRAVITY*t*t;
       if (py>this.PLAY_BOTTOM||px<this.PLAY_LEFT||px>this.PLAY_RIGHT) break;
-      const al=Math.max(0.03, 0.8-i*0.032);
-      this.previewGfx.fillStyle(0x5eba7d, al);
-      this.previewGfx.fillCircle(px, py, Math.max(1, 3.2-i*0.1));
+      const al=Math.max(0.03, 0.8-i*0.028);
+      this.previewGfx.fillStyle(0x5eba7d,al);
+      this.previewGfx.fillCircle(px,py,Math.max(1,3.2-i*0.09));
     }
   }
 
   _updateAim(pointer) {
     const dx=pointer.x-this.LAUNCHER_X, dy=pointer.y-this.LAUNCHER_Y;
-    if (dy<8) return;
-    this.aimAngle = Phaser.Math.Clamp(Math.atan2(dy,dx), 0.2, Math.PI-0.2);
+    if (dy < 0) return;   // must point at least slightly downward
+    this.aimAngle = Phaser.Math.Clamp(Math.atan2(dy,dx), 0.18, Math.PI-0.18);
     this._drawLauncher(true);
     this._drawPreview();
   }
 
-  // ── Fire ───────────────────────────────────────────────────────────────────
+  // ── Fire ──────────────────────────────────────────────────────────────────
 
   _fire() {
-    const cost = this._rollCost();
-    if (this.saveData.nuts<cost || this.ballActive) return;
-
-    this.saveData.nuts -= cost;
+    const cost=this._rollCost();
+    if (this.saveData.nuts<cost||this.ballActive) return;
+    this.saveData.nuts-=cost;
     this.nutsText.setText(this.saveData.nuts+' NUTS');
-    this.ballActive      = true;
-    this.pegHitCount     = 0;
-    this.pegsHitThisShot = new Set();
+    this.ballActive=true;
+    this.pegHitCount=0;
+    this.pegsHitThisShot=new Set();
 
-    this.ball.x  = this.LAUNCHER_X + Math.cos(this.aimAngle)*22;
-    this.ball.y  = this.LAUNCHER_Y + Math.sin(this.aimAngle)*22;
+    // Start ball at launcher centre — clamp immediately to play-area ceiling
+    this.ball.x  = this.LAUNCHER_X;
+    this.ball.y  = Math.max(this.BOUND_T, this.LAUNCHER_Y + Math.sin(this.aimAngle)*22);
     this.ball.vx = Math.cos(this.aimAngle)*BALL_SPEED;
     this.ball.vy = Math.sin(this.aimAngle)*BALL_SPEED;
-    this.ballState.x     = this.ball.x;
-    this.ballState.y     = this.ball.y;
-    this.ballState.alpha = 1;
 
-    // Show hit counter strip
-    this.hitStripBg.setAlpha(1);
-    this.hitCountTxt.setAlpha(1);
-    this.hitTierTxt.setAlpha(1);
+    // Sync visual position
+    this.ballVis.x=this.ball.x; this.ballVis.y=this.ball.y; this.ballVis.alpha=1;
+
+    // Show hit strip
+    this.hitStripBg.setAlpha(1); this.hitCountTxt.setAlpha(1); this.hitTierTxt.setAlpha(1);
     this._updateHitCounter(0);
     this.tweens.add({ targets:this.resultText, alpha:0, duration:100 });
     this._highlightTier(-1);
 
     // Safety timeout
-    this.time.delayedCall(10000, () => { if (this.ballActive) this._resolve(); });
+    this.time.delayedCall(10000, ()=>{ if(this.ballActive) this._resolve(); });
   }
 
-  // ── Physics update ─────────────────────────────────────────────────────────
+  // ── Physics update ────────────────────────────────────────────────────────
 
   update(time, delta) {
     // Bucket always moves
-    this.bucketX += this.bucketDir*this.bucketSpeed*(delta/1000);
-    if (this.bucketX+this.bucketW/2 > this.PLAY_RIGHT) { this.bucketX=this.PLAY_RIGHT-this.bucketW/2; this.bucketDir=-1; }
-    if (this.bucketX-this.bucketW/2 < this.PLAY_LEFT)  { this.bucketX=this.PLAY_LEFT +this.bucketW/2; this.bucketDir= 1; }
+    this.bucketX+=this.bucketDir*this.bucketSpeed*(delta/1000);
+    if (this.bucketX+this.bucketW/2>this.PLAY_RIGHT){this.bucketX=this.PLAY_RIGHT-this.bucketW/2;this.bucketDir=-1;}
+    if (this.bucketX-this.bucketW/2<this.PLAY_LEFT) {this.bucketX=this.PLAY_LEFT +this.bucketW/2;this.bucketDir= 1;}
     this._drawBucket();
 
-    // ── Ball rendering (always from ballState, never from Phaser tweens) ────
+    // Render ball from ballVis (always, so the sink tween works after resolve too)
     this.ballGfx.clear();
-    if (this.ballState.alpha > 0.01) {
-      this.ballGfx.fillStyle(0x5eba7d, this.ballState.alpha);
-      this.ballGfx.fillCircle(this.ballState.x, this.ballState.y, BALL_R);
+    if (this.ballVis.alpha>0.01) {
+      this.ballGfx.fillStyle(0x5eba7d, this.ballVis.alpha);
+      this.ballGfx.fillCircle(this.ballVis.x, this.ballVis.y, BALL_R);
     }
 
     if (!this.ballActive) return;
 
-    // Sync ballState with live physics
-    this.ballState.x     = this.ball.x;
-    this.ballState.y     = this.ball.y;
-    this.ballState.alpha = 1;
+    // ── Physics step ──────────────────────────────────────────────────────
+    const dt=Math.min(delta/1000, 0.025);
+    this.ball.vy+=GRAVITY*dt;
+    this.ball.x +=this.ball.vx*dt;
+    this.ball.y +=this.ball.vy*dt;
 
-    const dt = Math.min(delta/1000, 0.025);
-    this.ball.vy += GRAVITY*dt;
-    this.ball.x  += this.ball.vx*dt;
-    this.ball.y  += this.ball.vy*dt;
+    // ── Wall response — reflect velocity THEN hard-clamp position ────────
+    if (this.ball.x < this.BOUND_L) { this.ball.vx= Math.abs(this.ball.vx)*0.78; this.ball.x=this.BOUND_L; }
+    if (this.ball.x > this.BOUND_R) { this.ball.vx=-Math.abs(this.ball.vx)*0.78; this.ball.x=this.BOUND_R; }
+    if (this.ball.y < this.BOUND_T) { this.ball.vy= Math.abs(this.ball.vy)*0.78; this.ball.y=this.BOUND_T; }
+    // No ceiling clamp needed for bottom — that's the resolve trigger
 
-    // Wall bounces
-    const L=this.PLAY_LEFT+BALL_R, R=this.PLAY_RIGHT-BALL_R;
-    if (this.ball.x<L) { this.ball.x=L; this.ball.vx= Math.abs(this.ball.vx)*0.75; }
-    if (this.ball.x>R) { this.ball.x=R; this.ball.vx=-Math.abs(this.ball.vx)*0.75; }
-    if (this.ball.y<this.PLAY_TOP+BALL_R) { this.ball.y=this.PLAY_TOP+BALL_R; this.ball.vy=Math.abs(this.ball.vy)*0.75; }
+    // Hard clamp — catches any edge case where velocity was too large for dt
+    this.ball.x = Phaser.Math.Clamp(this.ball.x, this.BOUND_L, this.BOUND_R);
+    this.ball.y = Math.max(this.ball.y, this.BOUND_T);
 
-    // Peg collisions — count unique hits
-    let pegDirty = false;
-    this.pegs.forEach((peg, i) => {
+    // ── Peg collisions ────────────────────────────────────────────────────
+    let pegDirty=false;
+    this.pegs.forEach((peg,i)=>{
       const dx=this.ball.x-peg.x, dy=this.ball.y-peg.y;
       const dist=Math.sqrt(dx*dx+dy*dy), minD=BALL_R+peg.r;
-      if (dist<minD && dist>0.01) {
-        const nx=dx/dist, ny=dy/dist;
-        const dot=this.ball.vx*nx+this.ball.vy*ny;
+      if (dist<minD&&dist>0.01) {
+        const nx=dx/dist, ny=dy/dist, dot=this.ball.vx*nx+this.ball.vy*ny;
         if (dot<0) {
-          this.ball.vx -= (1+0.65)*dot*nx;
-          this.ball.vy -= (1+0.65)*dot*ny;
-          this.ball.vx += (Math.random()-0.5)*20;
+          this.ball.vx-=(1+0.65)*dot*nx;
+          this.ball.vy-=(1+0.65)*dot*ny;
+          this.ball.vx+=(Math.random()-0.5)*20;
         }
-        this.ball.x += nx*(minD-dist);
-        this.ball.y += ny*(minD-dist);
+        this.ball.x+=nx*(minD-dist);
+        this.ball.y+=ny*(minD-dist);
+        // Re-clamp after peg pushout
+        this.ball.x=Phaser.Math.Clamp(this.ball.x,this.BOUND_L,this.BOUND_R);
+        this.ball.y=Math.max(this.ball.y,this.BOUND_T);
         if (!this.pegsHitThisShot.has(i)) {
           this.pegsHitThisShot.add(i);
           this.pegHitCount++;
@@ -466,91 +450,86 @@ class RicochetScene extends Phaser.Scene {
         }
         if (!peg.lit) {
           peg.lit=true; pegDirty=true;
-          this.time.delayedCall(220, () => { peg.lit=false; this._drawPegs(); });
+          this.time.delayedCall(220,()=>{peg.lit=false;this._drawPegs();});
         }
       }
     });
     if (pegDirty) this._drawPegs();
 
-    if (this.ball.y >= this.PLAY_BOTTOM-BALL_R) this._resolve();
+    // Sync visual position to physics (only while active)
+    this.ballVis.x=this.ball.x;
+    this.ballVis.y=this.ball.y;
+    this.ballVis.alpha=1;
+
+    if (this.ball.y>=this.PLAY_BOTTOM-BALL_R) this._resolve();
   }
 
-  // ── Resolve ────────────────────────────────────────────────────────────────
+  // ── Resolve ───────────────────────────────────────────────────────────────
 
   _resolve() {
-    this.ballActive = false;
+    this.ballActive=false;
 
-    // Bucket catch adds bonus hits
-    const inBucket  = Math.abs(this.ball.x-this.bucketX) < this.bucketW/2+BALL_R;
-    const totalHits = this.pegHitCount + (inBucket ? BUCKET_HIT_BONUS : 0);
+    const inBucket  = Math.abs(this.ball.x-this.bucketX)<this.bucketW/2+BALL_R;
+    const totalHits = this.pegHitCount+(inBucket?BUCKET_HIT_BONUS:0);
 
-    if (inBucket) this.cameras.main.flash(150, 92, 186, 125, false);
-
-    // Update counter to show bucket bonus
     if (inBucket) {
-      this.hitCountTxt.setText(this.pegHitCount+' + '+BUCKET_HIT_BONUS+' = '+totalHits+' HITS');
+      this.cameras.main.flash(150,92,186,125,false);
+      this.hitCountTxt.setText(this.pegHitCount+' +'+BUCKET_HIT_BONUS+' = '+totalHits+' HITS');
     }
     this._updateHitCounter(totalHits);
 
-    // Payout
     const tier   = this._getTier(totalHits);
     const mult   = Math.max(0.2, 1/(1+0.08*this.fatigue));
-    const payout = tier.bolts>0 ? Math.max(1, Math.round(tier.bolts*mult)) : 0;
+    const payout = tier.bolts>0 ? Math.max(1,Math.round(tier.bolts*mult)) : 0;
 
-    this.saveData.bolts += payout;
+    this.saveData.bolts+=payout;
     this.fatigue++;
-    this.saveData.merchantFatigue.ricochet = this.fatigue;
+    this.saveData.merchantFatigue.ricochet=this.fatigue;
     this._save();
 
     this.boltsText.setText(this.saveData.bolts+' BOLTS');
     this.tweens.add({ targets:this.boltsText, scaleX:1.3, scaleY:1.3, duration:150, yoyo:true });
 
-    const col = payout>0 ? (payout>=4 ? '#5eba7d' : '#e8a020') : '#c43a3a';
-    const msg = payout>0 ? '+'+payout+' BOLT'+(payout===1?'':'S') : 'BUST \u2014 0 BOLTS';
+    const col=payout>0?(payout>=4?'#5eba7d':'#e8a020'):'#c43a3a';
+    const msg=payout>0?'+'+payout+' BOLT'+(payout===1?'':'S'):'BUST \u2014 0 BOLTS';
     this.resultText.setText(msg).setStyle({color:col}).setAlpha(0);
     this.tweens.add({ targets:this.resultText, alpha:1, duration:250 });
 
-    // Ball sink — tween plain ballState object (safe, no Phaser Arc)
-    this.ballState.x = this.ball.x;
-    this.ballState.y = this.ball.y;
-    this.tweens.add({ targets:this.ballState, alpha:0, y:this.ball.y+28, duration:350 });
+    // Sink tween on ballVis (plain object — safe)
+    this.tweens.add({ targets:this.ballVis, alpha:0, y:this.ball.y+28, duration:350 });
 
-    // Cleanup after display window
-    this.time.delayedCall(1400, () => {
+    this.time.delayedCall(1400,()=>{
       this.tweens.add({ targets:[this.hitStripBg,this.hitCountTxt,this.hitTierTxt], alpha:0, duration:400 });
       this._highlightTier(-1);
-      const bW = this.scale.width-80;
+      const bW=this.scale.width-80;
       this._updateFatigueBar(bW);
       this.fatigueLabel.setText(this._fatigueText());
       this._refreshCostText();
     });
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────────────────────
 
   _getTier(hits) {
-    let t = HIT_TIERS[0];
-    for (const tier of HIT_TIERS) { if (hits>=tier.min) t=tier; else break; }
+    let t=HIT_TIERS[0];
+    for (const tier of HIT_TIERS){ if(hits>=tier.min) t=tier; else break; }
     return t;
   }
   _getTierIndex(hits) {
     let idx=0;
-    for (let i=0; i<HIT_TIERS.length; i++) { if (hits>=HIT_TIERS[i].min) idx=i; else break; }
+    for (let i=0;i<HIT_TIERS.length;i++){ if(hits>=HIT_TIERS[i].min) idx=i; else break; }
     return idx;
   }
-
   _flashMsg(msg) {
-    const { width }=this.scale;
-    const t=this.add.text(width/2, this.LAUNCHER_Y-30, msg, {
-      fontFamily:'monospace', fontSize:'12px', color:'#c43a3a', fontStyle:'bold', letterSpacing:2
-    }).setOrigin(0.5).setDepth(20).setAlpha(0);
-    this.tweens.add({ targets:t, alpha:1, duration:150, yoyo:true, hold:700, onComplete:()=>t.destroy() });
+    const {width}=this.scale;
+    const t=this.add.text(width/2,this.LAUNCHER_Y-24,msg,{fontFamily:'monospace',fontSize:'12px',color:'#c43a3a',fontStyle:'bold',letterSpacing:2}).setOrigin(0.5).setDepth(20).setAlpha(0);
+    this.tweens.add({targets:t,alpha:1,duration:150,yoyo:true,hold:700,onComplete:()=>t.destroy()});
   }
-  _rollCost()   { return Math.min(Math.round(RICOCHET_BASE_COST*(1+Math.pow(this.fatigue,3)/500)),60); }
+  _rollCost() { return Math.min(Math.round(RICOCHET_BASE_COST*(1+Math.pow(this.fatigue,3)/500)),60); }
   _fatigueText() {
-    if (this.fatigue===0) return 'FRESH \u2014 FULL PAYOUTS';
-    if (this.fatigue<6)   return 'WARM ('+this.fatigue+' SHOTS)';
-    if (this.fatigue<14)  return 'TIRED ('+this.fatigue+' SHOTS) \u2014 REDUCED';
+    if(this.fatigue===0) return 'FRESH \u2014 FULL PAYOUTS';
+    if(this.fatigue<6)   return 'WARM ('+this.fatigue+' SHOTS)';
+    if(this.fatigue<14)  return 'TIRED ('+this.fatigue+' SHOTS) \u2014 REDUCED';
     return 'BURNT ('+this.fatigue+' SHOTS) \u2014 HEAVY REDUCTION';
   }
   _updateFatigueBar(bW) {
@@ -559,46 +538,45 @@ class RicochetScene extends Phaser.Scene {
   }
   _refreshCostText() {
     const ok=this.saveData.nuts>=this._rollCost();
-    this.hintTxt.setStyle({ color:ok?'#2a5538':'#553333' });
-    this.costTxt.setText('RELEASE TO FIRE  \xb7  COSTS '+this._rollCost()+' NUTS').setStyle({ color:ok?'#334455':'#553333' });
+    this.hintTxt.setStyle({color:ok?'#2a5538':'#553333'});
+    this.costTxt.setText('RELEASE TO FIRE  \xb7  COSTS '+this._rollCost()+' NUTS').setStyle({color:ok?'#334455':'#553333'});
   }
   _save() {
     this.saveData.merchantFatigue.ricochet=this.fatigue;
-    localStorage.setItem(this.saveKey, JSON.stringify(this.saveData));
+    localStorage.setItem(this.saveKey,JSON.stringify(this.saveData));
   }
 
-  // ── Tutorial ───────────────────────────────────────────────────────────────
+  // ── Tutorial ─────────────────────────────────────────────────────────────
 
   _showTutorial() {
-    const { width, height }=this.scale;
+    const {width,height}=this.scale;
     const steps=[
       { tx:this.LAUNCHER_X, ty:this.LAUNCHER_Y, tw:48, th:48,
         title:'THE LAUNCHER',
-        body:'HOLD ANYWHERE ON SCREEN TO AIM.\nPREVIEW APPEARS WHILE PRESSING.\nRELEASE YOUR FINGER TO FIRE.' },
-      { tx:this.PLAY_LEFT+this.PLAY_W/2, ty:this.PLAY_TOP+this.PLAY_H/2, tw:this.PLAY_W, th:this.PLAY_H,
+        body:'HOLD ANYWHERE TO AIM.\nPREVIEW APPEARS WHILE HOLDING.\nRELEASE YOUR FINGER TO FIRE.' },
+      { tx:this.PLAY_LEFT+this.PLAY_W/2, ty:this.PLAY_TOP+this.PLAY_H*0.6, tw:this.PLAY_W, th:this.PLAY_H*0.7,
         title:'TIANXIA GATE',
-        body:'THE PEGS ARE SHAPED LIKE THE\nTIANXIA INTEGRATED HOLDINGS LOGO.\nHIT AS MANY PEGS AS POSSIBLE.' },
+        body:'PEGS FORM THE TIANXIA LOGO.\nTHE TOP IS CLEAR — USE THE\nFULL WIDTH TO AIM ANYWHERE.' },
       { tx:this.PLAY_LEFT+this.PLAY_W/2, ty:this.PLAY_TOP+18, tw:this.PLAY_W, th:34,
         title:'HIT COUNTER',
-        body:'EACH UNIQUE PEG YOU HIT IS COUNTED.\nMORE HITS = HIGHER PAYOUT TIER.\nTHE COUNTER UPDATES LIVE.' },
+        body:'EACH UNIQUE PEG COUNTS ONCE.\nMORE HITS = HIGHER TIER.\nBUCKET ADDS +'+BUCKET_HIT_BONUS+' BONUS HITS.' },
       { tx:this.PLAY_LEFT+this.PLAY_W/2, ty:this.PLAY_BOTTOM+22, tw:this.PLAY_W, th:44,
-        title:'PAYOUT TIERS',
-        body:'HIT 4-7 PEGS: 1 BOLT\nHIT 8-10: 2 BOLTS\nHIT 17+: 6 BOLTS\nBUCKET CATCH ADDS +2 TO YOUR COUNT.' },
+        title:'TIERS',
+        body:'0-3 HITS = BUST\n4-7 = 1 BOLT   8-10 = 2 BOLTS\n14-16 = 4 BOLTS   17+ = 6 BOLTS' },
     ];
     let step=0;
-    const overlay  =this.add.rectangle(width/2,height/2,width,height,0x000000,0.72).setDepth(50);
-    const pulse    =this.add.rectangle(0,0,0,0).setStrokeStyle(2,0xe8a020).setDepth(51);
-    this.tweens.add({ targets:pulse, alpha:0.4, duration:600, yoyo:true, repeat:-1 });
-    const cardY=height-160;
-    const card  =this.add.rectangle(width/2,cardY,width-32,100,0x0a0e14,0.98).setDepth(52);
-    this.add.rectangle(width/2,cardY,width-32,100).setStrokeStyle(1,0xe8a020,0.6).setDepth(52);
-    const tT=this.add.text(width/2,cardY-30,'',{ fontFamily:'monospace',fontSize:'13px',color:'#e8a020',fontStyle:'bold',letterSpacing:3 }).setOrigin(0.5).setDepth(53);
-    const tB=this.add.text(width/2,cardY+2, '',{ fontFamily:'monospace',fontSize:'11px',color:'#8899aa',align:'center',wordWrap:{width:width-60} }).setOrigin(0.5).setDepth(53);
-    this.add.text(width/2,cardY+38,'TAP TO CONTINUE',{ fontFamily:'monospace',fontSize:'9px',color:'#334455',letterSpacing:3 }).setOrigin(0.5).setDepth(53);
-    const show=(i)=>{ const s=steps[i]; pulse.setPosition(s.tx,s.ty).setSize(s.tw+12,s.th+12); tT.setText(s.title); tB.setText(s.body); };
+    const ov  =this.add.rectangle(width/2,height/2,width,height,0x000000,0.72).setDepth(50);
+    const pl  =this.add.rectangle(0,0,0,0).setStrokeStyle(2,0xe8a020).setDepth(51);
+    this.tweens.add({targets:pl,alpha:0.4,duration:600,yoyo:true,repeat:-1});
+    const cy=height-160;
+    const c =this.add.rectangle(width/2,cy,width-32,100,0x0a0e14,0.98).setDepth(52);
+    this.add.rectangle(width/2,cy,width-32,100).setStrokeStyle(1,0xe8a020,0.6).setDepth(52);
+    const tT=this.add.text(width/2,cy-30,'',{fontFamily:'monospace',fontSize:'13px',color:'#e8a020',fontStyle:'bold',letterSpacing:3}).setOrigin(0.5).setDepth(53);
+    const tB=this.add.text(width/2,cy+2, '',{fontFamily:'monospace',fontSize:'11px',color:'#8899aa',align:'center',wordWrap:{width:width-60}}).setOrigin(0.5).setDepth(53);
+    this.add.text(width/2,cy+38,'TAP TO CONTINUE',{fontFamily:'monospace',fontSize:'9px',color:'#334455',letterSpacing:3}).setOrigin(0.5).setDepth(53);
+    const show=(i)=>{const s=steps[i];pl.setPosition(s.tx,s.ty).setSize(s.tw+12,s.th+12);tT.setText(s.title);tB.setText(s.body);};
     show(0);
-    const advance=()=>{ step++; if(step>=steps.length){ [overlay,pulse,card,tT,tB].forEach(e=>e.destroy()); this.saveData.tutorials.ricochet=true; this._save(); return; } show(step); };
-    overlay.setInteractive();
-    overlay.on('pointerdown', advance);
+    const adv=()=>{step++;if(step>=steps.length){[ov,pl,c,tT,tB].forEach(e=>e.destroy());this.saveData.tutorials.ricochet=true;this._save();return;}show(step);};
+    ov.setInteractive();ov.on('pointerdown',adv);
   }
 }

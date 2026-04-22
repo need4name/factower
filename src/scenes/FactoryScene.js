@@ -1,398 +1,843 @@
-// ── Factory.js ────────────────────────────────────────────────────────────────
-// Core factory simulation system.
-//
-// MATERIAL ECONOMY
-// ─────────────────
-// Materials live in saveData.materials (top-level save key).
-// Factory.loadFromSave() reads them in; Factory.save() writes them back.
-// Workers deduct from the pool when they COLLECT from a store (1 unit per trip).
-// If a store is empty the worker becomes idle — this is the resource gate.
-//
-// TOWER COSTS (T1)
-// ─────────────────
-// Gunner:    1 plasticScrap  → collected direct, deposited at assembly, assembled
-// Barricade: 1 salvagedMetal → collected direct, deposited at assembly, assembled
-// Bomber:    1 plasticScrap  → collected, smelted to refinedPlastic, deposited
-//                              at assembly, assembled
-//
-// Each assembly type has a primaryInput. The worker deposits that one material,
-// then assembles. No two-material deposit required.
+// ── FactoryScene.js ───────────────────────────────────────────────────────────
+// Factory floor. Workers carry materials between stations to produce towers.
+// Materials are now gated — stores are empty unless earned from combat.
+// Material counts shown prominently on each store. Assembly menu shows cost.
 
-const TOWER_COSTS = {
-  gunner:    { plasticScrap:   1 },
-  barricade: { salvagedMetal:  1 },
-  bomber:    { plasticScrap:   1 }   // deducted at collection; becomes refined via smelter
-};
+class FactoryScene extends Phaser.Scene {
+  constructor() { super({ key: 'FactoryScene' }); }
 
-const MACHINE_TYPES = {
-  smelter: {
-    key:        'smelter',
-    name:       'SMELTER',
-    colour:     0xe8a020,
-    colourHex:  '#e8a020',
-    inputItems: ['plasticScrap'],
-    outputItem: 'refinedPlastic',
-    duration:   12000
-  },
-  assembly_gunner: {
-    key:          'assembly_gunner',
-    name:         'ASSEMBLY \xb7 GUNNER',
-    shortName:    'ASM\xb7GUN',
-    colour:       0x3a8fc4,
-    colourHex:    '#3a8fc4',
-    produces:     'gunner',
-    primaryInput: 'plasticScrap',   // deposited directly — no smelter needed
-    duration:     5000,
-    depositDuration: 1500
-  },
-  assembly_bomber: {
-    key:          'assembly_bomber',
-    name:         'ASSEMBLY \xb7 BOMBER',
-    shortName:    'ASM\xb7BMB',
-    colour:       0xe8a020,
-    colourHex:    '#e8a020',
-    produces:     'bomber',
-    primaryInput: 'refinedPlastic', // requires smelter step first
-    duration:     5000,
-    depositDuration: 1500
-  },
-  assembly_barricade: {
-    key:          'assembly_barricade',
-    name:         'ASSEMBLY \xb7 BARRICADE',
-    shortName:    'ASM\xb7BAR',
-    colour:       0xc43a3a,
-    colourHex:    '#c43a3a',
-    produces:     'barricade',
-    primaryInput: 'salvagedMetal',  // deposited directly — no smelter needed
-    duration:     5000,
-    depositDuration: 1500
-  }
-};
+  create() {
+    const { width, height } = this.scale;
 
-const WORKER_COLOURS = [0xe8a020, 0x3a8fc4];
-const WORKER_LABELS  = ['W1', 'W2'];
-
-class Factory {
-  constructor() {
-    this.COLS = 5;
-    this.ROWS = 5;
-    this.grid = Array.from({ length: this.ROWS }, () => Array(this.COLS).fill(null));
-    this.workers = [
-      this.makeWorker(0, true),
-      this.makeWorker(1, false)
-    ];
-    // Materials loaded from saveData — not hardcoded here
-    this.materials = { plasticScrap: 0, refinedPlastic: 0, salvagedMetal: 0 };
-    this.tutorialStep     = 0;
-    this.tutorialComplete = false;
-    this.worker2Introduced = false;
-  }
-
-  makeWorker(id, unlocked) {
-    return {
-      id,
-      unlocked,
-      state:         'idle',
-      station:       'store_scrap',
-      stationAction: null,
-      progress:      0,
-      inventory:     [],
-      _producedTowerType: null
-    };
-  }
-
-  // ── Persistence ────────────────────────────────────────────────────────────
-
-  loadFromSave(saveData) {
-    if (!saveData) return;
-    if (saveData.workers >= 2) this.workers[1].unlocked = true;
-    if (saveData.worker2Introduced) this.worker2Introduced = saveData.worker2Introduced;
-
-    // Materials: canonical source is saveData.materials (top level).
-    // Migration: if old save has factory.materials but no top-level materials, copy across.
-    if (saveData.materials && (saveData.materials.plasticScrap !== undefined)) {
-      this.materials = {
-        plasticScrap:   saveData.materials.plasticScrap   || 0,
-        refinedPlastic: saveData.materials.refinedPlastic || 0,
-        salvagedMetal:  saveData.materials.salvagedMetal  || 0
-      };
-    } else if (saveData.factory && saveData.factory.materials) {
-      // Legacy migration from old factory.materials format
-      this.materials = { ...saveData.factory.materials };
-    }
-
-    if (!saveData.factory) return;
-    const f = saveData.factory;
-    if (f.grid) this.grid = f.grid;
-    if (typeof f.tutorialStep    === 'number')  this.tutorialStep     = f.tutorialStep;
-    if (typeof f.tutorialComplete === 'boolean') this.tutorialComplete = f.tutorialComplete;
-  }
-
-  save() {
     const slotIndex = localStorage.getItem('factower_active_slot');
     const saveKey   = 'factower_save_' + slotIndex;
-    const saveData  = JSON.parse(localStorage.getItem(saveKey));
+    this.saveData   = JSON.parse(localStorage.getItem(saveKey));
 
-    // Write materials to canonical top-level location
-    saveData.materials = {
-      plasticScrap:   this.materials.plasticScrap   || 0,
-      refinedPlastic: this.materials.refinedPlastic || 0,
-      salvagedMetal:  this.materials.salvagedMetal  || 0
-    };
+    this.factory = new Factory();
+    this.factory.loadFromSave(this.saveData);
 
-    saveData.factory = {
-      grid:             this.grid,
-      tutorialStep:     this.tutorialStep,
-      tutorialComplete: this.tutorialComplete
-    };
-    saveData.worker2Introduced = this.worker2Introduced;
-    localStorage.setItem(saveKey, JSON.stringify(saveData));
+    // Layout
+    this.TILE    = 52;
+    this.COLS    = 5;
+    this.ROWS    = 5;
+    this.GX      = (width - this.TILE * this.COLS) / 2;
+    this.HEADER_Y = 184;
+    this.STORE_Y  = 268;
+    this.STORE_W  = (width - 56) / 2;
+    this.SCRAP_X  = 24 + this.STORE_W / 2;
+    this.METAL_X  = 24 + this.STORE_W + 8 + this.STORE_W / 2;
+    this.GY       = 312;
+    this.DEPOT_Y  = this.GY + this.ROWS * this.TILE + 28;
+    this.PANEL_Y  = this.DEPOT_Y + 52;
+    this.WORKER_SPEED = 80;
+
+    this.placingMachine      = null;
+    this.progressBars        = {};
+    this.machineSprites      = {};
+    this.machineStatusTexts  = {};
+    this.workerSprites       = {};
+    this.workerLabels        = {};
+    this.msgText             = null;
+    this.tutorialStrip       = null;
+    this.workerMenuActive    = false;
+    this.tutorialHighlight   = null;
+    this.tutorialHighlightTween = null;
+
+    // Live material count text refs — updated by updateMaterialDisplay()
+    this.scrapCountTxt  = null;
+    this.metalCountTxt  = null;
+
+    this.unlockedAssemblyTypes = this.getUnlockedAssemblyTypes();
+
+    this.add.rectangle(width / 2, height / 2, width, height, 0x0d1117);
+
+    this.drawHeader();
+    this.drawFixedStations();
+    this.drawGrid();
+    this.drawMachines();
+    this.drawWorkers();
+    this.drawBottomPanel();
+    this.drawStatusBar();
+
+    if (!this.factory.tutorialComplete) {
+      this.startTutorial();
+    } else {
+      this.checkWorker2Recruitment();
+    }
   }
 
-  // ── Worker helpers ─────────────────────────────────────────────────────────
-
-  getUnlockedWorkers() {
-    return this.workers.filter(w => w.unlocked);
+  getUnlockedAssemblyTypes() {
+    const completed = this.saveData?.completedLevels?.storyline1 || [];
+    const types = ['assembly_gunner'];
+    if (completed.includes(2)) {
+      types.push('assembly_bomber');
+      types.push('assembly_barricade');
+    }
+    return types;
   }
 
-  getWorkerAtStation(stationKey) {
-    return this.workers.find(w => w.unlocked && w.station === stationKey && w.state === 'working');
+  checkWorker2Recruitment() {
+    const w2 = this.factory.workers[1];
+    if (w2.unlocked && !this.factory.worker2Introduced && this.factory.tutorialComplete) {
+      this.factory.worker2Introduced = true;
+      this.factory.save();
+      this.showRecruitmentBanner();
+    }
   }
 
-  isAssemblyType(type) {
-    return type && type.startsWith('assembly');
+  showRecruitmentBanner() {
+    const { width, height } = this.scale;
+    const all = [];
+
+    const overlay   = this.add.rectangle(width/2, height/2, width, height, 0x000000, 0.95).setDepth(50);
+    const box       = this.add.rectangle(width/2, height/2, width-48, 220, 0x161b22).setDepth(51);
+    const boxBorder = this.add.rectangle(width/2, height/2, width-48, 220).setStrokeStyle(1, 0x3a8fc4).setDepth(51);
+    const dot       = this.add.circle(width/2, height/2-72, 20, 0x3a8fc4).setDepth(52);
+    const dotLabel  = this.add.text(width/2, height/2-72, 'W2', { fontFamily:'monospace', fontSize:'11px', color:'#0d1117', fontStyle:'bold' }).setOrigin(0.5).setDepth(53);
+    const title     = this.add.text(width/2, height/2-36, 'NEW RECRUIT', { fontFamily:'monospace', fontSize:'22px', color:'#3a8fc4', fontStyle:'bold' }).setOrigin(0.5).setDepth(52);
+    const body      = this.add.text(width/2, height/2+2, 'Word of your victory spread.\nA second worker has arrived\nand is ready to be assigned.', { fontFamily:'monospace', fontSize:'13px', color:'#eef2f8', align:'center', lineSpacing:5 }).setOrigin(0.5).setDepth(52);
+    const btn       = this.add.rectangle(width/2, height/2+76, 200, 48, 0x1e2d3a).setInteractive().setDepth(52);
+    const btnBorder = this.add.rectangle(width/2, height/2+76, 200, 48).setStrokeStyle(1, 0x3a8fc4).setDepth(52);
+    const btnLabel  = this.add.text(width/2, height/2+76, 'WELCOME THEM', { fontFamily:'monospace', fontSize:'15px', color:'#3a8fc4', fontStyle:'bold' }).setOrigin(0.5).setDepth(53);
+
+    all.push(overlay, box, boxBorder, dot, dotLabel, title, body, btn, btnBorder, btnLabel);
+
+    btn.on('pointerdown', () => {
+      all.forEach(e => e?.destroy?.());
+      this.drawWorkers();
+      this.showMessage('W2 ready. Tap any station to assign them.', '#3a8fc4');
+    });
+    btn.on('pointerover', () => btn.setFillStyle(0x253545));
+    btn.on('pointerout',  () => btn.setFillStyle(0x1e2d3a));
+  }
+
+  // ── Header ─────────────────────────────────────────────────────────────────
+
+  drawHeader() {
+    const { width } = this.scale;
+
+    this.add.rectangle(width/2, this.HEADER_Y, width, 88, 0x161b22);
+    this.add.rectangle(width/2, this.HEADER_Y+44, width, 1, 0x334455);
+
+    const backBtn = this.add.rectangle(52, this.HEADER_Y, 84, 56, 0x1e2530).setInteractive().setDepth(5);
+    this.add.text(52, this.HEADER_Y, '\u2190 BACK', { fontFamily:'monospace', fontSize:'14px', color:'#e8a020' }).setOrigin(0.5).setDepth(6);
+    backBtn.on('pointerdown', () => { this.factory.save(); this.cameras.main.fade(200,0,0,0); this.time.delayedCall(200, () => this.scene.start('BaseScene')); });
+    backBtn.on('pointerover', () => backBtn.setFillStyle(0x252c38));
+    backBtn.on('pointerout',  () => backBtn.setFillStyle(0x1e2530));
+
+    this.add.text(width/2+28, this.HEADER_Y-14, 'FACTORY FLOOR', { fontFamily:'monospace', fontSize:'17px', color:'#eef2f8', fontStyle:'bold' }).setOrigin(0.5);
+    this.add.text(width/2+28, this.HEADER_Y+12, 'BUILD YOUR TOWERS', { fontFamily:'monospace', fontSize:'11px', color:'#8899aa', letterSpacing:2 }).setOrigin(0.5);
+  }
+
+  // ── Fixed stations ─────────────────────────────────────────────────────────
+
+  drawFixedStations() {
+    const { width } = this.scale;
+    const sw = this.STORE_W;
+    const sy = this.STORE_Y;
+
+    // ── Plastic Scrap store ──────────────────────────────────────────────────
+    const scrapBg = this.add.rectangle(this.SCRAP_X, sy, sw, 52, 0x161b22).setInteractive();
+    this.add.rectangle(this.SCRAP_X, sy, sw, 52).setStrokeStyle(2, 0x3a8fc4);
+    this.add.text(this.SCRAP_X, sy-14, 'PLASTIC SCRAP', { fontFamily:'monospace', fontSize:'10px', color:'#3a8fc4', fontStyle:'bold' }).setOrigin(0.5);
+    // Live count — updated by updateMaterialDisplay()
+    this.scrapCountTxt = this.add.text(this.SCRAP_X, sy+2, '', { fontFamily:'monospace', fontSize:'18px', color:'#eef2f8', fontStyle:'bold' }).setOrigin(0.5);
+    this.add.text(this.SCRAP_X, sy+18, 'TAP TO COLLECT', { fontFamily:'monospace', fontSize:'9px', color:'#556677' }).setOrigin(0.5);
+    scrapBg.on('pointerdown', () => this.stationTapped('store_scrap'));
+    scrapBg.on('pointerover', () => scrapBg.setFillStyle(0x1e2d3a));
+    scrapBg.on('pointerout',  () => scrapBg.setFillStyle(0x161b22));
+    this.progressBars['store_scrap'] = this.add.rectangle(this.SCRAP_X-sw/2, sy+28, 0, 4, 0x3a8fc4).setOrigin(0,0.5);
+
+    // ── Salvaged Metal store ─────────────────────────────────────────────────
+    const metalBg = this.add.rectangle(this.METAL_X, sy, sw, 52, 0x161b22).setInteractive();
+    this.add.rectangle(this.METAL_X, sy, sw, 52).setStrokeStyle(2, 0x5eba7d);
+    this.add.text(this.METAL_X, sy-14, 'SALVAGED METAL', { fontFamily:'monospace', fontSize:'10px', color:'#5eba7d', fontStyle:'bold' }).setOrigin(0.5);
+    // Live count
+    this.metalCountTxt = this.add.text(this.METAL_X, sy+2, '', { fontFamily:'monospace', fontSize:'18px', color:'#eef2f8', fontStyle:'bold' }).setOrigin(0.5);
+    this.add.text(this.METAL_X, sy+18, 'TAP TO COLLECT', { fontFamily:'monospace', fontSize:'9px', color:'#556677' }).setOrigin(0.5);
+    metalBg.on('pointerdown', () => this.stationTapped('store_metal'));
+    metalBg.on('pointerover', () => metalBg.setFillStyle(0x1e2d3a));
+    metalBg.on('pointerout',  () => metalBg.setFillStyle(0x161b22));
+    this.progressBars['store_metal'] = this.add.rectangle(this.METAL_X-sw/2, sy+28, 0, 4, 0x5eba7d).setOrigin(0,0.5);
+
+    // ── Depository ───────────────────────────────────────────────────────────
+    const depotBg = this.add.rectangle(width/2, this.DEPOT_Y, width-48, 40, 0x161b22).setInteractive();
+    this.add.rectangle(width/2, this.DEPOT_Y, width-48, 40).setStrokeStyle(2, 0xc43a3a);
+    this.add.text(width/2, this.DEPOT_Y, 'DEPOSITORY  \u2014  TAP TO DELIVER', { fontFamily:'monospace', fontSize:'11px', color:'#c43a3a', fontStyle:'bold' }).setOrigin(0.5);
+    depotBg.on('pointerdown', () => this.stationTapped('depository'));
+    depotBg.on('pointerover', () => depotBg.setFillStyle(0x2a1a1a));
+    depotBg.on('pointerout',  () => depotBg.setFillStyle(0x161b22));
+    this.progressBars['depository'] = this.add.rectangle(24, this.DEPOT_Y+22, 0, 4, 0xc43a3a).setOrigin(0,0.5);
+
+    this.updateMaterialDisplay();
+  }
+
+  // ── Material display ───────────────────────────────────────────────────────
+
+  updateMaterialDisplay() {
+    const scrap = this.factory.getMaterialCount('plasticScrap');
+    const metal = this.factory.getMaterialCount('salvagedMetal');
+
+    if (this.scrapCountTxt) {
+      this.scrapCountTxt.setText('' + scrap);
+      this.scrapCountTxt.setStyle({ color: scrap > 0 ? '#eef2f8' : '#445566' });
+    }
+    if (this.metalCountTxt) {
+      this.metalCountTxt.setText('' + metal);
+      this.metalCountTxt.setStyle({ color: metal > 0 ? '#eef2f8' : '#445566' });
+    }
   }
 
   // ── Grid ───────────────────────────────────────────────────────────────────
 
-  canPlace(row, col) {
-    if (row < 0 || row >= this.ROWS || col < 0 || col >= this.COLS) return false;
-    return this.grid[row][col] === null;
+  drawGrid() {
+    for (let row = 0; row < this.ROWS; row++) {
+      for (let col = 0; col < this.COLS; col++) {
+        const x = this.GX + col * this.TILE + this.TILE / 2;
+        const y = this.GY + row * this.TILE + this.TILE / 2;
+
+        const tile = this.add.rectangle(x, y, this.TILE-2, this.TILE-2, 0x161b22).setInteractive();
+        this.add.rectangle(x, y, this.TILE-2, this.TILE-2).setStrokeStyle(1, 0x2a3a4a);
+
+        tile.gridRow = row;
+        tile.gridCol = col;
+
+        tile.on('pointerdown', () => this.tileTapped(tile, row, col));
+        tile.on('pointerover', () => { if (this.placingMachine && !this.factory.getMachineAt(row, col)) tile.setFillStyle(0x1e2d3a); });
+        tile.on('pointerout',  () => { if (!this.factory.getMachineAt(row, col)) tile.setFillStyle(0x161b22); });
+      }
+    }
   }
 
-  placeMachine(row, col, type) {
-    if (!this.canPlace(row, col)) return false;
-    this.grid[row][col] = {
-      type,
-      heldMaterial: this.isAssemblyType(type) ? null : undefined
-    };
-    return true;
+  tileTapped(tile, row, col) {
+    if (this.placingMachine) {
+      if (this.factory.getMachineAt(row, col)) return;
+      if (this.placingMachine === 'assembly') {
+        this.showAssemblyTypeMenu(row, col);
+        return;
+      }
+      if (this.factory.placeMachine(row, col, this.placingMachine)) {
+        this.drawMachineAt(row, col, this.placingMachine);
+        this.factory.save();
+        if (!this.factory.tutorialComplete) this.advanceTutorial('placed_' + this.placingMachine);
+        this.placingMachine = null;
+        this.smelterBtn?.setFillStyle(0x1e2530);
+        this.assemblyBtn?.setFillStyle(0x1e2530);
+      }
+      return;
+    }
+
+    const machine = this.factory.getMachineAt(row, col);
+    if (!machine) return;
+    this.openWorkerMenu(row + ',' + col);
   }
 
-  deleteMachine(row, col) {
-    if (!this.grid[row] || !this.grid[row][col]) return false;
-    const key = row + ',' + col;
-    this.workers.forEach(w => {
-      if (w.station === key) {
-        w.state = 'idle';
-        w.progress = 0;
-        w.stationAction = null;
+  // ── Assembly type menu ─────────────────────────────────────────────────────
+  // Shows per-type material requirements and whether the player can afford each.
+
+  showAssemblyTypeMenu(targetRow, targetCol) {
+    if (this.workerMenuActive) return;
+    this.workerMenuActive = true;
+
+    const { width, height } = this.scale;
+    const all = [];
+
+    const overlay  = this.add.rectangle(width/2, height/2, width, height, 0x000000, 0.88).setDepth(40);
+    const box      = this.add.rectangle(width/2, height/2, width-40, 340, 0x161b22).setDepth(41);
+    const boxBorder= this.add.rectangle(width/2, height/2, width-40, 340).setStrokeStyle(1, 0x5eba7d).setDepth(41);
+    const title    = this.add.text(width/2, height/2-148, 'SELECT TOWER TYPE', { fontFamily:'monospace', fontSize:'14px', color:'#8899aa', letterSpacing:3 }).setOrigin(0.5).setDepth(42);
+
+    all.push(overlay, box, boxBorder, title);
+
+    const dismiss = () => { all.forEach(e => e?.destroy?.()); this.workerMenuActive = false; this.placingMachine = null; this.assemblyBtn?.setFillStyle(0x1e2530); };
+
+    const types = [
+      { key:'assembly_gunner',    label:'GUNNER',    colour:0x3a8fc4, cost:'1 PLASTIC SCRAP',  costKey:'plasticScrap'  },
+      { key:'assembly_bomber',    label:'BOMBER',    colour:0xe8a020, cost:'1 REFINED PLASTIC', costKey:'refinedPlastic'},
+      { key:'assembly_barricade', label:'BARRICADE', colour:0xc43a3a, cost:'1 SALVAGED METAL',  costKey:'salvagedMetal' }
+    ];
+
+    types.forEach((t, i) => {
+      const unlocked    = this.unlockedAssemblyTypes.includes(t.key);
+      const affordable  = unlocked && this.factory.getMaterialCount(t.costKey) > 0;
+      const y = height/2 - 86 + i * 80;
+      const colHex = '#' + t.colour.toString(16).padStart(6,'0');
+
+      const btn       = this.add.rectangle(width/2, y, width-80, 68, unlocked ? 0x1e2530 : 0x161b22).setDepth(42);
+      const btnBorder = this.add.rectangle(width/2, y, width-80, 68).setStrokeStyle(1, unlocked ? t.colour : 0x334455).setDepth(42);
+      const dot       = this.add.circle(width/2-108, y, 10, unlocked ? t.colour : 0x334455).setDepth(43);
+      const lbl       = this.add.text(width/2-88, y-16, t.label, { fontFamily:'monospace', fontSize:'16px', color: unlocked ? '#eef2f8' : '#445566', fontStyle:'bold' }).setDepth(43);
+
+      let subTxt, subCol;
+      if (!unlocked)         { subTxt = 'COMPLETE LEVEL 2 TO UNLOCK'; subCol = '#334455'; }
+      else if (!affordable)  { subTxt = 'COST: ' + t.cost + '  \u2014  NONE IN STOCK'; subCol = '#553333'; }
+      else                   { subTxt = 'COST: ' + t.cost; subCol = colHex; }
+
+      const sublbl = this.add.text(width/2-88, y+6, subTxt, { fontFamily:'monospace', fontSize:'10px', color: subCol }).setDepth(43);
+
+      all.push(btn, btnBorder, dot, lbl, sublbl);
+
+      if (unlocked) {
+        btn.setInteractive();
+        btn.on('pointerdown', () => {
+          dismiss();
+          if (this.factory.placeMachine(targetRow, targetCol, t.key)) {
+            this.drawMachineAt(targetRow, targetCol, t.key);
+            this.factory.save();
+            if (!this.factory.tutorialComplete) this.advanceTutorial('placed_assembly');
+          }
+        });
+        btn.on('pointerover', () => btn.setFillStyle(affordable ? 0x252c38 : 0x1e1e1e));
+        btn.on('pointerout',  () => btn.setFillStyle(0x1e2530));
       }
     });
-    this.grid[row][col] = null;
-    return true;
+
+    const cancelBtn   = this.add.rectangle(width/2, height/2+148, 160, 44, 0x1e2530).setInteractive().setDepth(42);
+    const cancelBorder= this.add.rectangle(width/2, height/2+148, 160, 44).setStrokeStyle(1, 0x334455).setDepth(42);
+    const cancelLabel = this.add.text(width/2, height/2+148, 'CANCEL', { fontFamily:'monospace', fontSize:'13px', color:'#8899aa' }).setOrigin(0.5).setDepth(43);
+    all.push(cancelBtn, cancelBorder, cancelLabel);
+    cancelBtn.on('pointerdown', dismiss);
   }
 
-  getMachineAt(row, col) {
-    if (row < 0 || row >= this.ROWS || col < 0 || col >= this.COLS) return null;
-    return this.grid[row][col];
+  // ── Worker station interaction ─────────────────────────────────────────────
+
+  stationTapped(stationKey) {
+    if (this.placingMachine) return;
+    this.openWorkerMenu(stationKey);
   }
 
-  // ── Action system ──────────────────────────────────────────────────────────
+  openWorkerMenu(stationKey) {
+    if (this.workerMenuActive) return;
 
-  getWorkerAction(stationKey, workerId) {
-    const w = this.workers[workerId];
-    if (!w) return null;
+    const unlocked = this.factory.getUnlockedWorkers();
 
-    // ── Fixed stations ───────────────────────────────────────────────────────
-
-    if (stationKey === 'store_scrap') {
-      // Only allow collection if worker is empty AND scrap is available
-      return (w.inventory.length === 0 && this.materials.plasticScrap > 0)
-        ? 'collect_scrap'
-        : null;
+    if (unlocked.length === 1) {
+      this.tryAssignWorker(0, stationKey);
+      return;
     }
 
-    if (stationKey === 'store_metal') {
-      // Only allow collection if worker is empty AND metal is available
-      return (w.inventory.length === 0 && this.materials.salvagedMetal > 0)
-        ? 'collect_metal'
-        : null;
+    this.workerMenuActive = true;
+    const pos  = this.getStationPos(stationKey);
+    const { width } = this.scale;
+    const menuY = pos.y > 500 ? pos.y - 80 : pos.y + 80;
+    const menuElements = [];
+
+    const dismissZone = this.add.rectangle(width/2, this.scale.height/2, width, this.scale.height, 0x000000, 0.01).setInteractive().setDepth(29);
+    menuElements.push(dismissZone);
+
+    const menuBg     = this.add.rectangle(width/2, menuY, 260, 80, 0x161b22).setDepth(30);
+    const menuBorder = this.add.rectangle(width/2, menuY, 260, 80).setStrokeStyle(1, 0x334455).setDepth(30);
+    const headerTxt  = this.add.text(width/2, menuY-28, 'ASSIGN WORKER', { fontFamily:'monospace', fontSize:'10px', color:'#8899aa', letterSpacing:3 }).setOrigin(0.5).setDepth(31);
+    menuElements.push(menuBg, menuBorder, headerTxt);
+
+    const dismiss = () => { menuElements.forEach(e => { try { e?.destroy?.(); } catch(e){} }); this.workerMenuActive = false; };
+
+    unlocked.forEach((w, i) => {
+      const btnX       = width/2 - 56 + i * 116;
+      const canWork    = this.factory.canWorkerStartAt(stationKey, w.id);
+      const wc         = WORKER_COLOURS[w.id];
+      const colourHex  = '#' + wc.toString(16).padStart(6,'0');
+
+      const btn       = this.add.rectangle(btnX, menuY+8, 104, 52, canWork?0x1e2530:0x161b22).setDepth(31);
+      const btnBorder = this.add.rectangle(btnX, menuY+8, 104, 52).setStrokeStyle(1, canWork?wc:0x334455).setDepth(31);
+      const dot       = this.add.circle(btnX-28, menuY+8, 10, canWork?wc:0x334455).setDepth(32);
+      const dotLabel  = this.add.text(btnX-28, menuY+8, WORKER_LABELS[w.id], { fontFamily:'monospace', fontSize:'10px', color:'#0d1117', fontStyle:'bold' }).setOrigin(0.5).setDepth(33);
+      const stateText = w.state==='working'?'BUSY':w.state==='walking'?'MOVING':'IDLE';
+      const stateTxt  = this.add.text(btnX+4, menuY, stateText, { fontFamily:'monospace', fontSize:'11px', color:canWork?colourHex:'#445566', fontStyle:'bold' }).setOrigin(0.5).setDepth(32);
+      const invTxt    = this.add.text(btnX+4, menuY+18, this.factory.getInventoryDisplay(w.id), { fontFamily:'monospace', fontSize:'9px', color:'#556677' }).setOrigin(0.5).setDepth(32);
+
+      menuElements.push(btn, btnBorder, dot, dotLabel, stateTxt, invTxt);
+
+      if (canWork) {
+        btn.setInteractive();
+        btn.on('pointerdown', () => { dismiss(); this.tryAssignWorker(w.id, stationKey); });
+        btn.on('pointerover', () => btn.setFillStyle(0x252c38));
+        btn.on('pointerout',  () => btn.setFillStyle(0x1e2530));
+      }
+    });
+
+    dismissZone.on('pointerdown', dismiss);
+  }
+
+  tryAssignWorker(workerId, stationKey) {
+    if (!this.factory.canWorkerStartAt(stationKey, workerId)) {
+      const w = this.factory.workers[workerId];
+
+      if (stationKey === 'store_scrap') {
+        if (this.factory.getMaterialCount('plasticScrap') <= 0) {
+          this.showMessage('W'+(workerId+1)+': No Plastic Scrap in stock \u2014 earn some from combat', '#c43a3a');
+        } else {
+          this.showMessage('W'+(workerId+1)+': Deliver items first', '#c43a3a');
+        }
+      } else if (stationKey === 'store_metal') {
+        if (this.factory.getMaterialCount('salvagedMetal') <= 0) {
+          this.showMessage('W'+(workerId+1)+': No Salvaged Metal in stock \u2014 earn some from combat', '#c43a3a');
+        } else {
+          this.showMessage('W'+(workerId+1)+': Deliver items first', '#c43a3a');
+        }
+      } else if (stationKey === 'depository') {
+        this.showMessage('W'+(workerId+1)+': No finished tower to deliver', '#c43a3a');
+      } else {
+        const [r, c] = stationKey.split(',').map(Number);
+        const machine = this.factory.getMachineAt(r, c);
+        if (machine && this.factory.isAssemblyType(machine.type)) {
+          const pri = MACHINE_TYPES[machine.type].primaryInput;
+          if (machine.heldMaterial === null && !w.inventory.includes(pri)) {
+            this.showMessage('W'+(workerId+1)+': Bench needs ' + pri.replace(/([A-Z])/g,' $1').trim().toUpperCase(), '#e8a020');
+          } else if (machine.heldMaterial === pri && w.inventory.length > 0) {
+            this.showMessage('W'+(workerId+1)+': Empty hands to assemble', '#e8a020');
+          } else {
+            this.showMessage('W'+(workerId+1)+': Wrong materials for this station', '#c43a3a');
+          }
+        } else {
+          this.showMessage('W'+(workerId+1)+': Cannot work here right now', '#c43a3a');
+        }
+      }
+      return;
     }
 
-    if (stationKey === 'depository') {
-      return w.inventory.includes('towerComponent') ? 'deliver' : null;
+    this.walkWorkerTo(workerId, stationKey, () => {
+      this.factory.startWorkAt(stationKey, workerId);
+      this.updateStatus();
+      if (!this.factory.tutorialComplete) this.advanceTutorial('assigned_' + stationKey);
+    });
+  }
+
+  // ── Machine rendering ──────────────────────────────────────────────────────
+
+  drawMachines() {
+    Object.values(this.machineSprites).forEach(group => { if (group) Object.values(group).forEach(s => s?.destroy?.()); });
+    Object.values(this.machineStatusTexts).forEach(t => t?.destroy?.());
+    this.machineSprites = {};
+    this.machineStatusTexts = {};
+
+    for (let row = 0; row < this.ROWS; row++) {
+      for (let col = 0; col < this.COLS; col++) {
+        const m = this.factory.getMachineAt(row, col);
+        if (m) this.drawMachineAt(row, col, m.type);
+      }
     }
+  }
 
-    // ── Grid machines ────────────────────────────────────────────────────────
+  drawMachineAt(row, col, type) {
+    const mt = MACHINE_TYPES[type];
+    if (!mt) return;
+    const x   = this.GX + col * this.TILE + this.TILE / 2;
+    const y   = this.GY + row * this.TILE + this.TILE / 2;
+    const key = row + ',' + col;
 
+    const bg    = this.add.rectangle(x, y, this.TILE-2, this.TILE-2, mt.colour, 0.15);
+    this.add.rectangle(x, y, this.TILE-2, this.TILE-2).setStrokeStyle(2, mt.colour);
+    const lbl   = this.add.text(x, y-6, mt.shortName || type.substring(0,6).toUpperCase(), { fontFamily:'monospace', fontSize:'10px', color:mt.colourHex, fontStyle:'bold' }).setOrigin(0.5);
+    const barBg = this.add.rectangle(x, y+this.TILE/2-5, this.TILE-4, 5, 0x2a3a4a);
+    const bar   = this.add.rectangle(x-(this.TILE-4)/2, y+this.TILE/2-5, 0, 5, mt.colour).setOrigin(0,0.5);
+    const statusTxt = this.add.text(x, y+8, '', { fontFamily:'monospace', fontSize:'8px', color:'#5eba7d' }).setOrigin(0.5);
+
+    this.progressBars[key]       = bar;
+    this.machineStatusTexts[key] = statusTxt;
+    this.machineSprites[key]     = { bg, lbl, barBg, bar, statusTxt };
+
+    let timer = null, pressing = false;
+    bg.setInteractive();
+    bg.on('pointerdown', () => {
+      pressing = true;
+      timer = this.time.delayedCall(700, () => { pressing = false; this.confirmDelete(row, col); });
+    });
+    bg.on('pointerup', () => {
+      timer?.remove(); timer = null;
+      if (pressing) { pressing = false; this.tileTapped(null, row, col); }
+    });
+    bg.on('pointerout', () => { timer?.remove(); timer = null; pressing = false; });
+  }
+
+  // ── Workers ────────────────────────────────────────────────────────────────
+
+  drawWorkers() {
+    Object.values(this.workerSprites).forEach(s => s?.destroy?.());
+    Object.values(this.workerLabels).forEach(s => s?.destroy?.());
+    this.workerSprites = {};
+    this.workerLabels  = {};
+
+    this.factory.getUnlockedWorkers().forEach(w => {
+      const col    = Phaser.Math.Between(0, this.COLS-1);
+      const row    = Phaser.Math.Between(0, this.ROWS-1);
+      const startX = this.GX + col * this.TILE + this.TILE / 2;
+      const startY = this.GY + row * this.TILE + this.TILE / 2;
+      const sprite = this.add.circle(startX, startY, 14, WORKER_COLOURS[w.id]).setDepth(10);
+      const label  = this.add.text(startX, startY, WORKER_LABELS[w.id], { fontFamily:'monospace', fontSize:'9px', color:'#0d1117', fontStyle:'bold' }).setOrigin(0.5).setDepth(11);
+      this.workerSprites[w.id] = sprite;
+      this.workerLabels[w.id]  = label;
+    });
+  }
+
+  // ── Bottom panel ────────────────────────────────────────────────────────────
+
+  drawBottomPanel() {
+    const { width, height } = this.scale;
+
+    this.add.rectangle(width/2, (this.PANEL_Y+height)/2, width, height-this.PANEL_Y, 0x161b22);
+    this.add.rectangle(width/2, this.PANEL_Y, width, 1, 0x334455);
+
+    const btnY = this.PANEL_Y + 56;
+
+    this.smelterBtn = this.add.rectangle(78, btnY, 128, 84, 0x1e2530).setInteractive();
+    this.add.rectangle(78, btnY, 128, 84).setStrokeStyle(1, 0xe8a020);
+    this.add.circle(78, btnY-28, 9, 0xe8a020);
+    this.add.text(78, btnY+4, 'SMELTER', { fontFamily:'monospace', fontSize:'13px', color:'#eef2f8', fontStyle:'bold' }).setOrigin(0.5);
+    this.add.text(78, btnY+24, 'SCRAP\u2192REFINED', { fontFamily:'monospace', fontSize:'10px', color:'#8899aa' }).setOrigin(0.5);
+    this.smelterBtn.on('pointerdown', () => this.selectPlacing('smelter'));
+    this.smelterBtn.on('pointerover', () => this.smelterBtn.setFillStyle(0x252c38));
+    this.smelterBtn.on('pointerout', () => { this.smelterBtn.setFillStyle(this.placingMachine==='smelter'?0x2a3a4a:0x1e2530); });
+
+    this.assemblyBtn = this.add.rectangle(228, btnY, 128, 84, 0x1e2530).setInteractive();
+    this.add.rectangle(228, btnY, 128, 84).setStrokeStyle(1, 0x5eba7d);
+    this.add.circle(228, btnY-28, 9, 0x5eba7d);
+    this.add.text(228, btnY+4, 'ASSEMBLY', { fontFamily:'monospace', fontSize:'13px', color:'#eef2f8', fontStyle:'bold' }).setOrigin(0.5);
+    this.add.text(228, btnY+24, 'SELECT TYPE', { fontFamily:'monospace', fontSize:'10px', color:'#8899aa' }).setOrigin(0.5);
+    this.assemblyBtn.on('pointerdown', () => this.selectPlacing('assembly'));
+    this.assemblyBtn.on('pointerover', () => this.assemblyBtn.setFillStyle(0x252c38));
+    this.assemblyBtn.on('pointerout', () => { this.assemblyBtn.setFillStyle(this.placingMachine==='assembly'?0x2a3a4a:0x1e2530); });
+
+    const delBtn = this.add.rectangle(346, btnY, 80, 84, 0x1e2530).setInteractive();
+    this.add.rectangle(346, btnY, 80, 84).setStrokeStyle(1, 0x553333);
+    this.add.text(346, btnY-10, 'DEL', { fontFamily:'monospace', fontSize:'16px', color:'#aa4444', fontStyle:'bold' }).setOrigin(0.5);
+    this.add.text(346, btnY+14, 'HOLD', { fontFamily:'monospace', fontSize:'10px', color:'#aa4444' }).setOrigin(0.5);
+    this.add.text(346, btnY+28, 'MACHINE', { fontFamily:'monospace', fontSize:'10px', color:'#aa4444' }).setOrigin(0.5);
+    delBtn.on('pointerdown', () => this.showMessage('Hold any machine to delete it', '#c43a3a'));
+  }
+
+  // ── Status bar ─────────────────────────────────────────────────────────────
+
+  drawStatusBar() {
+    const { width, height } = this.scale;
+    this.statusText = this.add.text(width/2, height-16, '', { fontFamily:'monospace', fontSize:'11px', color:'#8899aa' }).setOrigin(0.5).setDepth(5);
+    this.updateStatus();
+  }
+
+  selectPlacing(type) {
+    this.placingMachine = this.placingMachine === type ? null : type;
+    this.smelterBtn?.setFillStyle(this.placingMachine==='smelter'?0x2a3a4a:0x1e2530);
+    this.assemblyBtn?.setFillStyle(this.placingMachine==='assembly'?0x2a3a4a:0x1e2530);
+    if (this.placingMachine) {
+      const msg = type==='assembly' ? 'Tap an empty tile \u2014 you will choose the tower type' : 'Tap an empty tile to place SMELTER';
+      this.showMessage(msg, '#e8a020');
+    }
+  }
+
+  // ── Navigation helpers ─────────────────────────────────────────────────────
+
+  walkWorkerTo(workerId, stationKey, onComplete) {
+    const sprite = this.workerSprites[workerId];
+    const label  = this.workerLabels[workerId];
+    if (!sprite) return;
+
+    const target = this.getStationPos(stationKey);
+    const dist   = Phaser.Math.Distance.Between(sprite.x, sprite.y, target.x, target.y);
+
+    this.factory.workers[workerId].state    = 'walking';
+    this.factory.workers[workerId].progress = 0;
+    this.updateStatus();
+
+    this.tweens.killTweensOf(sprite);
+    this.tweens.killTweensOf(label);
+
+    this.tweens.add({
+      targets: [sprite, label],
+      x: target.x, y: target.y,
+      duration: Math.max((dist / this.WORKER_SPEED) * 1000, 80),
+      ease: 'Linear',
+      onComplete: () => { if (onComplete) onComplete(); this.updateStatus(); }
+    });
+  }
+
+  getStationPos(stationKey) {
+    const { width } = this.scale;
+    if (stationKey==='store_scrap')  return { x: this.SCRAP_X, y: this.STORE_Y };
+    if (stationKey==='store_metal')  return { x: this.METAL_X, y: this.STORE_Y };
+    if (stationKey==='depository')   return { x: width/2, y: this.DEPOT_Y };
     const [r, c] = stationKey.split(',').map(Number);
-    const machine = this.getMachineAt(r, c);
-    if (!machine) return null;
+    return { x: this.GX + c*this.TILE + this.TILE/2, y: this.GY + r*this.TILE + this.TILE/2 };
+  }
 
-    // Smelter: worker deposits scrap, gets refined plastic out
-    if (machine.type === 'smelter') {
-      return w.inventory.includes('plasticScrap') ? 'smelt' : null;
+  confirmDelete(row, col) {
+    const machine = this.factory.getMachineAt(row, col);
+    if (!machine) return;
+    const mt = MACHINE_TYPES[machine.type];
+    if (!mt) return;
+    const { width, height } = this.scale;
+
+    const overlay    = this.add.rectangle(width/2, height/2, width, height, 0x000000, 0.75).setDepth(40);
+    const box        = this.add.rectangle(width/2, height/2, width-60, 170, 0x161b22).setDepth(41);
+    this.add.rectangle(width/2, height/2, width-60, 170).setStrokeStyle(1, 0xc43a3a).setDepth(41);
+    const title      = this.add.text(width/2, height/2-48, 'DELETE ' + mt.name + '?', { fontFamily:'monospace', fontSize:'16px', color:'#eef2f8', fontStyle:'bold' }).setOrigin(0.5).setDepth(42);
+    const sub        = this.add.text(width/2, height/2-18, 'This cannot be undone.', { fontFamily:'monospace', fontSize:'13px', color:'#8899aa' }).setOrigin(0.5).setDepth(42);
+    const confirmBtn = this.add.rectangle(width/2-80, height/2+44, 130, 48, 0x3a1010).setInteractive().setDepth(42);
+    this.add.rectangle(width/2-80, height/2+44, 130, 48).setStrokeStyle(1, 0xc43a3a).setDepth(42);
+    this.add.text(width/2-80, height/2+44, 'DELETE', { fontFamily:'monospace', fontSize:'15px', color:'#c43a3a', fontStyle:'bold' }).setOrigin(0.5).setDepth(43);
+    const cancelBtn  = this.add.rectangle(width/2+80, height/2+44, 130, 48, 0x1e2530).setInteractive().setDepth(42);
+    this.add.rectangle(width/2+80, height/2+44, 130, 48).setStrokeStyle(1, 0x334455).setDepth(42);
+    this.add.text(width/2+80, height/2+44, 'CANCEL', { fontFamily:'monospace', fontSize:'15px', color:'#8899aa', fontStyle:'bold' }).setOrigin(0.5).setDepth(43);
+
+    const all     = [overlay, box, title, sub, confirmBtn, cancelBtn];
+    const dismiss = () => all.forEach(e => e?.destroy());
+
+    confirmBtn.on('pointerdown', () => {
+      dismiss();
+      const key = row + ',' + col;
+      if (this.machineSprites[key]) { Object.values(this.machineSprites[key]).forEach(s => s?.destroy?.()); delete this.machineSprites[key]; delete this.progressBars[key]; delete this.machineStatusTexts[key]; }
+      this.factory.deleteMachine(row, col);
+      this.factory.save();
+    });
+    cancelBtn.on('pointerdown', dismiss);
+  }
+
+  showMessage(text, colour) {
+    const { width } = this.scale;
+    this.msgText?.destroy();
+    this.msgText = this.add.text(width/2, this.HEADER_Y+52, text, { fontFamily:'monospace', fontSize:'12px', color:colour||'#e8a020', backgroundColor:'#161b22', padding:{ x:10, y:5 } }).setOrigin(0.5).setDepth(20);
+    this.time.delayedCall(2500, () => { if (this.msgText?.active) this.msgText.destroy(); });
+  }
+
+  updateStatus() {
+    if (!this.statusText) return;
+    const parts = this.factory.getUnlockedWorkers().map(w => 'W'+(w.id+1)+': '+w.state.toUpperCase()+'  '+this.factory.getInventoryDisplay(w.id));
+    this.statusText.setText(parts.join('   '));
+    this.updateMaterialDisplay();
+  }
+
+  // ── Tutorial highlight ─────────────────────────────────────────────────────
+
+  showTutorialHighlight(x, y, w, h) {
+    this.clearTutorialHighlight();
+    this.tutorialHighlight = this.add.rectangle(x, y, w+10, h+10).setStrokeStyle(3, 0xe8a020).setDepth(24);
+    this.tutorialHighlightTween = this.tweens.add({ targets:this.tutorialHighlight, alpha:0.15, duration:650, yoyo:true, repeat:-1 });
+  }
+
+  clearTutorialHighlight() {
+    this.tutorialHighlightTween?.stop();
+    this.tutorialHighlight?.destroy();
+    this.tutorialHighlight     = null;
+    this.tutorialHighlightTween = null;
+  }
+
+  updateTutorialHighlight(step) {
+    const { width } = this.scale;
+    const btnY = this.PANEL_Y + 56;
+    switch (step) {
+      case 0:  this.showTutorialHighlight(78, btnY, 128, 84); break;
+      case 1:  this.showTutorialHighlight(228, btnY, 128, 84); break;
+      case 2:  this.showTutorialHighlight(this.SCRAP_X, this.STORE_Y, this.STORE_W, 52); break;
+      case 4: { const p = this.findFirstGridMachine('smelter');   if (p) this.showTutorialHighlight(p.x, p.y, this.TILE-2, this.TILE-2); break; }
+      case 6: { const p = this.findFirstGridMachine('assembly');  if (p) this.showTutorialHighlight(p.x, p.y, this.TILE-2, this.TILE-2); break; }
+      case 8:  this.showTutorialHighlight(this.METAL_X, this.STORE_Y, this.STORE_W, 52); break;
+      case 10:{ const p = this.findFirstGridMachine('assembly');  if (p) this.showTutorialHighlight(p.x, p.y, this.TILE-2, this.TILE-2); break; }
+      case 12: this.showTutorialHighlight(width/2, this.DEPOT_Y, width-48, 40); break;
+      default: this.clearTutorialHighlight();
     }
+  }
 
-    // Assembly: single-deposit per tower type
-    // primaryInput defines what material this assembly needs.
-    // Step 1 — worker has the material AND machine is empty → deposit
-    // Step 2 — machine holds the material AND worker is empty → assemble
-    if (this.isAssemblyType(machine.type)) {
-      const pri = MACHINE_TYPES[machine.type].primaryInput;
-
-      if (w.inventory.includes(pri) && machine.heldMaterial === null) {
-        return 'deposit';
+  findFirstGridMachine(type) {
+    for (let r = 0; r < this.ROWS; r++) {
+      for (let c = 0; c < this.COLS; c++) {
+        const m = this.factory.getMachineAt(r, c);
+        if (!m) continue;
+        const match = type==='smelter' ? m.type==='smelter' : this.factory.isAssemblyType(m.type);
+        if (match) return { x: this.GX+c*this.TILE+this.TILE/2, y: this.GY+r*this.TILE+this.TILE/2 };
       }
-      if (machine.heldMaterial === pri && w.inventory.length === 0) {
-        return 'assemble';
-      }
-      return null;
     }
-
     return null;
   }
 
-  canWorkerStartAt(stationKey, workerId) {
-    const w = this.workers[workerId];
-    if (!w || !w.unlocked) return false;
-    const action   = this.getWorkerAction(stationKey, workerId);
-    if (!action) return false;
-    const occupant = this.getWorkerAtStation(stationKey);
-    if (occupant && occupant.id !== workerId) return false;
-    return true;
+  // ── Tutorial ───────────────────────────────────────────────────────────────
+
+  startTutorial() {
+    const { width } = this.scale;
+    this.currentTutStep = this.factory.tutorialStep || 0;
+
+    this.tutorialStrip = this.add.text(width/2, this.HEADER_Y+52, '', {
+      fontFamily:'monospace', fontSize:'12px', color:'#e8a020',
+      backgroundColor:'#1a1408', padding:{ x:10, y:6 },
+      align:'center', wordWrap:{ width:width-40 }
+    }).setOrigin(0.5).setDepth(25);
+
+    this.updateTutorialStrip();
   }
 
-  startWorkAt(stationKey, workerId) {
-    const w = this.workers[workerId];
-    if (!w) return;
-    const action = this.getWorkerAction(stationKey, workerId);
-    w.station       = stationKey;
-    w.state         = 'working';
-    w.progress      = 0;
-    w.stationAction = action;
+  getTutorialMessage(step) {
+    const msgs = [
+      'TUTORIAL (1/7): Tap SMELTER below then tap an empty grid tile to place it.',
+      'TUTORIAL (2/7): Tap ASSEMBLY below, tap an empty tile, then select GUNNER.',
+      'TUTORIAL (3/7): Tap the PLASTIC SCRAP store to collect scrap.',
+      'TUTORIAL: Collecting scrap \u2014 please wait...',
+      'TUTORIAL (4/7): Tap the SMELTER tile to smelt your scrap.',
+      'TUTORIAL: Smelting \u2014 please wait...',
+      'TUTORIAL (5/7): Tap the ASSEMBLY BENCH to deposit Refined Plastic.',
+      'TUTORIAL: Depositing \u2014 please wait...',
+      'TUTORIAL (6/7): Tap the ASSEMBLY BENCH again to build your Gunner.',
+      'TUTORIAL: Assembling \u2014 please wait...',
+      'TUTORIAL: Tap the DEPOSITORY to deliver your finished tower.',
+      'TUTORIAL: Delivering \u2014 please wait...',
+      'TUTORIAL COMPLETE! GUNNER added to Armoury. Head to the DOCK!'
+    ];
+    return msgs[step] || '';
+  }
+
+  updateTutorialStrip() {
+    if (!this.tutorialStrip) return;
+    this.tutorialStrip.setText(this.getTutorialMessage(this.currentTutStep));
+    this.updateTutorialHighlight(this.currentTutStep);
+    if (this.currentTutStep >= 12) {
+      this.clearTutorialHighlight();
+      this.time.delayedCall(2000, () => this.completeTutorial());
+    }
+  }
+
+  advanceTutorial(event) {
+    const step       = this.currentTutStep;
+    const stationKey = event.startsWith('assigned_') ? event.replace('assigned_','') : '';
+
+    const isSmelterKey = (key) => {
+      if (!key || key==='store_scrap' || key==='store_metal' || key==='depository') return false;
+      const [r,c] = key.split(',').map(Number);
+      return this.factory.getMachineAt(r,c)?.type === 'smelter';
+    };
+    const isAssemblyKey = (key) => {
+      if (!key || key==='store_scrap' || key==='store_metal' || key==='depository') return false;
+      const [r,c] = key.split(',').map(Number);
+      const m = this.factory.getMachineAt(r,c);
+      return m && this.factory.isAssemblyType(m.type);
+    };
+
+    const should =
+      (step===0  && event==='placed_smelter')   ||
+      (step===1  && event==='placed_assembly')   ||
+      (step===2  && event==='assigned_store_scrap') ||
+      (step===4  && isSmelterKey(stationKey))    ||
+      (step===6  && isAssemblyKey(stationKey))   ||
+      (step===8  && event==='assigned_store_metal') ||
+      (step===10 && isAssemblyKey(stationKey))   ||
+      (step===11 && event==='assigned_depository');
+
+    if (should) {
+      this.currentTutStep++;
+      this.factory.tutorialStep = this.currentTutStep;
+      this.updateTutorialStrip();
+    }
+  }
+
+  tutorialWorkCompleted(station, workerId) {
+    const step = this.currentTutStep;
+    const w    = this.factory.workers[workerId];
+
+    const isSmelter = () => {
+      if (!station||station==='store_scrap'||station==='store_metal'||station==='depository') return false;
+      return this.factory.getMachineAt(...station.split(',').map(Number))?.type === 'smelter';
+    };
+    const isAssembly = () => {
+      if (!station||station==='store_scrap'||station==='store_metal'||station==='depository') return false;
+      const m = this.factory.getMachineAt(...station.split(',').map(Number));
+      return m && this.factory.isAssemblyType(m.type);
+    };
+
+    const should =
+      (step===3  && station==='store_scrap')  ||
+      (step===5  && isSmelter())              ||
+      (step===7  && isAssembly() && w.stationAction==='deposit')  ||
+      (step===9  && isAssembly() && w.stationAction==='assemble') ||
+      (step===10 && station==='store_metal')  ||
+      (step===11 && station==='depository');
+
+    if (should) {
+      this.currentTutStep++;
+      this.factory.tutorialStep = this.currentTutStep;
+      this.updateTutorialStrip();
+    }
+  }
+
+  completeTutorial() {
+    this.factory.tutorialComplete = true;
+    this.factory.tutorialStep     = 0;
+    this.clearTutorialHighlight();
+    this.factory.save();
+    this.tutorialStrip?.destroy();
+    this.tutorialStrip = null;
+
+    const { width, height } = this.scale;
+    const all = [];
+
+    const banner      = this.add.rectangle(width/2, height/2, width-48, 180, 0x161b22).setDepth(35);
+    const bannerBorder= this.add.rectangle(width/2, height/2, width-48, 180).setStrokeStyle(1, 0x5eba7d).setDepth(35);
+    const title       = this.add.text(width/2, height/2-52, 'TOWER BUILT!', { fontFamily:'monospace', fontSize:'24px', color:'#5eba7d', fontStyle:'bold' }).setOrigin(0.5).setDepth(36);
+    const body        = this.add.text(width/2, height/2-16, 'Your first GUNNER is in the Armoury.\nHead to the DOCK to fight\nyour first battle.', { fontFamily:'monospace', fontSize:'13px', color:'#eef2f8', align:'center', lineSpacing:5 }).setOrigin(0.5).setDepth(36);
+    const dockBtn     = this.add.rectangle(width/2, height/2+64, 220, 48, 0x1a2210).setInteractive().setDepth(36);
+    const dockBtnBrd  = this.add.rectangle(width/2, height/2+64, 220, 48).setStrokeStyle(1, 0xe8a020).setDepth(36);
+    const dockBtnLbl  = this.add.text(width/2, height/2+64, 'GO TO DOCK \u2192', { fontFamily:'monospace', fontSize:'16px', color:'#e8a020', fontStyle:'bold' }).setOrigin(0.5).setDepth(37);
+
+    all.push(banner, bannerBorder, title, body, dockBtn, dockBtnBrd, dockBtnLbl);
+
+    dockBtn.on('pointerdown', () => { all.forEach(e => e?.destroy?.()); this.factory.save(); this.cameras.main.fade(200,0,0,0); this.time.delayedCall(200, () => this.scene.start('DockScene')); });
+    dockBtn.on('pointerover', () => dockBtn.setFillStyle(0x253318));
+    dockBtn.on('pointerout',  () => dockBtn.setFillStyle(0x1a2210));
   }
 
   // ── Update loop ────────────────────────────────────────────────────────────
 
-  update(delta) {
-    const completed = [];
+  update(time, delta) {
+    const completedWorkers = this.factory.update(delta);
+    const barW = this.scale.width - 48;
 
-    this.workers.forEach(w => {
-      if (!w.unlocked || w.state !== 'working') return;
-
-      const station = w.station;
-      let duration;
-
-      if (station === 'store_scrap' || station === 'store_metal') {
-        duration = 4000;
-      } else if (station === 'depository') {
-        duration = 2500;
-      } else {
-        const [r, c] = station.split(',').map(Number);
-        const machine = this.getMachineAt(r, c);
-        if (!machine) { w.state = 'idle'; return; }
-
-        if (machine.type === 'smelter') {
-          duration = 12000;
-        } else if (this.isAssemblyType(machine.type)) {
-          duration = w.stationAction === 'deposit'
-            ? MACHINE_TYPES[machine.type].depositDuration
-            : MACHINE_TYPES[machine.type].duration;
-        } else {
-          duration = 5000;
-        }
-      }
-
-      w.progress += delta / duration;
-
-      if (w.progress >= 1) {
-        w.progress = 1;
-        w.state    = 'waiting';
-        this.completeWorkAt(station, w.id);
-        completed.push(w.id);
-      }
+    this.factory.getUnlockedWorkers().forEach(w => {
+      const sprite = this.workerSprites[w.id];
+      const label  = this.workerLabels[w.id];
+      if (sprite && label) label.setPosition(sprite.x, sprite.y);
     });
 
-    return completed;
-  }
-
-  // ── Work completion ────────────────────────────────────────────────────────
-
-  completeWorkAt(station, workerId) {
-    const w = this.workers[workerId];
-    if (!w) return;
-
-    // ── Fixed station completions ────────────────────────────────────────────
-
-    if (station === 'store_scrap') {
-      // Deduct 1 unit from the material pool
-      this.materials.plasticScrap = Math.max(0, this.materials.plasticScrap - 1);
-      w.inventory = ['plasticScrap'];
-      return;
-    }
-
-    if (station === 'store_metal') {
-      this.materials.salvagedMetal = Math.max(0, this.materials.salvagedMetal - 1);
-      w.inventory = ['salvagedMetal'];
-      return;
-    }
-
-    if (station === 'depository') {
-      w.inventory = [];
-      return;
-    }
-
-    // ── Machine completions ──────────────────────────────────────────────────
-
-    const [r, c] = station.split(',').map(Number);
-    const machine = this.getMachineAt(r, c);
-    if (!machine) return;
-
-    // Smelter: consume scrap, output refined plastic
-    if (machine.type === 'smelter') {
-      w.inventory = w.inventory.filter(i => i !== 'plasticScrap');
-      w.inventory.push('refinedPlastic');
-      return;
-    }
-
-    // Assembly — single-deposit flow:
-    // deposit: worker hands over primaryInput to machine
-    // assemble: machine produces towerComponent from held material
-    if (this.isAssemblyType(machine.type)) {
-      const pri = MACHINE_TYPES[machine.type].primaryInput;
-
-      if (w.stationAction === 'deposit') {
-        w.inventory = w.inventory.filter(i => i !== pri);
-        machine.heldMaterial = pri;
-        return;
-      }
-
-      if (w.stationAction === 'assemble') {
-        machine.heldMaterial = null;
-        w.inventory.push('towerComponent');
-        w._producedTowerType = MACHINE_TYPES[machine.type].produces;
-        return;
-      }
-    }
-  }
-
-  // ── Display helpers ────────────────────────────────────────────────────────
-
-  getInventoryDisplay(workerId) {
-    const w = this.workers[workerId];
-    if (!w || w.inventory.length === 0) return 'EMPTY';
-    const labels = {
-      plasticScrap:   'SCRAP',
-      salvagedMetal:  'METAL',
-      refinedPlastic: 'REFINED',
-      towerComponent: 'TOWER \u2605'
+    const updateBar = (stationKey, maxW, barH) => {
+      const bar = this.progressBars[stationKey];
+      if (!bar) return;
+      const workingWorker = this.factory.workers.find(w => w.unlocked && w.station===stationKey && w.state==='working');
+      bar.setSize(workingWorker ? maxW * workingWorker.progress : 0, barH);
     };
-    return w.inventory.map(i => labels[i] || i.toUpperCase()).join(' + ');
+
+    updateBar('store_scrap', this.STORE_W, 4);
+    updateBar('store_metal', this.STORE_W, 4);
+    updateBar('depository',  barW,         4);
+
+    for (let r = 0; r < this.ROWS; r++) {
+      for (let c = 0; c < this.COLS; c++) {
+        updateBar(r+','+c, this.TILE-4, 5);
+        const key        = r+','+c;
+        const machine    = this.factory.getMachineAt(r, c);
+        const statusTxt  = this.machineStatusTexts[key];
+        if (statusTxt && machine && this.factory.isAssemblyType(machine.type)) {
+          statusTxt.setText(machine.heldMaterial ? '+'+machine.heldMaterial.substring(0,3).toUpperCase() : '');
+        }
+      }
+    }
+
+    completedWorkers.forEach(workerId => {
+      this.updateStatus();
+      const w = this.factory.workers[workerId];
+      if (w.station === 'depository') {
+        const towerType = w._producedTowerType || 'gunner';
+        w._producedTowerType = null;
+        this.addTowerToStockpile(towerType);
+      }
+      if (!this.factory.tutorialComplete) {
+        this.tutorialWorkCompleted(w.station, workerId);
+      }
+    });
   }
 
-  getMaterialCount(type) {
-    return this.materials[type] || 0;
+  addTowerToStockpile(type) {
+    const slotIndex = localStorage.getItem('factower_active_slot');
+    const saveKey   = 'factower_save_' + slotIndex;
+    const save      = JSON.parse(localStorage.getItem(saveKey));
+    if (!save.stockpile) save.stockpile = { gunner:0, bomber:0, barricade:0 };
+    save.stockpile[type] = (save.stockpile[type] || 0) + 1;
+    localStorage.setItem(saveKey, JSON.stringify(save));
+    this.saveData = save;
+    this.showMessage(type.toUpperCase() + ' added to Armoury!', '#5eba7d');
+    this.factory.save();
   }
 }

@@ -110,10 +110,14 @@ class RicochetScene extends Phaser.Scene {
 
     // Ball physics state
     this.ball         = { x:0, y:0, vx:0, vy:0 };
-    // Sink state — driven by manual timer in update(), NO tweens touch ball rendering
+    // Sink state — driven by manual timer in update()
     this.ballSinkX     = 0;
     this.ballSinkY     = 0;
     this.ballSinkTimer = 0;   // counts down in seconds; >0 = sinking animation active
+    // Safety timer reference — MUST be tracked and cancelled on every new shot
+    // and every resolve, or stale timers from previous shots will fire resolve
+    // mid-flight on a later shot. This was the sporadic vanish bug.
+    this._safetyTimer  = null;
 
     // ── Background & header ──────────────────────────────────────────────────
     this.add.rectangle(width/2, height/2, width, height, 0x0d1117);
@@ -180,8 +184,12 @@ class RicochetScene extends Phaser.Scene {
     this.launcherGfx = this.add.graphics().setDepth(5);
     this._drawLauncher(false);
 
-    // Ball — depth 20: always on top of everything including hit strip
-    this.ballGfx = this.add.graphics().setDepth(20);
+    // Ball — dedicated circle game object, NOT a graphics redraw.
+    // Graphics redraws have race conditions with Phaser's render pipeline;
+    // a persistent game object is rendered every frame regardless.
+    this.ballSprite = this.add.circle(-100, -100, BALL_R, 0x5eba7d);
+    this.ballSprite.setDepth(20);
+    this.ballSprite.setVisible(false);
 
     // Hit counter strip inside play area (depth 15 — below ball)
     const sY = this.PLAY_TOP + 18;
@@ -245,6 +253,7 @@ class RicochetScene extends Phaser.Scene {
       this.input.off('pointermove',      this._onMove);
       this.input.off('pointerup',        this._onUp);
       this.input.off('pointerupoutside', this._onUp);
+      if (this._safetyTimer) { this._safetyTimer.remove(); this._safetyTimer = null; }
     });
 
     this._refreshCostText();
@@ -389,6 +398,16 @@ class RicochetScene extends Phaser.Scene {
   _fire() {
     const cost=this._rollCost();
     if (this.saveData.nuts<cost||this.ballActive) return;
+
+    // CRITICAL: cancel any stale safety timer from a previous shot before
+    // starting a new one. Without this, a 10-second timer from shot N can
+    // fire mid-flight on shot N+1 and resolve it prematurely. This is the
+    // sporadic vanish bug.
+    if (this._safetyTimer) {
+      this._safetyTimer.remove();
+      this._safetyTimer = null;
+    }
+
     this.saveData.nuts-=cost;
     this.nutsText.setText(this.saveData.nuts+' NUTS');
     this.ballActive=true;
@@ -399,8 +418,14 @@ class RicochetScene extends Phaser.Scene {
     this.ball.x  = this.LAUNCHER_X;
     this.ball.y  = this.BOUND_T;
     this.ball.vx = Math.cos(this.aimAngle)*BALL_SPEED;
-    this.ball.vy = Math.abs(Math.sin(this.aimAngle)*BALL_SPEED); // always downward
-    this.ballSinkTimer = 0;   // cancel any leftover sink animation
+    this.ball.vy = Math.abs(Math.sin(this.aimAngle)*BALL_SPEED);
+    this.ballSinkTimer = 0;
+
+    // Position & show the ball sprite
+    this.ballSprite.setPosition(this.ball.x, this.ball.y);
+    this.ballSprite.setScale(1, 1);
+    this.ballSprite.setAlpha(1);
+    this.ballSprite.setVisible(true);
 
     // Show hit strip
     this.hitStripBg.setAlpha(1); this.hitCountTxt.setAlpha(1); this.hitTierTxt.setAlpha(1);
@@ -408,8 +433,11 @@ class RicochetScene extends Phaser.Scene {
     this.tweens.add({ targets:this.resultText, alpha:0, duration:100 });
     this._highlightTier(-1);
 
-    // Safety timeout
-    this.time.delayedCall(10000, ()=>{ if(this.ballActive) this._resolve(); });
+    // Safety timeout — tracked so we can cancel on new shot or resolve
+    this._safetyTimer = this.time.delayedCall(10000, () => {
+      this._safetyTimer = null;
+      if (this.ballActive) this._resolve();
+    });
   }
 
   // ── Physics update ────────────────────────────────────────────────────────
@@ -421,41 +449,38 @@ class RicochetScene extends Phaser.Scene {
     if (this.bucketX-this.bucketW/2<this.PLAY_LEFT) {this.bucketX=this.PLAY_LEFT +this.bucketW/2;this.bucketDir= 1;}
     this._drawBucket();
 
-    // ── Ball rendering — entirely manual, no tweens ──────────────────────
-    this.ballGfx.clear();
+    // ── Ball rendering via ballSprite (persistent game object) ───────────
+    // No clear()/redraw. The sprite just gets its transform updated, which
+    // is immune to any render pipeline clearing race conditions.
     if (this.ballActive) {
-      // Live flight: render at current physics position
-      this.ballGfx.fillStyle(0x5eba7d, 1);
-      this.ballGfx.fillCircle(this.ball.x, this.ball.y, BALL_R);
+      // Live flight — position sprite at current physics position
+      this.ballSprite.setPosition(this.ball.x, this.ball.y);
     } else if (this.ballSinkTimer > 0) {
-      // Collection animation — renders at ball's LAST physics position,
-      // not teleported elsewhere. Ball visibly stops, squashes, fades.
+      // Collection animation at ball's final landing position
       const SINK_DUR = 0.40;
       const elapsed  = SINK_DUR - this.ballSinkTimer;
 
-      let rx = BALL_R, ry = BALL_R, alpha = 1;
+      let scaleX = 1, scaleY = 1, alpha = 1;
       if (elapsed < 0.12) {
-        // Impact squash
         const p = elapsed / 0.12;
-        rx = BALL_R * (1 + p * 0.30);
-        ry = BALL_R * (1 - p * 0.30);
+        scaleX = 1 + p * 0.30;
+        scaleY = 1 - p * 0.30;
       } else {
-        // Shrink + fade into drain
         const p = (elapsed - 0.12) / 0.28;
-        rx = BALL_R * (1.30 - p * 1.30);
-        ry = BALL_R * (0.70 - p * 0.70);
-        alpha = 1 - p;
+        scaleX = 1.30 - p * 1.30;
+        scaleY = 0.70 - p * 0.70;
+        alpha  = 1 - p;
       }
 
-      if (alpha > 0.01 && rx > 0.5 && ry > 0.5) {
-        this.ballGfx.fillStyle(0x5eba7d, alpha);
-        // Render at ballSinkX/Y — which _resolve() sets to the ball's actual
-        // final position, not at DRAIN_Y. No teleport.
-        this.ballGfx.fillEllipse(this.ballSinkX, this.ballSinkY - ry + BALL_R, rx * 2, ry * 2);
-      }
+      this.ballSprite.setPosition(this.ballSinkX, this.ballSinkY);
+      this.ballSprite.setScale(Math.max(0.01, scaleX), Math.max(0.01, scaleY));
+      this.ballSprite.setAlpha(Math.max(0, alpha));
 
       this.ballSinkTimer -= delta / 1000;
-      if (this.ballSinkTimer < 0) this.ballSinkTimer = 0;
+      if (this.ballSinkTimer <= 0) {
+        this.ballSinkTimer = 0;
+        this.ballSprite.setVisible(false);
+      }
     }
 
     if (!this.ballActive) return;
@@ -534,6 +559,12 @@ class RicochetScene extends Phaser.Scene {
 
   _resolve() {
     this.ballActive=false;
+
+    // Cancel safety timer — it already did its job or isn't needed
+    if (this._safetyTimer) {
+      this._safetyTimer.remove();
+      this._safetyTimer = null;
+    }
 
     const inBucket  = Math.abs(this.ball.x-this.bucketX)<this.bucketW/2+BALL_R;
     const totalHits = this.pegHitCount+(inBucket?BUCKET_HIT_BONUS:0);

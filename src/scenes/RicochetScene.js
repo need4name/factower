@@ -428,31 +428,30 @@ class RicochetScene extends Phaser.Scene {
       this.ballGfx.fillStyle(0x5eba7d, 1);
       this.ballGfx.fillCircle(this.ball.x, this.ball.y, BALL_R);
     } else if (this.ballSinkTimer > 0) {
-      // Collection animation: ball has arrived at the drain line.
-      // Phase 1 (0.0 - 0.15s): squash against the drain — horizontal squish
-      // Phase 2 (0.15 - 0.45s): shrink + fade as it's pulled into the slot
-      const SINK_DUR = 0.45;
+      // Collection animation — renders at ball's LAST physics position,
+      // not teleported elsewhere. Ball visibly stops, squashes, fades.
+      const SINK_DUR = 0.40;
       const elapsed  = SINK_DUR - this.ballSinkTimer;
-      const t        = elapsed / SINK_DUR;  // 0→1 overall
 
       let rx = BALL_R, ry = BALL_R, alpha = 1;
-      if (elapsed < 0.15) {
-        // Squash phase
-        const p = elapsed / 0.15;
-        rx = BALL_R * (1 + p * 0.35);
-        ry = BALL_R * (1 - p * 0.35);
-        alpha = 1;
+      if (elapsed < 0.12) {
+        // Impact squash
+        const p = elapsed / 0.12;
+        rx = BALL_R * (1 + p * 0.30);
+        ry = BALL_R * (1 - p * 0.30);
       } else {
-        // Shrink phase
-        const p = (elapsed - 0.15) / 0.30;
-        rx = BALL_R * (1.35 - p * 1.35);
-        ry = BALL_R * (0.65 - p * 0.65);
+        // Shrink + fade into drain
+        const p = (elapsed - 0.12) / 0.28;
+        rx = BALL_R * (1.30 - p * 1.30);
+        ry = BALL_R * (0.70 - p * 0.70);
         alpha = 1 - p;
       }
 
       if (alpha > 0.01 && rx > 0.5 && ry > 0.5) {
         this.ballGfx.fillStyle(0x5eba7d, alpha);
-        this.ballGfx.fillEllipse(this.ballSinkX, this.DRAIN_Y - ry + 1, rx * 2, ry * 2);
+        // Render at ballSinkX/Y — which _resolve() sets to the ball's actual
+        // final position, not at DRAIN_Y. No teleport.
+        this.ballGfx.fillEllipse(this.ballSinkX, this.ballSinkY - ry + BALL_R, rx * 2, ry * 2);
       }
 
       this.ballSinkTimer -= delta / 1000;
@@ -462,55 +461,73 @@ class RicochetScene extends Phaser.Scene {
     if (!this.ballActive) return;
 
     // ── Physics step ──────────────────────────────────────────────────────
-    const dt=Math.min(delta/1000, 0.025);
-    this.ball.vy+=GRAVITY*dt;
-    this.ball.x +=this.ball.vx*dt;
-    this.ball.y +=this.ball.vy*dt;
+    const dt = Math.min(delta/1000, 0.025);
+    this.ball.vy += GRAVITY * dt;
 
-    // ── Wall response — reflect velocity THEN hard-clamp position ────────
-    if (this.ball.x < this.BOUND_L) { this.ball.vx= Math.abs(this.ball.vx)*0.78; this.ball.x=this.BOUND_L; }
-    if (this.ball.x > this.BOUND_R) { this.ball.vx=-Math.abs(this.ball.vx)*0.78; this.ball.x=this.BOUND_R; }
-    if (this.ball.y < this.BOUND_T) { this.ball.vy= Math.abs(this.ball.vy)*0.78; this.ball.y=this.BOUND_T; }
+    const newX = this.ball.x + this.ball.vx * dt;
+    const newY = this.ball.y + this.ball.vy * dt;
 
-    // Hard clamp X to play area. Y is NOT clamped to BOUND_B here — we need
-    // the ball to actually reach the drain line to trigger resolve.
+    // ── RESOLVE CHECK — ONLY during pure gravity movement, BEFORE pegs ────
+    // Peg collisions can push the ball anywhere; we do NOT let them trigger
+    // resolve. Resolve fires only when the ball falls naturally past the drain.
+    if (this.ball.vy > 0 && newY >= this.BOUND_B) {
+      this.ball.x = Phaser.Math.Clamp(newX, this.BOUND_L, this.BOUND_R);
+      this.ball.y = this.BOUND_B;
+      this._resolve();
+      return;
+    }
+
+    // Apply new position
+    this.ball.x = newX;
+    this.ball.y = newY;
+
+    // ── Wall response ──────────────────────────────────────────────────────
+    if (this.ball.x < this.BOUND_L) { this.ball.vx =  Math.abs(this.ball.vx)*0.78; this.ball.x = this.BOUND_L; }
+    if (this.ball.x > this.BOUND_R) { this.ball.vx = -Math.abs(this.ball.vx)*0.78; this.ball.x = this.BOUND_R; }
+    if (this.ball.y < this.BOUND_T) { this.ball.vy =  Math.abs(this.ball.vy)*0.78; this.ball.y = this.BOUND_T; }
+
+    // Clamp X only — Y is handled by the resolve check above and peg physics.
     this.ball.x = Phaser.Math.Clamp(this.ball.x, this.BOUND_L, this.BOUND_R);
     this.ball.y = Math.max(this.ball.y, this.BOUND_T);
 
-    // ── Peg collisions ────────────────────────────────────────────────────
-    let pegDirty=false;
-    this.pegs.forEach((peg,i)=>{
-      const dx=this.ball.x-peg.x, dy=this.ball.y-peg.y;
-      const dist=Math.sqrt(dx*dx+dy*dy), minD=BALL_R+peg.r;
-      if (dist<minD&&dist>0.01) {
-        const nx=dx/dist, ny=dy/dist, dot=this.ball.vx*nx+this.ball.vy*ny;
-        if (dot<0) {
-          this.ball.vx-=(1+0.65)*dot*nx;
-          this.ball.vy-=(1+0.65)*dot*ny;
-          this.ball.vx+=(Math.random()-0.5)*20;
+    // ── Peg collisions — can push ball ANYWHERE, never triggers resolve ───
+    let pegDirty = false;
+    this.pegs.forEach((peg, i) => {
+      const dx = this.ball.x - peg.x;
+      const dy = this.ball.y - peg.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      const minD = BALL_R + peg.r;
+      if (dist < minD && dist > 0.01) {
+        const nx = dx/dist, ny = dy/dist;
+        const dot = this.ball.vx*nx + this.ball.vy*ny;
+        if (dot < 0) {
+          this.ball.vx -= (1 + 0.65) * dot * nx;
+          this.ball.vy -= (1 + 0.65) * dot * ny;
+          this.ball.vx += (Math.random() - 0.5) * 20;
         }
-        this.ball.x+=nx*(minD-dist);
-        this.ball.y+=ny*(minD-dist);
-        // Hard clamp within ALL four bounds after pushout — critical to prevent
-        // a peg pushing the ball past the drain line and triggering a false resolve.
-        this.ball.x=Phaser.Math.Clamp(this.ball.x,this.BOUND_L,this.BOUND_R);
-        this.ball.y=Phaser.Math.Clamp(this.ball.y,this.BOUND_T,this.BOUND_B);
+        // Pushout — only clamp X to keep ball inside the board horizontally.
+        // Y is NOT clamped so pegs can never push the ball to the drain threshold.
+        this.ball.x += nx * (minD - dist);
+        this.ball.y += ny * (minD - dist);
+        this.ball.x = Phaser.Math.Clamp(this.ball.x, this.BOUND_L, this.BOUND_R);
+        this.ball.y = Math.max(this.ball.y, this.BOUND_T);
+
         if (!this.pegsHitThisShot.has(i)) {
           this.pegsHitThisShot.add(i);
           this.pegHitCount++;
           this._updateHitCounter();
         }
         if (!peg.lit) {
-          peg.lit=true; pegDirty=true;
-          this.time.delayedCall(220,()=>{peg.lit=false;this._drawPegs();});
+          peg.lit = true; pegDirty = true;
+          this.time.delayedCall(220, () => { peg.lit = false; this._drawPegs(); });
         }
       }
     });
     if (pegDirty) this._drawPegs();
 
-    // Resolve ONLY when ball physically reaches the drain — not when pushed
-    // there artificially. Use >= BOUND_B strictly.
-    if (this.ball.y >= this.BOUND_B) this._resolve();
+    // NOTE: deliberately NO resolve check after pegs. If a peg pushes the ball
+    // below the drain line, natural gravity on the next frame will trigger
+    // resolve cleanly via the pure-physics check at the top of the step.
   }
 
   // ── Resolve ───────────────────────────────────────────────────────────────
@@ -544,10 +561,10 @@ class RicochetScene extends Phaser.Scene {
     this.resultText.setText(msg).setStyle({color:col}).setAlpha(0);
     this.tweens.add({ targets:this.resultText, alpha:1, duration:250 });
 
-    // Start collection animation: ball sits at drain line at its landing X
+    // Start collection animation at ball's ACTUAL position
     this.ballSinkX     = this.ball.x;
-    this.ballSinkY     = this.DRAIN_Y;     // always the drain line
-    this.ballSinkTimer = 0.45;
+    this.ballSinkY     = this.ball.y;
+    this.ballSinkTimer = 0.40;
 
     this.time.delayedCall(1400,()=>{
       this.tweens.add({ targets:[this.hitStripBg,this.hitCountTxt,this.hitTierTxt], alpha:0, duration:400 });

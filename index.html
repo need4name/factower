@@ -27,21 +27,13 @@ html, body {
   top: 0;
   left: 0;
   width: 100%;
-  /* dvh = dynamic viewport height — shrinks when browser chrome appears.
-     Falls back to svh (smallest viewport height) then 100vh for older browsers. */
   height: 100dvh;
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  height: 100svh;
   background: #0a0c0f;
 }
 
 canvas {
   display: block;
-  /* Never let the canvas overflow the visible area */
-  max-width: 100%;
-  max-height: 100dvh;
-  max-height: 100svh;   /* fallback for older iOS */
 }
 </style>
 </head>
@@ -76,7 +68,7 @@ const config = {
   scene: [BootScene, SaveScene, BaseScene, FactoryScene, ArmouryScene, DockScene,
           CombatScene, SkillTreeScene, MarketplaceScene, ChromeScene, RicochetScene, DoubleDownScene],
   scale: {
-    mode: Phaser.Scale.FIT,
+    mode: Phaser.Scale.ENVELOP,
     autoCenter: Phaser.Scale.CENTER_BOTH
   },
   input: {

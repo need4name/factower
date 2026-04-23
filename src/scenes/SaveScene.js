@@ -146,7 +146,8 @@ selectSlot(index, isEmpty) {
       tutorials:       {},
       flags: {
         armouryUnlocked:   false,
-        skillTreeUnlocked: true,   // dev: always accessible
+        skillTreeUnlocked: false,  // unlocks after first level completion
+        marketplaceUnlocked: false, // unlocks after first level completion
         baseTutDone:       false
       },
       createdAt: Date.now()

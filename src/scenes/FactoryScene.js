@@ -63,7 +63,78 @@ class FactoryScene extends Phaser.Scene {
       this.startTutorial();
     } else {
       this.checkWorker2Recruitment();
+      this.checkNewTowerTutorials();
     }
+  }
+
+  // ── Per-tower tutorial banners ─────────────────────────────────────────────
+  // Shows a one-time instructional card for each newly-unlocked tower type.
+  // Flags stored in saveData.flags.towerTutorialsSeen = { gunner, barricade, bomber }
+
+  checkNewTowerTutorials() {
+    if (!this.saveData.flags) this.saveData.flags = {};
+    if (!this.saveData.flags.towerTutorialsSeen) this.saveData.flags.towerTutorialsSeen = {};
+
+    // Gunner tutorial is the main factory tutorial, no banner needed
+    // Barricade + Bomber unlock together at Level 2 completion
+    const seen = this.saveData.flags.towerTutorialsSeen;
+
+    if (this.unlockedAssemblyTypes.includes('assembly_barricade') && !seen.barricade) {
+      this.time.delayedCall(400, () => this.showTowerUnlockBanner('barricade'));
+    } else if (this.unlockedAssemblyTypes.includes('assembly_bomber') && !seen.bomber) {
+      this.time.delayedCall(400, () => this.showTowerUnlockBanner('bomber'));
+    }
+  }
+
+  showTowerUnlockBanner(towerType) {
+    const { width, height } = this.scale;
+    const all = [];
+
+    const config = {
+      barricade: {
+        colour: 0xc43a3a, colourHex: '#c43a3a',
+        title: 'BARRICADE UNLOCKED',
+        body: 'Requires 1 SALVAGED METAL.\nNO smelter needed \u2014 the Assembly Bench\ntakes metal directly.'
+      },
+      bomber: {
+        colour: 0xe8a020, colourHex: '#e8a020',
+        title: 'BOMBER UNLOCKED',
+        body: 'Requires 1 REFINED PLASTIC.\nPlace a SMELTER first \u2014 it converts\nScrap into Refined Plastic for the Bomber.'
+      }
+    };
+    const c = config[towerType];
+    if (!c) return;
+
+    const overlay = this.add.rectangle(width/2, height/2, width, height, 0x000000, 0.88).setDepth(50);
+    const box     = this.add.rectangle(width/2, height/2, width-48, 220, 0x161b22).setDepth(51);
+    const border  = this.add.rectangle(width/2, height/2, width-48, 220).setStrokeStyle(2, c.colour).setDepth(51);
+    const title   = this.add.text(width/2, height/2-62, c.title, {
+      fontFamily:'monospace', fontSize:'18px', color:c.colourHex, fontStyle:'bold', letterSpacing:2
+    }).setOrigin(0.5).setDepth(52);
+    const body    = this.add.text(width/2, height/2-4, c.body, {
+      fontFamily:'monospace', fontSize:'12px', color:'#eef2f8', align:'center', lineSpacing:6
+    }).setOrigin(0.5).setDepth(52);
+    const btn     = this.add.rectangle(width/2, height/2+72, 200, 48, 0x1e2530).setInteractive().setDepth(52);
+    const btnBdr  = this.add.rectangle(width/2, height/2+72, 200, 48).setStrokeStyle(1, c.colour).setDepth(52);
+    const btnLbl  = this.add.text(width/2, height/2+72, 'GOT IT', {
+      fontFamily:'monospace', fontSize:'14px', color:c.colourHex, fontStyle:'bold'
+    }).setOrigin(0.5).setDepth(53);
+
+    all.push(overlay, box, border, title, body, btn, btnBdr, btnLbl);
+
+    btn.on('pointerdown', () => {
+      all.forEach(e => e?.destroy?.());
+      this.saveData.flags.towerTutorialsSeen[towerType] = true;
+      localStorage.setItem('factower_save_' + localStorage.getItem('factower_active_slot'), JSON.stringify(this.saveData));
+
+      // If both were just unlocked (typical case at Level 2), chain the second banner
+      if (towerType === 'barricade' && !this.saveData.flags.towerTutorialsSeen.bomber
+          && this.unlockedAssemblyTypes.includes('assembly_bomber')) {
+        this.time.delayedCall(300, () => this.showTowerUnlockBanner('bomber'));
+      }
+    });
+    btn.on('pointerover', () => btn.setFillStyle(0x252c38));
+    btn.on('pointerout',  () => btn.setFillStyle(0x1e2530));
   }
 
   getUnlockedAssemblyTypes() {
@@ -624,14 +695,16 @@ class FactoryScene extends Phaser.Scene {
     const { width } = this.scale;
     const btnY = this.PANEL_Y + 56;
     switch (step) {
-      case 0:  this.showTutorialHighlight(78, btnY, 128, 84); break;
-      case 1:  this.showTutorialHighlight(228, btnY, 128, 84); break;
-      case 2:  this.showTutorialHighlight(this.SCRAP_X, this.STORE_Y, this.STORE_W, 52); break;
-      case 4: { const p = this.findFirstGridMachine('smelter');   if (p) this.showTutorialHighlight(p.x, p.y, this.TILE-2, this.TILE-2); break; }
-      case 6: { const p = this.findFirstGridMachine('assembly');  if (p) this.showTutorialHighlight(p.x, p.y, this.TILE-2, this.TILE-2); break; }
-      case 8:  this.showTutorialHighlight(this.METAL_X, this.STORE_Y, this.STORE_W, 52); break;
-      case 10:{ const p = this.findFirstGridMachine('assembly');  if (p) this.showTutorialHighlight(p.x, p.y, this.TILE-2, this.TILE-2); break; }
-      case 12: this.showTutorialHighlight(width/2, this.DEPOT_Y, width-48, 40); break;
+      // 0: place assembly → highlight ASSEMBLY button
+      case 0: this.showTutorialHighlight(228, btnY, 128, 84); break;
+      // 1: collect scrap → highlight scrap store
+      case 1: this.showTutorialHighlight(this.SCRAP_X, this.STORE_Y, this.STORE_W, 52); break;
+      // 3: deposit at assembly → highlight the placed assembly bench
+      case 3: { const p = this.findFirstGridMachine('assembly'); if (p) this.showTutorialHighlight(p.x, p.y, this.TILE-2, this.TILE-2); break; }
+      // 5: assemble at assembly → highlight same bench
+      case 5: { const p = this.findFirstGridMachine('assembly'); if (p) this.showTutorialHighlight(p.x, p.y, this.TILE-2, this.TILE-2); break; }
+      // 7: deliver → highlight depository
+      case 7: this.showTutorialHighlight(width/2, this.DEPOT_Y, width-48, 40); break;
       default: this.clearTutorialHighlight();
     }
   }
@@ -649,6 +722,18 @@ class FactoryScene extends Phaser.Scene {
   }
 
   // ── Tutorial ───────────────────────────────────────────────────────────────
+  //
+  // Tutorial teaches the simplest tower — Gunner. Gunner takes Plastic Scrap
+  // directly (no smelter), so the flow is:
+  //
+  //   1. Place an Assembly bench (select Gunner type)
+  //   2. Collect Plastic Scrap
+  //   3. Deposit scrap at the Assembly bench
+  //   4. Tap Assembly again to assemble the tower
+  //   5. Deliver the finished tower to the Depository
+  //
+  // Barricade and Bomber tutorials trigger later, when their assembly types
+  // unlock — each explains the specific material flow for that tower.
 
   startTutorial() {
     const { width } = this.scale;
@@ -664,20 +749,18 @@ class FactoryScene extends Phaser.Scene {
   }
 
   getTutorialMessage(step) {
+    // Gunner tutorial — 5 steps + waiting states
     const msgs = [
-      'TUTORIAL (1/7): Tap SMELTER below then tap an empty grid tile to place it.',
-      'TUTORIAL (2/7): Tap ASSEMBLY below, tap an empty tile, then select GUNNER.',
-      'TUTORIAL (3/7): Tap the PLASTIC SCRAP store to collect scrap.',
+      'TUTORIAL (1/5): Tap ASSEMBLY below, tap an empty tile, select GUNNER.',
+      'TUTORIAL (2/5): Tap the PLASTIC SCRAP store to collect one.',
       'TUTORIAL: Collecting scrap \u2014 please wait...',
-      'TUTORIAL (4/7): Tap the SMELTER tile to smelt your scrap.',
-      'TUTORIAL: Smelting \u2014 please wait...',
-      'TUTORIAL (5/7): Tap the ASSEMBLY BENCH to deposit Refined Plastic.',
+      'TUTORIAL (3/5): Tap the ASSEMBLY BENCH to deposit your scrap.',
       'TUTORIAL: Depositing \u2014 please wait...',
-      'TUTORIAL (6/7): Tap the ASSEMBLY BENCH again to build your Gunner.',
+      'TUTORIAL (4/5): Tap the ASSEMBLY BENCH again to assemble the tower.',
       'TUTORIAL: Assembling \u2014 please wait...',
-      'TUTORIAL: Tap the DEPOSITORY to deliver your finished tower.',
+      'TUTORIAL (5/5): Tap the DEPOSITORY to deliver the finished tower.',
       'TUTORIAL: Delivering \u2014 please wait...',
-      'TUTORIAL COMPLETE! GUNNER added to Armoury. Head to the DOCK!'
+      'TUTORIAL COMPLETE! GUNNER added to Armoury.'
     ];
     return msgs[step] || '';
   }
@@ -686,7 +769,7 @@ class FactoryScene extends Phaser.Scene {
     if (!this.tutorialStrip) return;
     this.tutorialStrip.setText(this.getTutorialMessage(this.currentTutStep));
     this.updateTutorialHighlight(this.currentTutStep);
-    if (this.currentTutStep >= 12) {
+    if (this.currentTutStep >= 9) {
       this.clearTutorialHighlight();
       this.time.delayedCall(2000, () => this.completeTutorial());
     }
@@ -696,11 +779,6 @@ class FactoryScene extends Phaser.Scene {
     const step       = this.currentTutStep;
     const stationKey = event.startsWith('assigned_') ? event.replace('assigned_','') : '';
 
-    const isSmelterKey = (key) => {
-      if (!key || key==='store_scrap' || key==='store_metal' || key==='depository') return false;
-      const [r,c] = key.split(',').map(Number);
-      return this.factory.getMachineAt(r,c)?.type === 'smelter';
-    };
     const isAssemblyKey = (key) => {
       if (!key || key==='store_scrap' || key==='store_metal' || key==='depository') return false;
       const [r,c] = key.split(',').map(Number);
@@ -708,15 +786,18 @@ class FactoryScene extends Phaser.Scene {
       return m && this.factory.isAssemblyType(m.type);
     };
 
+    // Tutorial progress triggers:
+    //   step 0 → placed_assembly
+    //   step 1 → assigned_store_scrap
+    //   step 3 → assigned_<assembly tile> (for deposit)
+    //   step 5 → assigned_<assembly tile> (for assemble)
+    //   step 7 → assigned_depository
     const should =
-      (step===0  && event==='placed_smelter')   ||
-      (step===1  && event==='placed_assembly')   ||
-      (step===2  && event==='assigned_store_scrap') ||
-      (step===4  && isSmelterKey(stationKey))    ||
-      (step===6  && isAssemblyKey(stationKey))   ||
-      (step===8  && event==='assigned_store_metal') ||
-      (step===10 && isAssemblyKey(stationKey))   ||
-      (step===11 && event==='assigned_depository');
+      (step===0 && event==='placed_assembly')       ||
+      (step===1 && event==='assigned_store_scrap')  ||
+      (step===3 && isAssemblyKey(stationKey))       ||
+      (step===5 && isAssemblyKey(stationKey))       ||
+      (step===7 && event==='assigned_depository');
 
     if (should) {
       this.currentTutStep++;
@@ -729,23 +810,22 @@ class FactoryScene extends Phaser.Scene {
     const step = this.currentTutStep;
     const w    = this.factory.workers[workerId];
 
-    const isSmelter = () => {
-      if (!station||station==='store_scrap'||station==='store_metal'||station==='depository') return false;
-      return this.factory.getMachineAt(...station.split(',').map(Number))?.type === 'smelter';
-    };
     const isAssembly = () => {
       if (!station||station==='store_scrap'||station==='store_metal'||station==='depository') return false;
       const m = this.factory.getMachineAt(...station.split(',').map(Number));
       return m && this.factory.isAssemblyType(m.type);
     };
 
+    // Work-complete triggers:
+    //   step 2 → store_scrap collection complete
+    //   step 4 → assembly deposit complete
+    //   step 6 → assembly assemble complete
+    //   step 8 → depository delivery complete
     const should =
-      (step===3  && station==='store_scrap')  ||
-      (step===5  && isSmelter())              ||
-      (step===7  && isAssembly() && w.stationAction==='deposit')  ||
-      (step===9  && isAssembly() && w.stationAction==='assemble') ||
-      (step===10 && station==='store_metal')  ||
-      (step===11 && station==='depository');
+      (step===2 && station==='store_scrap')                              ||
+      (step===4 && isAssembly() && w.stationAction==='deposit')          ||
+      (step===6 && isAssembly() && w.stationAction==='assemble')         ||
+      (step===8 && station==='depository');
 
     if (should) {
       this.currentTutStep++;

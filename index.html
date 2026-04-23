@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -9,75 +8,59 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 html, body {
-width: 100%;
-height: 100%;
-background: #0a0c0f;
-overflow: hidden;
-/* Prevent iOS rubber-band scroll from moving the game */
-position: fixed;
-top: 0;
-left: 0;
+  width: 100%;
+  height: 100%;
+  background: #0a0c0f;
+  overflow: hidden;
+  /* Prevent iOS rubber-band scroll from moving the game */
+  position: fixed;
+  top: 0;
+  left: 0;
 }
 
 /* Phaser mounts the canvas inside this wrapper.
-position:fixed + dvh (dynamic viewport height) means the container
-always fills exactly the visible area — unaffected by Safari’s
-appearing/disappearing address bar or navigation bar. */
+   position:fixed + dvh (dynamic viewport height) means the container
+   always fills exactly the visible area — unaffected by Safari's
+   appearing/disappearing address bar or navigation bar. */
 #game-container {
-position: fixed;
-top: 0;
-left: 0;
-width: 100%;
-height: 100dvh;
-height: 100svh;
-background: #0a0c0f;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: #0a0c0f;
 }
 
 canvas {
-display: block;
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
 }
 </style>
-
 </head>
 <body>
 <div id="game-container"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
-
 <script src="src/systems/Factory.js"></script>
-
 <script src="src/data/towers.js"></script>
-
 <script src="src/data/enemies.js"></script>
-
 <script src="src/data/levels.js"></script>
-
 <script src="src/data/skillTree.js"></script>
-
 <script src="src/scenes/Boot.js"></script>
-
 <script src="src/scenes/SaveScene.js"></script>
-
 <script src="src/scenes/BaseScene.js"></script>
-
 <script src="src/scenes/FactoryScene.js"></script>
-
 <script src="src/scenes/ArmouryScene.js"></script>
-
 <script src="src/scenes/DockScene.js"></script>
-
 <script src="src/scenes/CombatScene.js"></script>
-
 <script src="src/scenes/SkillTreeScene.js"></script>
-
 <script src="src/scenes/MarketplaceScene.js"></script>
-
 <script src="src/scenes/ChromeScene.js"></script>
-
 <script src="src/scenes/RicochetScene.js"></script>
-
 <script src="src/scenes/DoubleDownScene.js"></script>
-
 <script>
 const config = {
   type: Phaser.AUTO,
@@ -89,7 +72,7 @@ const config = {
           CombatScene, SkillTreeScene, MarketplaceScene, ChromeScene, RicochetScene, DoubleDownScene],
   scale: {
     mode: Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.CENTER_HORIZONTALLY
+    autoCenter: Phaser.Scale.NO_CENTER
   },
   input: {
     touch: { capture: true }
@@ -97,6 +80,5 @@ const config = {
 };
 const game = new Phaser.Game(config);
 </script>
-
 </body>
 </html>

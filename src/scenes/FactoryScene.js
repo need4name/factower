@@ -721,23 +721,23 @@ class FactoryScene extends Phaser.Scene {
     return null;
   }
 
-  // ── Tutorial ───────────────────────────────────────────────────────────────
+  // ── Tutorial — state machine ───────────────────────────────────────────────
   //
-  // Tutorial teaches the simplest tower — Gunner. Gunner takes Plastic Scrap
-  // directly (no smelter), so the flow is:
+  // Instead of a fragile step counter that can desync, the tutorial derives
+  // its message from the ACTUAL current factory state every frame.
+  // It can never hard-lock because there are no manually-advanced steps.
   //
-  //   1. Place an Assembly bench (select Gunner type)
-  //   2. Collect Plastic Scrap
-  //   3. Deposit scrap at the Assembly bench
-  //   4. Tap Assembly again to assemble the tower
-  //   5. Deliver the finished tower to the Depository
-  //
-  // Barricade and Bomber tutorials trigger later, when their assembly types
-  // unlock — each explains the specific material flow for that tower.
+  // States (checked in priority order):
+  //   no_assembly    → place an Assembly bench
+  //   collect_scrap  → tap scrap store to collect
+  //   deposit        → tap assembly bench to deposit scrap
+  //   assemble       → tap assembly bench to assemble
+  //   deliver        → tap depository to deliver
+  //   done           → tutorial complete
 
   startTutorial() {
     const { width } = this.scale;
-    this.currentTutStep = this.factory.tutorialStep || 0;
+    this.currentTutStep = 'no_assembly';  // human-readable state label
 
     this.tutorialStrip = this.add.text(width/2, this.HEADER_Y+52, '', {
       fontFamily:'monospace', fontSize:'12px', color:'#e8a020',
@@ -745,94 +745,118 @@ class FactoryScene extends Phaser.Scene {
       align:'center', wordWrap:{ width:width-40 }
     }).setOrigin(0.5).setDepth(25);
 
-    this.updateTutorialStrip();
+    this.updateTutorialFromState();
   }
 
-  getTutorialMessage(step) {
-    // Gunner tutorial — 5 steps + waiting states
-    const msgs = [
-      'TUTORIAL (1/5): Tap ASSEMBLY below, tap an empty tile, select GUNNER.',
-      'TUTORIAL (2/5): Tap the PLASTIC SCRAP store to collect one.',
-      'TUTORIAL: Collecting scrap \u2014 please wait...',
-      'TUTORIAL (3/5): Tap the ASSEMBLY BENCH to deposit your scrap.',
-      'TUTORIAL: Depositing \u2014 please wait...',
-      'TUTORIAL (4/5): Tap the ASSEMBLY BENCH again to assemble the tower.',
-      'TUTORIAL: Assembling \u2014 please wait...',
-      'TUTORIAL (5/5): Tap the DEPOSITORY to deliver the finished tower.',
-      'TUTORIAL: Delivering \u2014 please wait...',
-      'TUTORIAL COMPLETE! GUNNER added to Armoury.'
-    ];
-    return msgs[step] || '';
-  }
-
-  updateTutorialStrip() {
+  // Called every update() frame while tutorial active
+  updateTutorialFromState() {
+    if (this.factory.tutorialComplete) return;
     if (!this.tutorialStrip) return;
-    this.tutorialStrip.setText(this.getTutorialMessage(this.currentTutStep));
-    this.updateTutorialHighlight(this.currentTutStep);
-    if (this.currentTutStep >= 9) {
+
+    const w    = this.factory.workers[0];
+    const hasTowerComp = w && w.inventory.includes('towerComponent');
+    const carryingScrap = w && w.inventory.includes('plasticScrap');
+
+    // Find first assembly machine
+    let assemblyMachine = null, assemblyKey = null;
+    for (let r = 0; r < this.ROWS && !assemblyMachine; r++) {
+      for (let c = 0; c < this.COLS && !assemblyMachine; c++) {
+        const m = this.factory.getMachineAt(r, c);
+        if (m && this.factory.isAssemblyType(m.type)) {
+          assemblyMachine = m;
+          assemblyKey = r + ',' + c;
+        }
+      }
+    }
+
+    // Derive state from actual conditions
+    let state, msg, highlightTarget;
+
+    if (!assemblyMachine) {
+      state = 'no_assembly';
+      msg   = 'TUTORIAL (1/5): Tap ASSEMBLY below,\ntap an empty tile, select GUNNER.';
+      highlightTarget = 'assembly_btn';
+
+    } else if (hasTowerComp) {
+      state = 'deliver';
+      msg   = 'TUTORIAL (5/5): Tap the DEPOSITORY\nto deliver your finished tower.';
+      highlightTarget = 'depository';
+
+    } else if (assemblyMachine.heldMaterial !== null && !carryingScrap) {
+      // Material deposited, worker empty — ready to assemble
+      state = 'assemble';
+      msg   = 'TUTORIAL (4/5): Tap the ASSEMBLY BENCH\nto assemble the tower.';
+      highlightTarget = assemblyKey;
+
+    } else if (carryingScrap) {
+      // Worker is carrying scrap — deposit it
+      state = 'deposit';
+      msg   = 'TUTORIAL (3/5): Tap the ASSEMBLY BENCH\nto deposit your scrap.';
+      highlightTarget = assemblyKey;
+
+    } else if (this.factory.getMaterialCount('plasticScrap') > 0) {
+      // Have scrap available, no worker carrying, bench empty
+      state = 'collect_scrap';
+      msg   = 'TUTORIAL (2/5): Tap PLASTIC SCRAP\nto collect one.';
+      highlightTarget = 'scrap_store';
+
+    } else {
+      // Worker mid-action — show waiting
+      const actionMap = {
+        working: '... please wait',
+        walking: '... on the way'
+      };
+      msg   = 'TUTORIAL: ' + (actionMap[w && w.state] || 'please wait');
+      state = this.currentTutStep;
+      highlightTarget = null;
+    }
+
+    // Only redraw when state changes
+    if (state !== this.currentTutStep) {
+      this.currentTutStep = state;
+      this.tutorialStrip.setText(msg);
+      this._updateTutHighlight(highlightTarget, assemblyKey);
+    }
+  }
+
+  _updateTutHighlight(target, assemblyKey) {
+    this.clearTutorialHighlight();
+    const { width } = this.scale;
+    const btnY = this.PANEL_Y + 56;
+
+    if (target === 'assembly_btn')      this.showTutorialHighlight(228, btnY, 128, 84);
+    else if (target === 'scrap_store')  this.showTutorialHighlight(this.SCRAP_X, this.STORE_Y, this.STORE_W, 52);
+    else if (target === 'depository')   this.showTutorialHighlight(width/2, this.DEPOT_Y, width-48, 40);
+    else if (target && target.includes(',')) {
+      // Grid key — highlight the assembly tile directly
+      const p = this._getGridPos(target);
+      if (p) this.showTutorialHighlight(p.x, p.y, this.TILE-2, this.TILE-2);
+    }
+  }
+
+  _getGridPos(key) {
+    if (!key) return null;
+    const [r, c] = key.split(',').map(Number);
+    return { x: this.GX + c*this.TILE + this.TILE/2, y: this.GY + r*this.TILE + this.TILE/2 };
+  }
+
+  // Called when a delivered tower reaches the depository successfully
+  checkTutorialDeliveryComplete() {
+    if (!this.factory.tutorialComplete && this.currentTutStep === 'deliver') {
       this.clearTutorialHighlight();
-      this.time.delayedCall(2000, () => this.completeTutorial());
+      this.time.delayedCall(400, () => this.completeTutorial());
     }
   }
 
-  advanceTutorial(event) {
-    const step       = this.currentTutStep;
-    const stationKey = event.startsWith('assigned_') ? event.replace('assigned_','') : '';
-
-    const isAssemblyKey = (key) => {
-      if (!key || key==='store_scrap' || key==='store_metal' || key==='depository') return false;
-      const [r,c] = key.split(',').map(Number);
-      const m = this.factory.getMachineAt(r,c);
-      return m && this.factory.isAssemblyType(m.type);
-    };
-
-    // Tutorial progress triggers:
-    //   step 0 → placed_assembly
-    //   step 1 → assigned_store_scrap
-    //   step 3 → assigned_<assembly tile> (for deposit)
-    //   step 5 → assigned_<assembly tile> (for assemble)
-    //   step 7 → assigned_depository
-    const should =
-      (step===0 && event==='placed_assembly')       ||
-      (step===1 && event==='assigned_store_scrap')  ||
-      (step===3 && isAssemblyKey(stationKey))       ||
-      (step===5 && isAssemblyKey(stationKey))       ||
-      (step===7 && event==='assigned_depository');
-
-    if (should) {
-      this.currentTutStep++;
-      this.factory.tutorialStep = this.currentTutStep;
-      this.updateTutorialStrip();
-    }
-  }
-
+  // Legacy stubs — no longer needed but kept so nothing crashes if called
+  advanceTutorial(event) {}
   tutorialWorkCompleted(station, workerId) {
-    const step = this.currentTutStep;
-    const w    = this.factory.workers[workerId];
-
-    const isAssembly = () => {
-      if (!station||station==='store_scrap'||station==='store_metal'||station==='depository') return false;
-      const m = this.factory.getMachineAt(...station.split(',').map(Number));
-      return m && this.factory.isAssemblyType(m.type);
-    };
-
-    // Work-complete triggers:
-    //   step 2 → store_scrap collection complete
-    //   step 4 → assembly deposit complete
-    //   step 6 → assembly assemble complete
-    //   step 8 → depository delivery complete
-    const should =
-      (step===2 && station==='store_scrap')                              ||
-      (step===4 && isAssembly() && w.stationAction==='deposit')          ||
-      (step===6 && isAssembly() && w.stationAction==='assemble')         ||
-      (step===8 && station==='depository');
-
-    if (should) {
-      this.currentTutStep++;
-      this.factory.tutorialStep = this.currentTutStep;
-      this.updateTutorialStrip();
-    }
+    // Only care about delivery completion for tutorial
+    if (station === 'depository') this.checkTutorialDeliveryComplete();
   }
+  getTutorialMessage(step) { return ''; }
+  updateTutorialHighlight(step) {}
+  updateTutorialStrip() {}
 
   completeTutorial() {
     this.factory.tutorialComplete = true;
@@ -865,6 +889,11 @@ class FactoryScene extends Phaser.Scene {
   update(time, delta) {
     const completedWorkers = this.factory.update(delta);
     const barW = this.scale.width - 48;
+
+    // Drive tutorial from live factory state — can never desync
+    if (!this.factory.tutorialComplete) {
+      this.updateTutorialFromState();
+    }
 
     this.factory.getUnlockedWorkers().forEach(w => {
       const sprite = this.workerSprites[w.id];

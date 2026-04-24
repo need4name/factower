@@ -126,6 +126,17 @@ class Factory {
     if (f.grid) this.grid = f.grid;
     if (typeof f.tutorialStep    === 'number')  this.tutorialStep     = f.tutorialStep;
     if (typeof f.tutorialComplete === 'boolean') this.tutorialComplete = f.tutorialComplete;
+
+    // ── Version migration ─────────────────────────────────────────────────────
+    // factoryVersion 1 = old tutorial (smelter-based, 7 steps, now broken)
+    // factoryVersion 2 = new tutorial (assembly-only Gunner, 5 steps, state machine)
+    // If an old save has tutorialComplete=true but factoryVersion < 2,
+    // reset the tutorial so players get the new (correct) flow.
+    const savedVersion = f.factoryVersion || 1;
+    if (savedVersion < 2 && this.tutorialComplete) {
+      this.tutorialComplete = false;
+      this.tutorialStep     = 0;
+    }
   }
 
   save() {
@@ -142,6 +153,7 @@ class Factory {
 
     saveData.factory = {
       grid:             this.grid,
+      factoryVersion:   2,
       tutorialStep:     this.tutorialStep,
       tutorialComplete: this.tutorialComplete
     };

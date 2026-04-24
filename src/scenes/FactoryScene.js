@@ -217,7 +217,7 @@ class FactoryScene extends Phaser.Scene {
     scrapBg.on('pointerdown', () => this.stationTapped('store_scrap'));
     scrapBg.on('pointerover', () => scrapBg.setFillStyle(0x1e2d3a));
     scrapBg.on('pointerout',  () => scrapBg.setFillStyle(0x161b22));
-    this.progressBars['store_scrap'] = this.add.rectangle(this.SCRAP_X-sw/2, sy+28, 0, 4, 0x3a8fc4).setOrigin(0,0.5);
+    this.progressBars['store_scrap'] = this.add.rectangle(this.SCRAP_X-sw/2, sy+28, 1, 4, 0x3a8fc4).setOrigin(0,0.5).setAlpha(0);
 
     // ── Salvaged Metal store ─────────────────────────────────────────────────
     const metalBg = this.add.rectangle(this.METAL_X, sy, sw, 52, 0x161b22).setInteractive();
@@ -229,7 +229,7 @@ class FactoryScene extends Phaser.Scene {
     metalBg.on('pointerdown', () => this.stationTapped('store_metal'));
     metalBg.on('pointerover', () => metalBg.setFillStyle(0x1e2d3a));
     metalBg.on('pointerout',  () => metalBg.setFillStyle(0x161b22));
-    this.progressBars['store_metal'] = this.add.rectangle(this.METAL_X-sw/2, sy+28, 0, 4, 0x5eba7d).setOrigin(0,0.5);
+    this.progressBars['store_metal'] = this.add.rectangle(this.METAL_X-sw/2, sy+28, 1, 4, 0x5eba7d).setOrigin(0,0.5).setAlpha(0);
 
     // ── Depository ───────────────────────────────────────────────────────────
     const depotBg = this.add.rectangle(width/2, this.DEPOT_Y, width-48, 40, 0x161b22).setInteractive();
@@ -238,7 +238,7 @@ class FactoryScene extends Phaser.Scene {
     depotBg.on('pointerdown', () => this.stationTapped('depository'));
     depotBg.on('pointerover', () => depotBg.setFillStyle(0x2a1a1a));
     depotBg.on('pointerout',  () => depotBg.setFillStyle(0x161b22));
-    this.progressBars['depository'] = this.add.rectangle(24, this.DEPOT_Y+22, 0, 4, 0xc43a3a).setOrigin(0,0.5);
+    this.progressBars['depository'] = this.add.rectangle(24, this.DEPOT_Y+22, 1, 4, 0xc43a3a).setOrigin(0,0.5).setAlpha(0);
 
     this.updateMaterialDisplay();
   }
@@ -905,7 +905,11 @@ class FactoryScene extends Phaser.Scene {
       const bar = this.progressBars[stationKey];
       if (!bar) return;
       const workingWorker = this.factory.workers.find(w => w.unlocked && w.station===stationKey && w.state==='working');
-      bar.setSize(workingWorker ? maxW * workingWorker.progress : 0, barH);
+      if (workingWorker && workingWorker.progress > 0) {
+        bar.setSize(Math.max(1, maxW * workingWorker.progress), barH).setAlpha(1);
+      } else {
+        bar.setAlpha(0);
+      }
     };
 
     updateBar('store_scrap', this.STORE_W, 4);

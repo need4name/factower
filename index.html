@@ -6,24 +6,8 @@
 <title>Factower</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-html, body {
-  background: #0a0c0f;
-  overflow: hidden;
-  width: 100%;
-  height: 100%;
-  position: fixed;
-  top: 0;
-  left: 0;
-}
-canvas {
-  display: block !important;
-  position: fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  margin: 0 !important;
-  width: 100vw !important;
-  height: 100vh !important;
-}
+html, body { background: #0a0c0f; overflow: hidden; width: 100%; height: 100%; }
+canvas { display: block; }
 </style>
 </head>
 <body>
@@ -47,34 +31,20 @@ canvas {
 <script src="src/scenes/RicochetScene.js"></script>
 <script src="src/scenes/DoubleDownScene.js"></script>
 <script>
-// ── Approach: don't fight Phaser's scaling. Use the actual visible viewport
-//    dimensions as the game's internal coordinate system. Then CSS forces the
-//    canvas to fill the screen 1:1 with no margins.
-//
-// Game width stays at 390 (the design width). Height is computed from the
-// real viewport aspect ratio so the canvas exactly matches what's visible.
-
-const designWidth = 390;
-const visualW = window.innerWidth;
-const visualH = window.innerHeight;
-// Scale height proportionally — if viewport is 390x645, game becomes 390x645.
-// If viewport is 414x800, game becomes 390x ~754.
-const gameHeight = Math.round(designWidth * (visualH / visualW));
-
 const config = {
   type: Phaser.AUTO,
-  width: designWidth,
-  height: gameHeight,
+  width: 390,
+  height: 844,
   backgroundColor: '#0a0c0f',
   scene: [BootScene, SaveScene, BaseScene, FactoryScene, ArmouryScene, DockScene,
           CombatScene, SkillTreeScene, MarketplaceScene, ChromeScene, RicochetScene, DoubleDownScene],
   scale: {
-    mode: Phaser.Scale.NONE,
-    autoCenter: Phaser.Scale.NO_CENTER
+    mode: Phaser.Scale.FIT,
+    autoCenter: Phaser.Scale.CENTER_BOTH
   },
   input: { touch: { capture: true } }
 };
-const game = new Phaser.Game(config);
+new Phaser.Game(config);
 </script>
 </body>
 </html>

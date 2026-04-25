@@ -6,11 +6,33 @@
 <title>Factower</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-html, body { background: #0a0c0f; overflow: hidden; width: 100%; height: 100%; }
-canvas { display: block; }
+html, body {
+  background: #ff00ff;  /* MAGENTA — anywhere you see this, body is showing through */
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+}
+canvas {
+  display: block;
+  background: #00ff00;  /* GREEN — canvas border so we can see its actual size */
+}
+#diag {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 9999;
+  background: #000;
+  color: #0f0;
+  font-family: monospace;
+  font-size: 11px;
+  padding: 4px 8px;
+  border: 1px solid #0f0;
+  pointer-events: none;
+}
 </style>
 </head>
 <body>
+<div id="diag">loading...</div>
 
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
 <script src="src/systems/Factory.js"></script>
@@ -42,11 +64,26 @@ const config = {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH
   },
-  input: {
-    touch: { capture: true }
-  }
+  input: { touch: { capture: true } }
 };
 const game = new Phaser.Game(config);
+
+function diagUpdate() {
+  const canvas = document.querySelector('canvas');
+  const diag = document.getElementById('diag');
+  if (canvas && diag) {
+    const rect = canvas.getBoundingClientRect();
+    const cs = window.getComputedStyle(canvas);
+    diag.innerHTML =
+      'viewport: ' + window.innerWidth + 'x' + window.innerHeight + '<br>' +
+      'canvas rect: ' + Math.round(rect.left) + ',' + Math.round(rect.top) + ' ' +
+        Math.round(rect.width) + 'x' + Math.round(rect.height) + '<br>' +
+      'canvas margin: ' + cs.marginTop + ' / display: ' + cs.display + '<br>' +
+      'canvas position: ' + cs.position;
+  }
+}
+setInterval(diagUpdate, 500);
+window.addEventListener('resize', diagUpdate);
 </script>
 </body>
 </html>

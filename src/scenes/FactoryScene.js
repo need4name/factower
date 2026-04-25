@@ -16,17 +16,17 @@ class FactoryScene extends Phaser.Scene {
     this.factory = new Factory();
     this.factory.loadFromSave(this.saveData);
 
-    // Layout
+    // Layout — Y positions compressed to fit 645+ tall viewports
     this.TILE    = 52;
     this.COLS    = 5;
     this.ROWS    = 5;
     this.GX      = (width - this.TILE * this.COLS) / 2;
-    this.HEADER_Y = 184;
-    this.STORE_Y  = 268;
+    this.HEADER_Y = 84;
+    this.STORE_Y  = 168;
     this.STORE_W  = (width - 56) / 2;
     this.SCRAP_X  = 24 + this.STORE_W / 2;
     this.METAL_X  = 24 + this.STORE_W + 8 + this.STORE_W / 2;
-    this.GY       = 312;
+    this.GY       = 212;
     this.DEPOT_Y  = this.GY + this.ROWS * this.TILE + 28;
     this.PANEL_Y  = this.DEPOT_Y + 52;
     this.WORKER_SPEED = 80;

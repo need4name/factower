@@ -28,7 +28,9 @@ class FactoryScene extends Phaser.Scene {
     this.METAL_X  = 24 + this.STORE_W + 8 + this.STORE_W / 2;
     this.GY       = 312;
     this.DEPOT_Y  = this.GY + this.ROWS * this.TILE + 28;
-    this.PANEL_Y  = this.DEPOT_Y + 52;
+    // Anchor bottom panel to actual viewport bottom — scale.height may be
+    // smaller than the configured 844 on real devices.
+    this.PANEL_Y  = Math.min(this.DEPOT_Y + 52, height - 116);
     this.WORKER_SPEED = 80;
 
     this.placingMachine      = null;
@@ -737,7 +739,7 @@ class FactoryScene extends Phaser.Scene {
 
   startTutorial() {
     const { width } = this.scale;
-    this.currentTutStep = 'no_assembly';  // human-readable state label
+    this.currentTutStep = null;  // null forces first updateTutorialFromState to set text
 
     this.tutorialStrip = this.add.text(width/2, this.HEADER_Y+52, '', {
       fontFamily:'monospace', fontSize:'12px', color:'#e8a020',

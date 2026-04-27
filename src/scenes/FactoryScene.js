@@ -594,8 +594,9 @@ class FactoryScene extends Phaser.Scene {
 
   drawStatusBar() {
     const width = this.scale.width;
-    const height = this.H;
-    this.statusText = this.add.text(width/2, height-16, '', { fontFamily:'monospace', fontSize:'11px', color:'#8899aa' }).setOrigin(0.5).setDepth(5);
+    // Sit just above the bottom-panel divider so it doesn't collide with
+    // the SMELTER / ASSEMBLY button labels.
+    this.statusText = this.add.text(width/2, this.PANEL_Y - 10, '', { fontFamily:'monospace', fontSize:'11px', color:'#8899aa' }).setOrigin(0.5).setDepth(5);
     this.updateStatus();
   }
 
@@ -680,7 +681,7 @@ class FactoryScene extends Phaser.Scene {
   showMessage(text, colour) {
     const { width } = this.scale;
     this.msgText?.destroy();
-    this.msgText = this.add.text(width/2, this.HEADER_Y+52, text, { fontFamily:'monospace', fontSize:'12px', color:colour||'#e8a020', backgroundColor:'#161b22', padding:{ x:10, y:5 } }).setOrigin(0.5).setDepth(20);
+    this.msgText = this.add.text(width/2, this.STORE_Y - 30, text, { fontFamily:'monospace', fontSize:'12px', color:colour||'#e8a020', backgroundColor:'#161b22', padding:{ x:10, y:5 } }).setOrigin(0.5, 1).setDepth(20);
     this.time.delayedCall(2500, () => { if (this.msgText?.active) this.msgText.destroy(); });
   }
 
@@ -757,11 +758,14 @@ class FactoryScene extends Phaser.Scene {
     // Created hidden — Phaser renders the padding background even when text is
     // empty, which produced a small "black box" between the stores. We make it
     // visible only after updateTutorialFromState writes real content.
-    this.tutorialStrip = this.add.text(width/2, this.HEADER_Y+52, '', {
-      fontFamily:'monospace', fontSize:'12px', color:'#e8a020',
-      backgroundColor:'#1a1408', padding:{ x:10, y:6 },
+    // Sit between the header divider (y≈82) and the top of the stores (y≈118).
+    // Origin (0.5, 1) anchors the bottom of the strip so multi-line text grows
+    // upward and never crosses into the store labels.
+    this.tutorialStrip = this.add.text(width/2, this.STORE_Y - 30, '', {
+      fontFamily:'monospace', fontSize:'11px', color:'#e8a020',
+      backgroundColor:'#1a1408', padding:{ x:8, y:4 },
       align:'center', wordWrap:{ width:width-40 }
-    }).setOrigin(0.5).setDepth(25).setVisible(false);
+    }).setOrigin(0.5, 1).setDepth(25).setVisible(false);
 
     this.updateTutorialFromState();
   }

@@ -7,7 +7,12 @@ class FactoryScene extends Phaser.Scene {
   constructor() { super({ key: 'FactoryScene' }); }
 
   create() {
-    const { width, height } = this.scale;
+    const width = this.scale.width;
+    // iOS Safari can report a configured canvas height (e.g. 844) that's larger
+    // than the actual visible viewport. Using window.innerHeight here anchors
+    // the layout to the visible area so the bottom panel never clips off-screen.
+    this.H = Math.min(this.scale.height, window.innerHeight || this.scale.height);
+    const height = this.H;
 
     const slotIndex = localStorage.getItem('factower_active_slot');
     const saveKey   = 'factower_save_' + slotIndex;
@@ -16,21 +21,22 @@ class FactoryScene extends Phaser.Scene {
     this.factory = new Factory();
     this.factory.loadFromSave(this.saveData);
 
-    // Layout
+    // Layout — pulled tight to the top of the viewport so nothing wastes space.
+    // Header sits near the top, stores/grid/depot stack underneath, bottom panel
+    // anchors to the visible viewport bottom (this.H).
     this.TILE    = 52;
     this.COLS    = 5;
     this.ROWS    = 5;
     this.GX      = (width - this.TILE * this.COLS) / 2;
-    this.HEADER_Y = 184;
-    this.STORE_Y  = 268;
+    this.HEADER_Y = 60;                    // header centre (top of header at 16)
+    this.STORE_Y  = 144;                   // stores 52 tall, span 118-170
     this.STORE_W  = (width - 56) / 2;
     this.SCRAP_X  = 24 + this.STORE_W / 2;
     this.METAL_X  = 24 + this.STORE_W + 8 + this.STORE_W / 2;
-    this.GY       = 312;
-    this.DEPOT_Y  = this.GY + this.ROWS * this.TILE + 28;
-    // Anchor bottom panel to actual viewport bottom — scale.height may be
-    // smaller than the configured 844 on real devices.
-    this.PANEL_Y  = Math.min(this.DEPOT_Y + 52, height - 116);
+    this.GY       = 188;                   // grid top, 18px below stores
+    this.DEPOT_Y  = this.GY + this.ROWS * this.TILE + 28;  // = 476
+    // Bottom panel pinned to visible viewport bottom — never below depot.
+    this.PANEL_Y  = Math.max(this.DEPOT_Y + 36, height - 100);
     this.WORKER_SPEED = 80;
 
     this.placingMachine      = null;
@@ -89,7 +95,8 @@ class FactoryScene extends Phaser.Scene {
   }
 
   showTowerUnlockBanner(towerType) {
-    const { width, height } = this.scale;
+    const width = this.scale.width;
+    const height = this.H;
     const all = [];
 
     const config = {
@@ -159,7 +166,8 @@ class FactoryScene extends Phaser.Scene {
   }
 
   showRecruitmentBanner() {
-    const { width, height } = this.scale;
+    const width = this.scale.width;
+    const height = this.H;
     const all = [];
 
     const overlay   = this.add.rectangle(width/2, height/2, width, height, 0x000000, 0.95).setDepth(50);
@@ -312,7 +320,8 @@ class FactoryScene extends Phaser.Scene {
     if (this.workerMenuActive) return;
     this.workerMenuActive = true;
 
-    const { width, height } = this.scale;
+    const width = this.scale.width;
+    const height = this.H;
     const all = [];
 
     const overlay  = this.add.rectangle(width/2, height/2, width, height, 0x000000, 0.88).setDepth(40);
@@ -391,11 +400,12 @@ class FactoryScene extends Phaser.Scene {
 
     this.workerMenuActive = true;
     const pos  = this.getStationPos(stationKey);
-    const { width } = this.scale;
+    const width = this.scale.width;
+    const height = this.H;
     const menuY = pos.y > 500 ? pos.y - 80 : pos.y + 80;
     const menuElements = [];
 
-    const dismissZone = this.add.rectangle(width/2, this.scale.height/2, width, this.scale.height, 0x000000, 0.01).setInteractive().setDepth(29);
+    const dismissZone = this.add.rectangle(width/2, height/2, width, height, 0x000000, 0.01).setInteractive().setDepth(29);
     menuElements.push(dismissZone);
 
     const menuBg     = this.add.rectangle(width/2, menuY, 260, 80, 0x161b22).setDepth(30);
@@ -546,7 +556,8 @@ class FactoryScene extends Phaser.Scene {
   // ── Bottom panel ────────────────────────────────────────────────────────────
 
   drawBottomPanel() {
-    const { width, height } = this.scale;
+    const width = this.scale.width;
+    const height = this.H;
 
     this.add.rectangle(width/2, (this.PANEL_Y+height)/2, width, height-this.PANEL_Y, 0x161b22);
     this.add.rectangle(width/2, this.PANEL_Y, width, 1, 0x334455);
@@ -582,7 +593,8 @@ class FactoryScene extends Phaser.Scene {
   // ── Status bar ─────────────────────────────────────────────────────────────
 
   drawStatusBar() {
-    const { width, height } = this.scale;
+    const width = this.scale.width;
+    const height = this.H;
     this.statusText = this.add.text(width/2, height-16, '', { fontFamily:'monospace', fontSize:'11px', color:'#8899aa' }).setOrigin(0.5).setDepth(5);
     this.updateStatus();
   }
@@ -637,7 +649,8 @@ class FactoryScene extends Phaser.Scene {
     if (!machine) return;
     const mt = MACHINE_TYPES[machine.type];
     if (!mt) return;
-    const { width, height } = this.scale;
+    const width = this.scale.width;
+    const height = this.H;
 
     const overlay    = this.add.rectangle(width/2, height/2, width, height, 0x000000, 0.75).setDepth(40);
     const box        = this.add.rectangle(width/2, height/2, width-60, 170, 0x161b22).setDepth(41);
@@ -741,11 +754,14 @@ class FactoryScene extends Phaser.Scene {
     const { width } = this.scale;
     this.currentTutStep = null;  // null forces first updateTutorialFromState to set text
 
+    // Created hidden — Phaser renders the padding background even when text is
+    // empty, which produced a small "black box" between the stores. We make it
+    // visible only after updateTutorialFromState writes real content.
     this.tutorialStrip = this.add.text(width/2, this.HEADER_Y+52, '', {
       fontFamily:'monospace', fontSize:'12px', color:'#e8a020',
       backgroundColor:'#1a1408', padding:{ x:10, y:6 },
       align:'center', wordWrap:{ width:width-40 }
-    }).setOrigin(0.5).setDepth(25);
+    }).setOrigin(0.5).setDepth(25).setVisible(false);
 
     this.updateTutorialFromState();
   }
@@ -816,7 +832,7 @@ class FactoryScene extends Phaser.Scene {
     // Only redraw when state changes
     if (state !== this.currentTutStep) {
       this.currentTutStep = state;
-      this.tutorialStrip.setText(msg);
+      this.tutorialStrip.setText(msg).setVisible(true);
       this._updateTutHighlight(highlightTarget, assemblyKey);
     }
   }
@@ -857,7 +873,6 @@ class FactoryScene extends Phaser.Scene {
     if (station === 'depository') this.checkTutorialDeliveryComplete();
   }
   getTutorialMessage(step) { return ''; }
-  updateTutorialHighlight(step) {}
   updateTutorialStrip() {}
 
   completeTutorial() {
@@ -868,7 +883,8 @@ class FactoryScene extends Phaser.Scene {
     this.tutorialStrip?.destroy();
     this.tutorialStrip = null;
 
-    const { width, height } = this.scale;
+    const width = this.scale.width;
+    const height = this.H;
     const all = [];
 
     const banner      = this.add.rectangle(width/2, height/2, width-48, 180, 0x161b22).setDepth(35);

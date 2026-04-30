@@ -773,6 +773,7 @@ class FactoryScene extends Phaser.Scene {
   // Called every update() frame while tutorial active
   updateTutorialFromState() {
     if (this.factory.tutorialComplete) return;
+    if (this._tutorialFinishing) return;  // delivery just happened — don't re-evaluate
     if (!this.tutorialStrip) return;
 
     const w    = this.factory.workers[0];
@@ -865,7 +866,9 @@ class FactoryScene extends Phaser.Scene {
   // Called when a delivered tower reaches the depository successfully
   checkTutorialDeliveryComplete() {
     if (!this.factory.tutorialComplete && this.currentTutStep === 'deliver') {
+      this._tutorialFinishing = true;          // freeze tutorial state
       this.clearTutorialHighlight();
+      if (this.tutorialStrip) this.tutorialStrip.setVisible(false);
       this.time.delayedCall(400, () => this.completeTutorial());
     }
   }

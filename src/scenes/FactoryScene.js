@@ -564,23 +564,24 @@ class FactoryScene extends Phaser.Scene {
 
     const btnY = this.PANEL_Y + 56;
 
-    this.smelterBtn = this.add.rectangle(78, btnY, 128, 84, 0x1e2530).setInteractive();
-    this.add.rectangle(78, btnY, 128, 84).setStrokeStyle(1, 0xe8a020);
-    this.add.circle(78, btnY-28, 9, 0xe8a020);
-    this.add.text(78, btnY+4, 'SMELTER', { fontFamily:'monospace', fontSize:'13px', color:'#eef2f8', fontStyle:'bold' }).setOrigin(0.5);
-    this.add.text(78, btnY+24, 'SCRAP\u2192REFINED', { fontFamily:'monospace', fontSize:'10px', color:'#8899aa' }).setOrigin(0.5);
-    this.smelterBtn.on('pointerdown', () => this.selectPlacing('smelter'));
-    this.smelterBtn.on('pointerover', () => this.smelterBtn.setFillStyle(0x252c38));
-    this.smelterBtn.on('pointerout', () => { this.smelterBtn.setFillStyle(this.placingMachine==='smelter'?0x2a3a4a:0x1e2530); });
-
-    this.assemblyBtn = this.add.rectangle(228, btnY, 128, 84, 0x1e2530).setInteractive();
-    this.add.rectangle(228, btnY, 128, 84).setStrokeStyle(1, 0x5eba7d);
-    this.add.circle(228, btnY-28, 9, 0x5eba7d);
-    this.add.text(228, btnY+4, 'ASSEMBLY', { fontFamily:'monospace', fontSize:'13px', color:'#eef2f8', fontStyle:'bold' }).setOrigin(0.5);
-    this.add.text(228, btnY+24, 'SELECT TYPE', { fontFamily:'monospace', fontSize:'10px', color:'#8899aa' }).setOrigin(0.5);
+    // Assembly is the first station unlocked, so it sits leftmost.
+    this.assemblyBtn = this.add.rectangle(78, btnY, 128, 84, 0x1e2530).setInteractive();
+    this.add.rectangle(78, btnY, 128, 84).setStrokeStyle(1, 0x5eba7d);
+    this.add.circle(78, btnY-28, 9, 0x5eba7d);
+    this.add.text(78, btnY+4, 'ASSEMBLY', { fontFamily:'monospace', fontSize:'13px', color:'#eef2f8', fontStyle:'bold' }).setOrigin(0.5);
+    this.add.text(78, btnY+24, 'SELECT TYPE', { fontFamily:'monospace', fontSize:'10px', color:'#8899aa' }).setOrigin(0.5);
     this.assemblyBtn.on('pointerdown', () => this.selectPlacing('assembly'));
     this.assemblyBtn.on('pointerover', () => this.assemblyBtn.setFillStyle(0x252c38));
     this.assemblyBtn.on('pointerout', () => { this.assemblyBtn.setFillStyle(this.placingMachine==='assembly'?0x2a3a4a:0x1e2530); });
+
+    this.smelterBtn = this.add.rectangle(228, btnY, 128, 84, 0x1e2530).setInteractive();
+    this.add.rectangle(228, btnY, 128, 84).setStrokeStyle(1, 0xe8a020);
+    this.add.circle(228, btnY-28, 9, 0xe8a020);
+    this.add.text(228, btnY+4, 'SMELTER', { fontFamily:'monospace', fontSize:'13px', color:'#eef2f8', fontStyle:'bold' }).setOrigin(0.5);
+    this.add.text(228, btnY+24, 'SCRAP\u2192REFINED', { fontFamily:'monospace', fontSize:'10px', color:'#8899aa' }).setOrigin(0.5);
+    this.smelterBtn.on('pointerdown', () => this.selectPlacing('smelter'));
+    this.smelterBtn.on('pointerover', () => this.smelterBtn.setFillStyle(0x252c38));
+    this.smelterBtn.on('pointerout', () => { this.smelterBtn.setFillStyle(this.placingMachine==='smelter'?0x2a3a4a:0x1e2530); });
 
     const delBtn = this.add.rectangle(346, btnY, 80, 84, 0x1e2530).setInteractive();
     this.add.rectangle(346, btnY, 80, 84).setStrokeStyle(1, 0x553333);
@@ -712,7 +713,7 @@ class FactoryScene extends Phaser.Scene {
     const btnY = this.PANEL_Y + 56;
     switch (step) {
       // 0: place assembly → highlight ASSEMBLY button
-      case 0: this.showTutorialHighlight(228, btnY, 128, 84); break;
+      case 0: this.showTutorialHighlight(78, btnY, 128, 84); break;
       // 1: collect scrap → highlight scrap store
       case 1: this.showTutorialHighlight(this.SCRAP_X, this.STORE_Y, this.STORE_W, 52); break;
       // 3: deposit at assembly → highlight the placed assembly bench
@@ -847,7 +848,7 @@ class FactoryScene extends Phaser.Scene {
     const { width } = this.scale;
     const btnY = this.PANEL_Y + 56;
 
-    if (target === 'assembly_btn')      this.showTutorialHighlight(228, btnY, 128, 84);
+    if (target === 'assembly_btn')      this.showTutorialHighlight(78, btnY, 128, 84);
     else if (target === 'scrap_store')  this.showTutorialHighlight(this.SCRAP_X, this.STORE_Y, this.STORE_W, 52);
     else if (target === 'depository')   this.showTutorialHighlight(width/2, this.DEPOT_Y, width-48, 40);
     else if (target && target.includes(',')) {
@@ -915,6 +916,25 @@ class FactoryScene extends Phaser.Scene {
     const completedWorkers = this.factory.update(delta);
     const barW = this.scale.width - 48;
 
+    // Process completed workers FIRST. This must happen before
+    // updateTutorialFromState() so that `tutorialWorkCompleted` →
+    // `checkTutorialDeliveryComplete` can set `_tutorialFinishing` BEFORE
+    // the state recomputes. Otherwise the state update sees "scrap > 0,
+    // empty hands" right after delivery and incorrectly flips the tutorial
+    // back to step 2 (collect_scrap), causing the loop.
+    completedWorkers.forEach(workerId => {
+      this.updateStatus();
+      const w = this.factory.workers[workerId];
+      if (w.station === 'depository') {
+        const towerType = w._producedTowerType || 'gunner';
+        w._producedTowerType = null;
+        this.addTowerToStockpile(towerType);
+      }
+      if (!this.factory.tutorialComplete) {
+        this.tutorialWorkCompleted(w.station, workerId);
+      }
+    });
+
     // Drive tutorial from live factory state — can never desync
     if (!this.factory.tutorialComplete) {
       this.updateTutorialFromState();
@@ -952,19 +972,6 @@ class FactoryScene extends Phaser.Scene {
         }
       }
     }
-
-    completedWorkers.forEach(workerId => {
-      this.updateStatus();
-      const w = this.factory.workers[workerId];
-      if (w.station === 'depository') {
-        const towerType = w._producedTowerType || 'gunner';
-        w._producedTowerType = null;
-        this.addTowerToStockpile(towerType);
-      }
-      if (!this.factory.tutorialComplete) {
-        this.tutorialWorkCompleted(w.station, workerId);
-      }
-    });
   }
 
   addTowerToStockpile(type) {

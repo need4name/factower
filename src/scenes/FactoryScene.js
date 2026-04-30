@@ -816,17 +816,72 @@ class FactoryScene extends Phaser.Scene {
     confirmBtn.on('pointerdown', () => {
       dismiss();
       const key = row + ',' + col;
+
+      // Destroy machine graphics
       if (this.machineSprites[key]) {
         Object.values(this.machineSprites[key]).forEach(s => s?.destroy?.());
         delete this.machineSprites[key];
         delete this.progressBars[key];
         delete this.machineStatusTexts[key];
       }
+
+      // ── Worker cleanup ──────────────────────────────────────────────────
+      // A worker can be mid-task at the bench we're about to delete:
+      //   • assigned to it (w.station === key)
+      //   • carrying raw material they were going to deposit there
+      //   • carrying a tower component / refined plastic that came FROM it
+      // If we don't reset them, the tutorial state machine sees the in-flight
+      // work and skips ahead to step 5 (deliver) when a new bench is placed —
+      // even though the player never re-did the deposit/assemble steps. Raw
+      // materials get refunded; finished work products are discarded since the
+      // machine that made them is gone.
+      const refundFromInventory = { plasticScrap: 0, salvagedMetal: 0 };
+      const isAssembly = this.factory.isAssemblyType && this.factory.isAssemblyType(machine.type);
+      const isSmelter  = machine.type === 'smelter';
+
+      if (Array.isArray(this.factory.workers)) {
+        this.factory.workers.forEach(w => {
+          if (!w || !w.unlocked) return;
+
+          if (w.station === key) {
+            w.station  = null;
+            w.state    = 'idle';
+            w.progress = 0;
+          }
+
+          if (Array.isArray(w.inventory) && w.inventory.length > 0) {
+            const newInv = [];
+            w.inventory.forEach(item => {
+              if (item === 'plasticScrap' || item === 'salvagedMetal') {
+                refundFromInventory[item] = (refundFromInventory[item] || 0) + 1;
+                return; // dropped → returned to stock
+              }
+              if (item === 'towerComponent' && isAssembly) return; // discard
+              if (item === 'refinedPlastic' && isSmelter)  return; // discard
+              newInv.push(item);
+            });
+            w.inventory = newInv;
+          }
+        });
+      }
+
       this.factory.deleteMachine(row, col);
-      // Refund the build cost so the player isn't punished for misclicks
-      if (refund) this.refundBuildCost(refund);
+
+      // Persist worker state changes BEFORE refundBuildCost calls loadFromSave
+      // (otherwise loadFromSave would restore the pre-cleanup worker state).
       this.factory.save();
-      if (refundStr) this.showMessage('Refunded ' + refundStr, '#5eba7d');
+
+      // Combined refund: build cost + any raw materials workers had to drop
+      const buildRefund = this.MACHINE_BUILD_COSTS[machine.type] || {};
+      const totalRefund = {
+        plasticScrap:  (buildRefund.plasticScrap  || 0) + refundFromInventory.plasticScrap,
+        salvagedMetal: (buildRefund.salvagedMetal || 0) + refundFromInventory.salvagedMetal
+      };
+      const hasRefund = totalRefund.plasticScrap > 0 || totalRefund.salvagedMetal > 0;
+      if (hasRefund) {
+        this.refundBuildCost(totalRefund);
+        this.showMessage('Refunded ' + this.formatCost(totalRefund), '#5eba7d');
+      }
     });
     confirmBtn.on('pointerover', () => confirmBtn.setFillStyle(0x4a1818));
     confirmBtn.on('pointerout',  () => confirmBtn.setFillStyle(0x3a1010));

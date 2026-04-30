@@ -19,13 +19,14 @@ class FactoryScene extends Phaser.Scene {
     this.saveData   = JSON.parse(localStorage.getItem(saveKey));
 
     // ── Starter material grant ──────────────────────────────────────────
-    // First time the player ever opens the factory, give them enough to
-    // complete the basic tutorial: 1 Gunner Assembly (1S+1M) + 1 Gunner
-    // tower (1S) and a small reserve metal. Idempotent via flag.
+    // Tightly tuned to the tutorial path:
+    //   2 SCRAP + 1 METAL → build 1 Gunner Assembly (1S+1M) → 1 SCRAP, 0 METAL
+    //   → produce 1 Gunner tower (1S consumed from store) → 0 SCRAP, 0 METAL.
+    // After tutorial the player has zero resources and must do combat to earn more.
     if (!this.saveData.materialsGranted) {
       if (!this.saveData.materials) this.saveData.materials = { plasticScrap: 0, refinedPlastic: 0, salvagedMetal: 0 };
       this.saveData.materials.plasticScrap  = (this.saveData.materials.plasticScrap  || 0) + 2;
-      this.saveData.materials.salvagedMetal = (this.saveData.materials.salvagedMetal || 0) + 2;
+      this.saveData.materials.salvagedMetal = (this.saveData.materials.salvagedMetal || 0) + 1;
       this.saveData.materialsGranted = true;
       localStorage.setItem(saveKey, JSON.stringify(this.saveData));
     }
@@ -330,6 +331,23 @@ class FactoryScene extends Phaser.Scene {
     this.updateMaterialDisplay();
   }
 
+  // Returns build cost to the player's stored materials. Used when deleting
+  // a placed machine — the player gets a full refund of what they spent.
+  refundBuildCost(cost) {
+    if (!cost) return;
+    const slotIndex = localStorage.getItem('factower_active_slot');
+    const saveKey   = 'factower_save_' + slotIndex;
+    const save      = JSON.parse(localStorage.getItem(saveKey));
+    if (!save.materials) save.materials = { plasticScrap: 0, refinedPlastic: 0, salvagedMetal: 0 };
+    Object.entries(cost).forEach(([k, v]) => {
+      save.materials[k] = (save.materials[k] || 0) + v;
+    });
+    localStorage.setItem(saveKey, JSON.stringify(save));
+    this.saveData = save;
+    this.factory.loadFromSave(save);
+    this.updateMaterialDisplay();
+  }
+
   formatCost(cost) {
     if (!cost) return '';
     const parts = [];
@@ -610,16 +628,18 @@ class FactoryScene extends Phaser.Scene {
     const y   = this.GY + row * this.TILE + this.TILE / 2;
     const key = row + ',' + col;
 
-    const bg    = this.add.rectangle(x, y, this.TILE-2, this.TILE-2, mt.colour, 0.15);
-    this.add.rectangle(x, y, this.TILE-2, this.TILE-2).setStrokeStyle(2, mt.colour);
-    const lbl   = this.add.text(x, y-6, mt.shortName || type.substring(0,6).toUpperCase(), { fontFamily:'monospace', fontSize:'10px', color:mt.colourHex, fontStyle:'bold' }).setOrigin(0.5);
-    const barBg = this.add.rectangle(x, y+this.TILE/2-5, this.TILE-4, 5, 0x2a3a4a);
-    const bar   = this.add.rectangle(x-(this.TILE-4)/2, y+this.TILE/2-5, 0, 5, mt.colour).setOrigin(0,0.5);
+    const bg     = this.add.rectangle(x, y, this.TILE-2, this.TILE-2, mt.colour, 0.15);
+    // Capture the stroke rectangle so it gets cleaned up on delete. Previously
+    // it was orphaned, leaving a coloured outline ghost where the machine used to be.
+    const stroke = this.add.rectangle(x, y, this.TILE-2, this.TILE-2).setStrokeStyle(2, mt.colour);
+    const lbl    = this.add.text(x, y-6, mt.shortName || type.substring(0,6).toUpperCase(), { fontFamily:'monospace', fontSize:'10px', color:mt.colourHex, fontStyle:'bold' }).setOrigin(0.5);
+    const barBg  = this.add.rectangle(x, y+this.TILE/2-5, this.TILE-4, 5, 0x2a3a4a);
+    const bar    = this.add.rectangle(x-(this.TILE-4)/2, y+this.TILE/2-5, 0, 5, mt.colour).setOrigin(0,0.5);
     const statusTxt = this.add.text(x, y+8, '', { fontFamily:'monospace', fontSize:'8px', color:'#5eba7d' }).setOrigin(0.5);
 
     this.progressBars[key]       = bar;
     this.machineStatusTexts[key] = statusTxt;
-    this.machineSprites[key]     = { bg, lbl, barBg, bar, statusTxt };
+    this.machineSprites[key]     = { bg, stroke, lbl, barBg, bar, statusTxt };
 
     let timer = null, pressing = false;
     bg.setInteractive();
@@ -762,29 +782,57 @@ class FactoryScene extends Phaser.Scene {
     const width = this.scale.width;
     const height = this.H;
 
-    const overlay    = this.add.rectangle(width/2, height/2, width, height, 0x000000, 0.75).setDepth(40);
-    const box        = this.add.rectangle(width/2, height/2, width-60, 170, 0x161b22).setDepth(41);
-    this.add.rectangle(width/2, height/2, width-60, 170).setStrokeStyle(1, 0xc43a3a).setDepth(41);
-    const title      = this.add.text(width/2, height/2-48, 'DELETE ' + mt.name + '?', { fontFamily:'monospace', fontSize:'16px', color:'#eef2f8', fontStyle:'bold' }).setOrigin(0.5).setDepth(42);
-    const sub        = this.add.text(width/2, height/2-18, 'This cannot be undone.', { fontFamily:'monospace', fontSize:'13px', color:'#8899aa' }).setOrigin(0.5).setDepth(42);
-    const confirmBtn = this.add.rectangle(width/2-80, height/2+44, 130, 48, 0x3a1010).setInteractive().setDepth(42);
-    this.add.rectangle(width/2-80, height/2+44, 130, 48).setStrokeStyle(1, 0xc43a3a).setDepth(42);
-    this.add.text(width/2-80, height/2+44, 'DELETE', { fontFamily:'monospace', fontSize:'15px', color:'#c43a3a', fontStyle:'bold' }).setOrigin(0.5).setDepth(43);
-    const cancelBtn  = this.add.rectangle(width/2+80, height/2+44, 130, 48, 0x1e2530).setInteractive().setDepth(42);
-    this.add.rectangle(width/2+80, height/2+44, 130, 48).setStrokeStyle(1, 0x334455).setDepth(42);
-    this.add.text(width/2+80, height/2+44, 'CANCEL', { fontFamily:'monospace', fontSize:'15px', color:'#8899aa', fontStyle:'bold' }).setOrigin(0.5).setDepth(43);
+    // Dropping out of placement mode prevents the placement-preview tile
+    // highlight from sticking under the dialog.
+    if (this.placingMachine) {
+      this.placingMachine = null;
+      this.smelterBtn?.setFillStyle(0x1e2530);
+      this.assemblyBtn?.setFillStyle(0x1e2530);
+    }
 
-    const all     = [overlay, box, title, sub, confirmBtn, cancelBtn];
-    const dismiss = () => all.forEach(e => e?.destroy());
+    const refund     = this.MACHINE_BUILD_COSTS[machine.type];
+    const refundStr  = refund ? this.formatCost(refund) : '';
+
+    // Bumped from 0.75 → 0.92 so the grid behind doesn't ghost through.
+    const overlay     = this.add.rectangle(width/2, height/2, width, height, 0x000000, 0.92).setDepth(40);
+    const box         = this.add.rectangle(width/2, height/2, width-60, 200, 0x161b22).setDepth(41);
+    const boxBorder   = this.add.rectangle(width/2, height/2, width-60, 200).setStrokeStyle(1, 0xc43a3a).setDepth(41);
+    const title       = this.add.text(width/2, height/2-62, 'DELETE ' + mt.name + '?', { fontFamily:'monospace', fontSize:'16px', color:'#eef2f8', fontStyle:'bold' }).setOrigin(0.5).setDepth(42);
+    const sub         = this.add.text(width/2, height/2-32, 'This cannot be undone.', { fontFamily:'monospace', fontSize:'12px', color:'#8899aa' }).setOrigin(0.5).setDepth(42);
+    const refundTxt   = this.add.text(width/2, height/2-10, refundStr ? ('REFUND: ' + refundStr) : '', { fontFamily:'monospace', fontSize:'12px', color:'#5eba7d', fontStyle:'bold' }).setOrigin(0.5).setDepth(42);
+
+    const confirmBtn  = this.add.rectangle(width/2-80, height/2+44, 130, 48, 0x3a1010).setInteractive().setDepth(42);
+    const confirmBdr  = this.add.rectangle(width/2-80, height/2+44, 130, 48).setStrokeStyle(1, 0xc43a3a).setDepth(42);
+    const confirmLbl  = this.add.text(width/2-80, height/2+44, 'DELETE', { fontFamily:'monospace', fontSize:'15px', color:'#c43a3a', fontStyle:'bold' }).setOrigin(0.5).setDepth(43);
+    const cancelBtn   = this.add.rectangle(width/2+80, height/2+44, 130, 48, 0x1e2530).setInteractive().setDepth(42);
+    const cancelBdr   = this.add.rectangle(width/2+80, height/2+44, 130, 48).setStrokeStyle(1, 0x334455).setDepth(42);
+    const cancelLbl   = this.add.text(width/2+80, height/2+44, 'CANCEL', { fontFamily:'monospace', fontSize:'15px', color:'#8899aa', fontStyle:'bold' }).setOrigin(0.5).setDepth(43);
+
+    // Track every element so dismiss cleans them all up — previously stroke
+    // rectangles and labels were orphaned.
+    const all     = [overlay, box, boxBorder, title, sub, refundTxt, confirmBtn, confirmBdr, confirmLbl, cancelBtn, cancelBdr, cancelLbl];
+    const dismiss = () => all.forEach(e => e?.destroy?.());
 
     confirmBtn.on('pointerdown', () => {
       dismiss();
       const key = row + ',' + col;
-      if (this.machineSprites[key]) { Object.values(this.machineSprites[key]).forEach(s => s?.destroy?.()); delete this.machineSprites[key]; delete this.progressBars[key]; delete this.machineStatusTexts[key]; }
+      if (this.machineSprites[key]) {
+        Object.values(this.machineSprites[key]).forEach(s => s?.destroy?.());
+        delete this.machineSprites[key];
+        delete this.progressBars[key];
+        delete this.machineStatusTexts[key];
+      }
       this.factory.deleteMachine(row, col);
+      // Refund the build cost so the player isn't punished for misclicks
+      if (refund) this.refundBuildCost(refund);
       this.factory.save();
+      if (refundStr) this.showMessage('Refunded ' + refundStr, '#5eba7d');
     });
+    confirmBtn.on('pointerover', () => confirmBtn.setFillStyle(0x4a1818));
+    confirmBtn.on('pointerout',  () => confirmBtn.setFillStyle(0x3a1010));
     cancelBtn.on('pointerdown', dismiss);
+    cancelBtn.on('pointerover', () => cancelBtn.setFillStyle(0x252c38));
+    cancelBtn.on('pointerout',  () => cancelBtn.setFillStyle(0x1e2530));
   }
 
   showMessage(text, colour) {

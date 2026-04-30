@@ -18,15 +18,49 @@ class FactoryScene extends Phaser.Scene {
     const saveKey   = 'factower_save_' + slotIndex;
     this.saveData   = JSON.parse(localStorage.getItem(saveKey));
 
+    // ── Starter material grant ──────────────────────────────────────────
+    // First time the player ever opens the factory, give them enough to
+    // complete the basic tutorial: 1 Gunner Assembly (1S+1M) + 1 Gunner
+    // tower (1S) and a small reserve metal. Idempotent via flag.
+    if (!this.saveData.materialsGranted) {
+      if (!this.saveData.materials) this.saveData.materials = { plasticScrap: 0, refinedPlastic: 0, salvagedMetal: 0 };
+      this.saveData.materials.plasticScrap  = (this.saveData.materials.plasticScrap  || 0) + 2;
+      this.saveData.materials.salvagedMetal = (this.saveData.materials.salvagedMetal || 0) + 2;
+      this.saveData.materialsGranted = true;
+      localStorage.setItem(saveKey, JSON.stringify(this.saveData));
+    }
+
+    // ── Build costs (resources consumed when placing a machine on a tile) ──
+    // Separate from per-tower costs (which assembly menus consume per build).
+    this.MACHINE_BUILD_COSTS = {
+      smelter:            { plasticScrap: 2, salvagedMetal: 2 },
+      assembly_gunner:    { plasticScrap: 1, salvagedMetal: 1 },
+      assembly_bomber:    { plasticScrap: 2, salvagedMetal: 2 },
+      assembly_barricade: { plasticScrap: 1, salvagedMetal: 2 }
+    };
+
     this.factory = new Factory();
     this.factory.loadFromSave(this.saveData);
 
-    // Layout — pulled tight to the top of the viewport so nothing wastes space.
-    // Header sits near the top, stores/grid/depot stack underneath, bottom panel
-    // anchors to the visible viewport bottom (this.H).
-    this.TILE    = 52;
-    this.COLS    = 5;
-    this.ROWS    = 5;
+    // Legacy cleanup: remove machines placed outside the new 3x3 grid bounds
+    // (older saves used a 5x5 grid). Safe no-op for fresh saves.
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        if (r >= 3 || c >= 3) {
+          if (this.factory.getMachineAt && this.factory.getMachineAt(r, c)) {
+            this.factory.deleteMachine(r, c);
+          }
+        }
+      }
+    }
+
+    // Layout — 3x3 factory floor (skill tree will unlock additional slots later).
+    // Tile bumped from 52→72 to keep the grid visually substantial in the
+    // smaller layout. Empty space below the grid is intentional — it
+    // visually communicates "this can grow".
+    this.TILE    = 72;
+    this.COLS    = 3;
+    this.ROWS    = 3;
     this.GX      = (width - this.TILE * this.COLS) / 2;
     this.HEADER_Y = 60;                    // header centre (top of header at 16)
     this.STORE_Y  = 144;                   // stores 52 tall, span 118-170
@@ -269,6 +303,41 @@ class FactoryScene extends Phaser.Scene {
     }
   }
 
+  // ── Build cost helpers ─────────────────────────────────────────────────────
+  canAffordBuild(cost) {
+    if (!cost) return true;
+    const haveScrap = this.factory.getMaterialCount('plasticScrap');
+    const haveMetal = this.factory.getMaterialCount('salvagedMetal');
+    return haveScrap >= (cost.plasticScrap || 0)
+        && haveMetal >= (cost.salvagedMetal || 0);
+  }
+
+  // Deducts build cost from the player's stored materials. Mirrors the
+  // localStorage-pattern used by addTowerToStockpile; calls factory.loadFromSave
+  // so factory.getMaterialCount() reflects the new totals immediately.
+  spendBuildCost(cost) {
+    if (!cost) return;
+    const slotIndex = localStorage.getItem('factower_active_slot');
+    const saveKey   = 'factower_save_' + slotIndex;
+    const save      = JSON.parse(localStorage.getItem(saveKey));
+    if (!save.materials) save.materials = { plasticScrap: 0, refinedPlastic: 0, salvagedMetal: 0 };
+    Object.entries(cost).forEach(([k, v]) => {
+      save.materials[k] = Math.max(0, (save.materials[k] || 0) - v);
+    });
+    localStorage.setItem(saveKey, JSON.stringify(save));
+    this.saveData = save;
+    this.factory.loadFromSave(save);
+    this.updateMaterialDisplay();
+  }
+
+  formatCost(cost) {
+    if (!cost) return '';
+    const parts = [];
+    if (cost.plasticScrap)  parts.push(cost.plasticScrap  + 'S');
+    if (cost.salvagedMetal) parts.push(cost.salvagedMetal + 'M');
+    return parts.join(' + ');
+  }
+
   // ── Grid ───────────────────────────────────────────────────────────────────
 
   drawGrid() {
@@ -297,7 +366,14 @@ class FactoryScene extends Phaser.Scene {
         this.showAssemblyTypeMenu(row, col);
         return;
       }
+      // Smelter (and any future single-type machines): check build cost
+      const cost = this.MACHINE_BUILD_COSTS[this.placingMachine];
+      if (cost && !this.canAffordBuild(cost)) {
+        this.showMessage('Need ' + this.formatCost(cost) + ' to build ' + this.placingMachine.toUpperCase(), '#c43a3a');
+        return;
+      }
       if (this.factory.placeMachine(row, col, this.placingMachine)) {
+        if (cost) this.spendBuildCost(cost);
         this.drawMachineAt(row, col, this.placingMachine);
         this.factory.save();
         if (!this.factory.tutorialComplete) this.advanceTutorial('placed_' + this.placingMachine);
@@ -324,59 +400,84 @@ class FactoryScene extends Phaser.Scene {
     const height = this.H;
     const all = [];
 
+    // Slightly taller panel and rows to fit two cost lines per option
+    const panelH  = 380;
+    const rowGap  = 90;
+    const btnH    = 78;
+
     const overlay  = this.add.rectangle(width/2, height/2, width, height, 0x000000, 0.88).setDepth(40);
-    const box      = this.add.rectangle(width/2, height/2, width-40, 340, 0x161b22).setDepth(41);
-    const boxBorder= this.add.rectangle(width/2, height/2, width-40, 340).setStrokeStyle(1, 0x5eba7d).setDepth(41);
-    const title    = this.add.text(width/2, height/2-148, 'SELECT TOWER TYPE', { fontFamily:'monospace', fontSize:'14px', color:'#8899aa', letterSpacing:3 }).setOrigin(0.5).setDepth(42);
+    const box      = this.add.rectangle(width/2, height/2, width-40, panelH, 0x161b22).setDepth(41);
+    const boxBorder= this.add.rectangle(width/2, height/2, width-40, panelH).setStrokeStyle(1, 0x5eba7d).setDepth(41);
+    const title    = this.add.text(width/2, height/2 - panelH/2 + 18, 'SELECT TOWER TYPE', { fontFamily:'monospace', fontSize:'14px', color:'#8899aa', letterSpacing:3 }).setOrigin(0.5).setDepth(42);
 
     all.push(overlay, box, boxBorder, title);
 
     const dismiss = () => { all.forEach(e => e?.destroy?.()); this.workerMenuActive = false; this.placingMachine = null; this.assemblyBtn?.setFillStyle(0x1e2530); };
 
     const types = [
-      { key:'assembly_gunner',    label:'GUNNER',    colour:0x3a8fc4, cost:'1 PLASTIC SCRAP',  costKey:'plasticScrap'  },
-      { key:'assembly_bomber',    label:'BOMBER',    colour:0xe8a020, cost:'1 REFINED PLASTIC', costKey:'refinedPlastic'},
-      { key:'assembly_barricade', label:'BARRICADE', colour:0xc43a3a, cost:'1 SALVAGED METAL',  costKey:'salvagedMetal' }
+      { key:'assembly_gunner',    label:'GUNNER',    colour:0x3a8fc4, towerCost:'1 PLASTIC SCRAP',  towerKey:'plasticScrap'  },
+      { key:'assembly_bomber',    label:'BOMBER',    colour:0xe8a020, towerCost:'1 REFINED PLASTIC', towerKey:'refinedPlastic'},
+      { key:'assembly_barricade', label:'BARRICADE', colour:0xc43a3a, towerCost:'1 SALVAGED METAL',  towerKey:'salvagedMetal' }
     ];
 
+    const firstRowY = height/2 - panelH/2 + 70;
+
     types.forEach((t, i) => {
-      const unlocked    = this.unlockedAssemblyTypes.includes(t.key);
-      const affordable  = unlocked && this.factory.getMaterialCount(t.costKey) > 0;
-      const y = height/2 - 86 + i * 80;
-      const colHex = '#' + t.colour.toString(16).padStart(6,'0');
+      const unlocked     = this.unlockedAssemblyTypes.includes(t.key);
+      const buildCost    = this.MACHINE_BUILD_COSTS[t.key];
+      const canBuild     = unlocked && this.canAffordBuild(buildCost);
+      const y            = firstRowY + i * rowGap;
+      const colHex       = '#' + t.colour.toString(16).padStart(6,'0');
 
-      const btn       = this.add.rectangle(width/2, y, width-80, 68, unlocked ? 0x1e2530 : 0x161b22).setDepth(42);
-      const btnBorder = this.add.rectangle(width/2, y, width-80, 68).setStrokeStyle(1, unlocked ? t.colour : 0x334455).setDepth(42);
-      const dot       = this.add.circle(width/2-108, y, 10, unlocked ? t.colour : 0x334455).setDepth(43);
-      const lbl       = this.add.text(width/2-88, y-16, t.label, { fontFamily:'monospace', fontSize:'16px', color: unlocked ? '#eef2f8' : '#445566', fontStyle:'bold' }).setDepth(43);
+      const btn       = this.add.rectangle(width/2, y, width-80, btnH, canBuild ? 0x1e2530 : 0x161b22).setDepth(42);
+      const btnBorder = this.add.rectangle(width/2, y, width-80, btnH).setStrokeStyle(1, canBuild ? t.colour : 0x334455).setDepth(42);
+      const dot       = this.add.circle(width/2-108, y, 10, canBuild ? t.colour : 0x334455).setDepth(43);
+      const lbl       = this.add.text(width/2-88, y-22, t.label, { fontFamily:'monospace', fontSize:'16px', color: canBuild ? '#eef2f8' : '#556677', fontStyle:'bold' }).setDepth(43);
 
-      let subTxt, subCol;
-      if (!unlocked)         { subTxt = 'COMPLETE LEVEL 2 TO UNLOCK'; subCol = '#334455'; }
-      else if (!affordable)  { subTxt = 'COST: ' + t.cost + '  \u2014  NONE IN STOCK'; subCol = '#553333'; }
-      else                   { subTxt = 'COST: ' + t.cost; subCol = colHex; }
+      // Build cost line
+      let buildTxt, buildCol;
+      if (!unlocked) {
+        buildTxt = 'COMPLETE LEVEL 2 TO UNLOCK';
+        buildCol = '#334455';
+      } else if (!this.canAffordBuild(buildCost)) {
+        buildTxt = 'BUILD: ' + this.formatCost(buildCost) + '  \u2014  NOT ENOUGH';
+        buildCol = '#aa4444';
+      } else {
+        buildTxt = 'BUILD: ' + this.formatCost(buildCost);
+        buildCol = colHex;
+      }
+      const buildLbl = this.add.text(width/2-88, y-2, buildTxt, { fontFamily:'monospace', fontSize:'10px', color: buildCol, fontStyle:'bold' }).setDepth(43);
 
-      const sublbl = this.add.text(width/2-88, y+6, subTxt, { fontFamily:'monospace', fontSize:'10px', color: subCol }).setDepth(43);
+      // Tower cost line (informational — shows what each tower built here will need)
+      const towerLbl = this.add.text(width/2-88, y+14, 'TOWER: ' + t.towerCost, { fontFamily:'monospace', fontSize:'9px', color:'#556677' }).setDepth(43);
 
-      all.push(btn, btnBorder, dot, lbl, sublbl);
+      all.push(btn, btnBorder, dot, lbl, buildLbl, towerLbl);
 
-      if (unlocked) {
+      if (canBuild) {
         btn.setInteractive();
         btn.on('pointerdown', () => {
           dismiss();
+          // Re-check at click time in case stock changed (defensive)
+          if (!this.canAffordBuild(buildCost)) {
+            this.showMessage('Need ' + this.formatCost(buildCost) + ' to build', '#c43a3a');
+            return;
+          }
           if (this.factory.placeMachine(targetRow, targetCol, t.key)) {
+            this.spendBuildCost(buildCost);
             this.drawMachineAt(targetRow, targetCol, t.key);
             this.factory.save();
             if (!this.factory.tutorialComplete) this.advanceTutorial('placed_assembly');
           }
         });
-        btn.on('pointerover', () => btn.setFillStyle(affordable ? 0x252c38 : 0x1e1e1e));
+        btn.on('pointerover', () => btn.setFillStyle(0x252c38));
         btn.on('pointerout',  () => btn.setFillStyle(0x1e2530));
       }
     });
 
-    const cancelBtn   = this.add.rectangle(width/2, height/2+148, 160, 44, 0x1e2530).setInteractive().setDepth(42);
-    const cancelBorder= this.add.rectangle(width/2, height/2+148, 160, 44).setStrokeStyle(1, 0x334455).setDepth(42);
-    const cancelLabel = this.add.text(width/2, height/2+148, 'CANCEL', { fontFamily:'monospace', fontSize:'13px', color:'#8899aa' }).setOrigin(0.5).setDepth(43);
+    const cancelY     = height/2 + panelH/2 - 32;
+    const cancelBtn   = this.add.rectangle(width/2, cancelY, 160, 44, 0x1e2530).setInteractive().setDepth(42);
+    const cancelBorder= this.add.rectangle(width/2, cancelY, 160, 44).setStrokeStyle(1, 0x334455).setDepth(42);
+    const cancelLabel = this.add.text(width/2, cancelY, 'CANCEL', { fontFamily:'monospace', fontSize:'13px', color:'#8899aa' }).setOrigin(0.5).setDepth(43);
     all.push(cancelBtn, cancelBorder, cancelLabel);
     cancelBtn.on('pointerdown', dismiss);
   }
@@ -576,9 +677,10 @@ class FactoryScene extends Phaser.Scene {
 
     this.smelterBtn = this.add.rectangle(228, btnY, 128, 84, 0x1e2530).setInteractive();
     this.add.rectangle(228, btnY, 128, 84).setStrokeStyle(1, 0xe8a020);
-    this.add.circle(228, btnY-28, 9, 0xe8a020);
-    this.add.text(228, btnY+4, 'SMELTER', { fontFamily:'monospace', fontSize:'13px', color:'#eef2f8', fontStyle:'bold' }).setOrigin(0.5);
-    this.add.text(228, btnY+24, 'SCRAP\u2192REFINED', { fontFamily:'monospace', fontSize:'10px', color:'#8899aa' }).setOrigin(0.5);
+    this.add.circle(228, btnY-30, 8, 0xe8a020);
+    this.add.text(228, btnY-10, 'SMELTER', { fontFamily:'monospace', fontSize:'13px', color:'#eef2f8', fontStyle:'bold' }).setOrigin(0.5);
+    this.add.text(228, btnY+8, 'SCRAP\u2192REFINED', { fontFamily:'monospace', fontSize:'9px', color:'#8899aa' }).setOrigin(0.5);
+    this.add.text(228, btnY+24, this.formatCost(this.MACHINE_BUILD_COSTS.smelter), { fontFamily:'monospace', fontSize:'10px', color:'#e8a020', fontStyle:'bold' }).setOrigin(0.5);
     this.smelterBtn.on('pointerdown', () => this.selectPlacing('smelter'));
     this.smelterBtn.on('pointerover', () => this.smelterBtn.setFillStyle(0x252c38));
     this.smelterBtn.on('pointerout', () => { this.smelterBtn.setFillStyle(this.placingMachine==='smelter'?0x2a3a4a:0x1e2530); });
@@ -606,7 +708,13 @@ class FactoryScene extends Phaser.Scene {
     this.smelterBtn?.setFillStyle(this.placingMachine==='smelter'?0x2a3a4a:0x1e2530);
     this.assemblyBtn?.setFillStyle(this.placingMachine==='assembly'?0x2a3a4a:0x1e2530);
     if (this.placingMachine) {
-      const msg = type==='assembly' ? 'Tap an empty tile \u2014 you will choose the tower type' : 'Tap an empty tile to place SMELTER';
+      let msg;
+      if (type === 'assembly') {
+        msg = 'Tap an empty tile \u2014 you will choose the tower type';
+      } else {
+        const cost = this.MACHINE_BUILD_COSTS[type];
+        msg = 'Tap empty tile to build SMELTER (cost: ' + this.formatCost(cost) + ')';
+      }
       this.showMessage(msg, '#e8a020');
     }
   }

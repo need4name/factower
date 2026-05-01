@@ -150,12 +150,12 @@ const config = {
   barricade: {
     colour: 0xc43a3a, colourHex: '#c43a3a',
     title: 'BARRICADE UNLOCKED',
-    body: 'Requires 1 SALVAGED METAL.\\nNO smelter needed \\u2014 the Assembly Bench\\ntakes metal directly.'
+    body: 'Requires 1 SALVAGED METAL.\nNO smelter needed \u2014 the Assembly Bench\ntakes metal directly.'
   },
   bomber: {
     colour: 0xe8a020, colourHex: '#e8a020',
     title: 'BOMBER UNLOCKED',
-    body: 'Requires 1 REFINED PLASTIC.\\nPlace a SMELTER first \\u2014 it converts\\nScrap into Refined Plastic for the Bomber.'
+    body: 'Requires 1 REFINED PLASTIC.\nPlace a SMELTER first \u2014 it converts\nScrap into Refined Plastic for the Bomber.'
   }
 };
 const c = config[towerType];
@@ -224,7 +224,7 @@ const boxBorder = this.add.rectangle(width/2, height/2, width-48, 220).setStroke
 const dot       = this.add.circle(width/2, height/2-72, 20, 0x3a8fc4).setDepth(52);
 const dotLabel  = this.add.text(width/2, height/2-72, 'W2', { fontFamily:'monospace', fontSize:'11px', color:'#0d1117', fontStyle:'bold' }).setOrigin(0.5).setDepth(53);
 const title     = this.add.text(width/2, height/2-36, 'NEW RECRUIT', { fontFamily:'monospace', fontSize:'22px', color:'#3a8fc4', fontStyle:'bold' }).setOrigin(0.5).setDepth(52);
-const body      = this.add.text(width/2, height/2+2, 'Word of your victory spread.\\nA second worker has arrived\\nand is ready to be assigned.', { fontFamily:'monospace', fontSize:'13px', color:'#eef2f8', align:'center', lineSpacing:5 }).setOrigin(0.5).setDepth(52);
+const body      = this.add.text(width/2, height/2+2, 'Word of your victory spread.\nA second worker has arrived\nand is ready to be assigned.', { fontFamily:'monospace', fontSize:'13px', color:'#eef2f8', align:'center', lineSpacing:5 }).setOrigin(0.5).setDepth(52);
 const btn       = this.add.rectangle(width/2, height/2+76, 200, 48, 0x1e2d3a).setInteractive().setDepth(52);
 const btnBorder = this.add.rectangle(width/2, height/2+76, 200, 48).setStrokeStyle(1, 0x3a8fc4).setDepth(52);
 const btnLabel  = this.add.text(width/2, height/2+76, 'WELCOME THEM', { fontFamily:'monospace', fontSize:'15px', color:'#3a8fc4', fontStyle:'bold' }).setOrigin(0.5).setDepth(53);
@@ -250,7 +250,7 @@ this.add.rectangle(width/2, this.HEADER_Y, width, 88, 0x161b22);
 this.add.rectangle(width/2, this.HEADER_Y+44, width, 1, 0x334455);
 
 const backBtn = this.add.rectangle(52, this.HEADER_Y, 84, 56, 0x1e2530).setInteractive().setDepth(5);
-this.add.text(52, this.HEADER_Y, '\\u2190 BACK', { fontFamily:'monospace', fontSize:'14px', color:'#e8a020' }).setOrigin(0.5).setDepth(6);
+this.add.text(52, this.HEADER_Y, '\u2190 BACK', { fontFamily:'monospace', fontSize:'14px', color:'#e8a020' }).setOrigin(0.5).setDepth(6);
 backBtn.on('pointerdown', () => { this.factory.save(); this.cameras.main.fade(200,0,0,0); this.time.delayedCall(200, () => this.scene.start('BaseScene')); });
 backBtn.on('pointerover', () => backBtn.setFillStyle(0x252c38));
 backBtn.on('pointerout',  () => backBtn.setFillStyle(0x1e2530));
@@ -294,7 +294,7 @@ this.progressBars['store_metal'] = this.add.rectangle(this.METAL_X-sw/2, sy+28, 
 // ── Depository ───────────────────────────────────────────────────────────
 const depotBg = this.add.rectangle(width/2, this.DEPOT_Y, width-48, 40, 0x161b22).setInteractive();
 this.add.rectangle(width/2, this.DEPOT_Y, width-48, 40).setStrokeStyle(2, 0xc43a3a);
-this.add.text(width/2, this.DEPOT_Y, 'DEPOSITORY  \\u2014  TAP TO DELIVER', { fontFamily:'monospace', fontSize:'11px', color:'#c43a3a', fontStyle:'bold' }).setOrigin(0.5);
+this.add.text(width/2, this.DEPOT_Y, 'DEPOSITORY  \u2014  TAP TO DELIVER', { fontFamily:'monospace', fontSize:'11px', color:'#c43a3a', fontStyle:'bold' }).setOrigin(0.5);
 depotBg.on('pointerdown', () => this.stationTapped('depository'));
 depotBg.on('pointerover', () => depotBg.setFillStyle(0x2a1a1a));
 depotBg.on('pointerout',  () => depotBg.setFillStyle(0x161b22));
@@ -477,7 +477,7 @@ types.forEach((t, i) => {
     buildTxt = 'COMPLETE LEVEL 2 TO UNLOCK';
     buildCol = '#334455';
   } else if (!this.canAffordBuild(buildCost)) {
-    buildTxt = 'BUILD: ' + this.formatCost(buildCost) + '  \\u2014  NOT ENOUGH';
+    buildTxt = 'BUILD: ' + this.formatCost(buildCost) + '  \u2014  NOT ENOUGH';
     buildCol = '#aa4444';
   } else {
     buildTxt = 'BUILD: ' + this.formatCost(buildCost);
@@ -588,13 +588,13 @@ const w = this.factory.workers[workerId];
 
   if (stationKey === 'store_scrap') {
     if (this.factory.getMaterialCount('plasticScrap') <= 0) {
-      this.showMessage('W'+(workerId+1)+': No Plastic Scrap in stock \\u2014 earn some from combat', '#c43a3a');
+      this.showMessage('W'+(workerId+1)+': No Plastic Scrap in stock \u2014 earn some from combat', '#c43a3a');
     } else {
       this.showMessage('W'+(workerId+1)+': Deliver items first', '#c43a3a');
     }
   } else if (stationKey === 'store_metal') {
     if (this.factory.getMaterialCount('salvagedMetal') <= 0) {
-      this.showMessage('W'+(workerId+1)+': No Salvaged Metal in stock \\u2014 earn some from combat', '#c43a3a');
+      this.showMessage('W'+(workerId+1)+': No Salvaged Metal in stock \u2014 earn some from combat', '#c43a3a');
     } else {
       this.showMessage('W'+(workerId+1)+': Deliver items first', '#c43a3a');
     }
@@ -724,7 +724,7 @@ this.smelterBtn = this.add.rectangle(228, btnY, 128, 84, 0x1e2530).setInteractiv
 this.add.rectangle(228, btnY, 128, 84).setStrokeStyle(1, 0xe8a020);
 this.add.circle(228, btnY-30, 8, 0xe8a020);
 this.add.text(228, btnY-10, 'SMELTER', { fontFamily:'monospace', fontSize:'13px', color:'#eef2f8', fontStyle:'bold' }).setOrigin(0.5);
-this.add.text(228, btnY+8, 'SCRAP\\u2192REFINED', { fontFamily:'monospace', fontSize:'9px', color:'#8899aa' }).setOrigin(0.5);
+this.add.text(228, btnY+8, 'SCRAP\u2192REFINED', { fontFamily:'monospace', fontSize:'9px', color:'#8899aa' }).setOrigin(0.5);
 this.add.text(228, btnY+24, this.formatCost(this.MACHINE_BUILD_COSTS.smelter), { fontFamily:'monospace', fontSize:'10px', color:'#e8a020', fontStyle:'bold' }).setOrigin(0.5);
 this.smelterBtn.on('pointerdown', () => this.selectPlacing('smelter'));
 this.smelterBtn.on('pointerover', () => this.smelterBtn.setFillStyle(0x252c38));
@@ -1038,30 +1038,30 @@ let state, msg, highlightTarget;
 
 if (!assemblyMachine) {
   state = 'no_assembly';
-  msg   = 'TUTORIAL (1/5): Tap ASSEMBLY below,\\ntap an empty tile, select GUNNER.';
+  msg   = 'TUTORIAL (1/5): Tap ASSEMBLY below,\ntap an empty tile, select GUNNER.';
   highlightTarget = 'assembly_btn';
 
 } else if (hasTowerComp) {
   state = 'deliver';
-  msg   = 'TUTORIAL (5/5): Tap the DEPOSITORY\\nto deliver your finished tower.';
+  msg   = 'TUTORIAL (5/5): Tap the DEPOSITORY\nto deliver your finished tower.';
   highlightTarget = 'depository';
 
 } else if (assemblyMachine.heldMaterial !== null && !carryingScrap) {
   // Material deposited, worker empty — ready to assemble
   state = 'assemble';
-  msg   = 'TUTORIAL (4/5): Tap the ASSEMBLY BENCH\\nto assemble the tower.';
+  msg   = 'TUTORIAL (4/5): Tap the ASSEMBLY BENCH\nto assemble the tower.';
   highlightTarget = assemblyKey;
 
 } else if (carryingScrap) {
   // Worker is carrying scrap — deposit it
   state = 'deposit';
-  msg   = 'TUTORIAL (3/5): Tap the ASSEMBLY BENCH\\nto deposit your scrap.';
+  msg   = 'TUTORIAL (3/5): Tap the ASSEMBLY BENCH\nto deposit your scrap.';
   highlightTarget = assemblyKey;
 
 } else if (this.factory.getMaterialCount('plasticScrap') > 0) {
   // Have scrap available, no worker carrying, bench empty
   state = 'collect_scrap';
-  msg   = 'TUTORIAL (2/5): Tap PLASTIC SCRAP\\nto collect one.';
+  msg   = 'TUTORIAL (2/5): Tap PLASTIC SCRAP\nto collect one.';
   highlightTarget = 'scrap_store';
 
 } else {
@@ -1140,10 +1140,10 @@ const all = [];
 const banner      = this.add.rectangle(width/2, height/2, width-48, 180, 0x161b22).setDepth(35);
 const bannerBorder= this.add.rectangle(width/2, height/2, width-48, 180).setStrokeStyle(1, 0x5eba7d).setDepth(35);
 const title       = this.add.text(width/2, height/2-52, 'TOWER BUILT!', { fontFamily:'monospace', fontSize:'24px', color:'#5eba7d', fontStyle:'bold' }).setOrigin(0.5).setDepth(36);
-const body        = this.add.text(width/2, height/2-16, 'Your first GUNNER is in the Armoury.\\nHead to the DOCK to fight\\nyour first battle.', { fontFamily:'monospace', fontSize:'13px', color:'#eef2f8', align:'center', lineSpacing:5 }).setOrigin(0.5).setDepth(36);
+const body        = this.add.text(width/2, height/2-16, 'Your first GUNNER is in the Armoury.\nHead to the DOCK to fight\nyour first battle.', { fontFamily:'monospace', fontSize:'13px', color:'#eef2f8', align:'center', lineSpacing:5 }).setOrigin(0.5).setDepth(36);
 const dockBtn     = this.add.rectangle(width/2, height/2+64, 220, 48, 0x1a2210).setInteractive().setDepth(36);
 const dockBtnBrd  = this.add.rectangle(width/2, height/2+64, 220, 48).setStrokeStyle(1, 0xe8a020).setDepth(36);
-const dockBtnLbl  = this.add.text(width/2, height/2+64, 'GO TO DOCK \\u2192', { fontFamily:'monospace', fontSize:'16px', color:'#e8a020', fontStyle:'bold' }).setOrigin(0.5).setDepth(37);
+const dockBtnLbl  = this.add.text(width/2, height/2+64, 'GO TO DOCK \u2192', { fontFamily:'monospace', fontSize:'16px', color:'#e8a020', fontStyle:'bold' }).setOrigin(0.5).setDepth(37);
 
 all.push(banner, bannerBorder, title, body, dockBtn, dockBtnBrd, dockBtnLbl);
 

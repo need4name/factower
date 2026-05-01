@@ -632,7 +632,7 @@ if (phase === 'highlightGunner') {
   }).setOrigin(0.5).setDepth(25);
   // Animated arrow suggesting drag direction from button to target
   const arrowY = this.PLAY_TOP + 50;
-  const arrow  = this.add.text(width / 2, arrowY, '\\u2193 DRAG UP \\u2193', {
+  const arrow  = this.add.text(width / 2, arrowY, '\u2193 DRAG UP \u2193', {
     fontFamily: 'monospace', fontSize: '10px', color: '#5eba7d', alpha: 0.7
   }).setOrigin(0.5).setDepth(25);
   this.tweens.add({ targets: [dot, dot2], scaleX: 1.3, scaleY: 1.3, alpha: 0.6, duration: 600, yoyo: true, repeat: -1 });
@@ -937,7 +937,7 @@ if (this.waveIndicator) this.waveIndicator.setText('WAVE ' + (this.currentWave +
 
 const width = this.scale.width;
 const height = this.H;
-const incoming = this.add.text(width / 2, height / 2 - 50, 'WAVE ' + (this.currentWave + 1) + '\\nINCOMING', {
+const incoming = this.add.text(width / 2, height / 2 - 50, 'WAVE ' + (this.currentWave + 1) + '\nINCOMING', {
   fontFamily: 'monospace', fontSize: '38px', color: '#c43a3a', fontStyle: 'bold', align: 'center'
 }).setOrigin(0.5).setAlpha(0).setDepth(25);
 this.tweens.add({

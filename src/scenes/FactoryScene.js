@@ -6,6 +6,18 @@
 class FactoryScene extends Phaser.Scene {
 constructor() { super({ key: 'FactoryScene' }); }
 
+// ── Automation foundation (Milestone 1) ─────────────────────────────
+// Single source of truth for "should the factory be ticking right now?"
+// Today this is just a read of saveData.factoryActive (set by CombatScene).
+// Later milestones will OR in skill-tree perks like "Factory During Waves".
+// Keep all "is the factory running" logic going through this method so the
+// skill-tree milestone is a one-method change, not a refactor.
+shouldFactoryRun() {
+  if (!this.saveData) return true;
+  // Default true if the flag is undefined (defensive — legacy saves)
+  return this.saveData.factoryActive !== false;
+}
+
 create() {
 const width = this.scale.width;
 // iOS Safari can report a configured canvas height (e.g. 844) that's larger
@@ -18,15 +30,14 @@ const slotIndex = localStorage.getItem('factower_active_slot');
 const saveKey   = 'factower_save_' + slotIndex;
 this.saveData   = JSON.parse(localStorage.getItem(saveKey));
 
-// ── Automation foundation (Milestone 0) ─────────────────────────────
-// Read-only check of the factoryActive flag. CombatScene flips it false
-// on entry / true on exit. FactoryScene currently logs the value but
-// takes no action — Milestone 1 will gate worker/machine ticks on this.
-// Default to true if the flag is missing (legacy save before migration).
-const _factoryActive = (this.saveData && this.saveData.factoryActive !== undefined)
-  ? this.saveData.factoryActive
-  : true;
-console.log('[Factory] active=' + _factoryActive + ' (Milestone 0: read-only)');
+// ── Automation foundation (Milestone 1) ─────────────────────────────
+// Track whether the factory is currently allowed to run. CombatScene
+// flips saveData.factoryActive on combat entry/exit. We mirror it on
+// the scene as `_lastFactoryRun` so that update() can detect transitions
+// (active → frozen and frozen → active) and pause/resume worker walk
+// tweens accordingly. Default to true if missing (legacy save).
+this._workerWalkTweens = {};
+this._lastFactoryRun   = this.shouldFactoryRun();
 
 // ── Starter material grant ──────────────────────────────────────────
 // Tightly tuned to the tutorial path:
@@ -782,13 +793,26 @@ this.updateStatus();
 this.tweens.killTweensOf(sprite);
 this.tweens.killTweensOf(label);
 
-this.tweens.add({
+const walkTween = this.tweens.add({
   targets: [sprite, label],
   x: target.x, y: target.y,
   duration: Math.max((dist / this.WORKER_SPEED) * 1000, 80),
   ease: 'Linear',
-  onComplete: () => { if (onComplete) onComplete(); this.updateStatus(); }
+  onComplete: () => {
+    if (this._workerWalkTweens) this._workerWalkTweens[workerId] = null;
+    if (onComplete) onComplete();
+    this.updateStatus();
+  }
 });
+
+// Track tween by worker id so the freeze logic can pause/resume it
+// without touching unrelated tweens (e.g. tutorial highlight pulse).
+if (!this._workerWalkTweens) this._workerWalkTweens = {};
+this._workerWalkTweens[workerId] = walkTween;
+
+// If the factory is frozen at the moment this walk starts (e.g. worker
+// was assigned just before a wave), pause it immediately.
+if (!this.shouldFactoryRun()) walkTween.pause();
 
 }
 
@@ -1156,7 +1180,30 @@ dockBtn.on('pointerout',  () => dockBtn.setFillStyle(0x1a2210));
 // ── Update loop ────────────────────────────────────────────────────────────
 
 update(time, delta) {
-const completedWorkers = this.factory.update(delta);
+const running = this.shouldFactoryRun();
+
+// Detect transitions (active ↔ frozen) and propagate to in-flight
+// worker walk tweens. Only walk tweens are touched — tutorial highlight
+// pulses and other presentation tweens keep playing unaffected.
+if (running !== this._lastFactoryRun) {
+  if (this._workerWalkTweens) {
+    Object.values(this._workerWalkTweens).forEach(t => {
+      if (!t || t.progress >= 1) return;
+      if (running) t.resume();
+      else         t.pause();
+    });
+  }
+  this._lastFactoryRun = running;
+}
+
+// When frozen, skip the factory tick and the completed-workers handler.
+// We still run presentation updates below (tutorial state, label sync,
+// progress bar redraws) so the screen reflects current state correctly.
+let completedWorkers = [];
+if (running) {
+  completedWorkers = this.factory.update(delta);
+}
+
 const barW = this.scale.width - 48;
 
 // Process completed workers FIRST. This must happen before

@@ -349,39 +349,39 @@ return haveScrap >= (cost.plasticScrap || 0)
 && haveMetal >= (cost.salvagedMetal || 0);
 }
 
-// Deducts build cost from the player's stored materials. Mirrors the
-// localStorage-pattern used by addTowerToStockpile; calls factory.loadFromSave
-// so factory.getMaterialCount() reflects the new totals immediately.
+// Deducts build cost from the player's stored materials.
+//
+// Implementation note: we update the live Factory's materials object
+// directly, then call factory.save() so localStorage stays in sync.
+// We deliberately do NOT call factory.loadFromSave() here — that would
+// destructively reset the grid from localStorage, wiping any machine
+// the player just placed before this method was called.
 spendBuildCost(cost) {
-if (!cost) return;
-const slotIndex = localStorage.getItem('factower_active_slot');
-const saveKey   = 'factower_save_' + slotIndex;
-const save      = JSON.parse(localStorage.getItem(saveKey));
-if (!save.materials) save.materials = { plasticScrap: 0, refinedPlastic: 0, salvagedMetal: 0 };
-Object.entries(cost).forEach(([k, v]) => {
-save.materials[k] = Math.max(0, (save.materials[k] || 0) - v);
-});
-localStorage.setItem(saveKey, JSON.stringify(save));
-this.saveData = save;
-this.factory.loadFromSave(save);
-this.updateMaterialDisplay();
+  if (!cost) return;
+  if (!this.factory.materials) this.factory.materials = { plasticScrap: 0, refinedPlastic: 0, salvagedMetal: 0 };
+  Object.entries(cost).forEach(([k, v]) => {
+    this.factory.materials[k] = Math.max(0, (this.factory.materials[k] || 0) - v);
+  });
+  this.factory.save();
+  // Mirror to local saveData reference for any code that reads it
+  if (!this.saveData.materials) this.saveData.materials = {};
+  Object.assign(this.saveData.materials, this.factory.materials);
+  this.updateMaterialDisplay();
 }
 
 // Returns build cost to the player's stored materials. Used when deleting
 // a placed machine — the player gets a full refund of what they spent.
+// Same pattern as spendBuildCost — direct mutation, no reload.
 refundBuildCost(cost) {
-if (!cost) return;
-const slotIndex = localStorage.getItem('factower_active_slot');
-const saveKey   = 'factower_save_' + slotIndex;
-const save      = JSON.parse(localStorage.getItem(saveKey));
-if (!save.materials) save.materials = { plasticScrap: 0, refinedPlastic: 0, salvagedMetal: 0 };
-Object.entries(cost).forEach(([k, v]) => {
-save.materials[k] = (save.materials[k] || 0) + v;
-});
-localStorage.setItem(saveKey, JSON.stringify(save));
-this.saveData = save;
-this.factory.loadFromSave(save);
-this.updateMaterialDisplay();
+  if (!cost) return;
+  if (!this.factory.materials) this.factory.materials = { plasticScrap: 0, refinedPlastic: 0, salvagedMetal: 0 };
+  Object.entries(cost).forEach(([k, v]) => {
+    this.factory.materials[k] = (this.factory.materials[k] || 0) + v;
+  });
+  this.factory.save();
+  if (!this.saveData.materials) this.saveData.materials = {};
+  Object.assign(this.saveData.materials, this.factory.materials);
+  this.updateMaterialDisplay();
 }
 
 formatCost(cost) {

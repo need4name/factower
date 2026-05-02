@@ -66,6 +66,14 @@ const MACHINE_TYPES = {
     primaryInput: 'salvagedMetal',  // deposited directly — no smelter needed
     duration:     5000,
     depositDuration: 1500
+  },
+  conveyor: {
+    key:        'conveyor',
+    name:       'CONVEYOR',
+    shortName:  'BELT',
+    colour:     0x8899aa,
+    colourHex:  '#8899aa',
+    isConveyor: true   // distinguishing flag — not a production machine
   }
 };
 
@@ -74,9 +82,25 @@ const WORKER_LABELS  = ['W1', 'W2'];
 
 class Factory {
   constructor() {
-    this.COLS = 5;
-    this.ROWS = 5;
+    // Grid sized to match FactoryScene's 3x3 visible grid.
+    // Older saves persisted a 5x5 grid; FactoryScene cleans those up on load,
+    // and loadFromSave() below re-sizes if a smaller saved grid is found.
+    this.COLS = 3;
+    this.ROWS = 3;
     this.grid = Array.from({ length: this.ROWS }, () => Array(this.COLS).fill(null));
+
+    // ── Items-on-tiles (Milestone 2/3) ────────────────────────────────
+    // Parallel 2D array. tileItems[r][c] is null OR a single item string
+    // (e.g. 'plasticScrap', 'refinedPlastic'). Used by conveyor belts and
+    // worker drop/pickup. One item per tile maximum.
+    this.tileItems = Array.from({ length: this.ROWS }, () => Array(this.COLS).fill(null));
+
+    // ── Belt tick timer (Milestone 3) ─────────────────────────────────
+    // Conveyors don't tick every frame. Items advance one tile per BELT_TICK_MS
+    // so movement is readable on a small grid. Accumulator handles variable delta.
+    this.BELT_TICK_MS    = 600;
+    this._beltAccumulator = 0;
+
     this.workers = [
       this.makeWorker(0, true),
       this.makeWorker(1, false)
@@ -123,7 +147,25 @@ class Factory {
 
     if (!saveData.factory) return;
     const f = saveData.factory;
-    if (f.grid) this.grid = f.grid;
+    if (f.grid) {
+      this.grid = f.grid;
+      // If saved grid is a different size, resize ROWS/COLS to match.
+      // Older 5x5 saves are tolerated; FactoryScene cleans out-of-bounds
+      // machines on load. Fresh 3x3 saves come through with matching size.
+      this.ROWS = this.grid.length;
+      this.COLS = this.grid[0] ? this.grid[0].length : this.COLS;
+    }
+    if (f.tileItems) {
+      // Restore items-on-tiles. If the persisted array's dimensions don't match
+      // the current grid (mid-version transition), reset to fresh empty grid.
+      if (f.tileItems.length === this.ROWS && f.tileItems[0] && f.tileItems[0].length === this.COLS) {
+        this.tileItems = f.tileItems;
+      } else {
+        this.tileItems = Array.from({ length: this.ROWS }, () => Array(this.COLS).fill(null));
+      }
+    } else {
+      this.tileItems = Array.from({ length: this.ROWS }, () => Array(this.COLS).fill(null));
+    }
     if (typeof f.tutorialStep    === 'number')  this.tutorialStep     = f.tutorialStep;
     if (typeof f.tutorialComplete === 'boolean') this.tutorialComplete = f.tutorialComplete;
 
@@ -153,6 +195,7 @@ class Factory {
 
     saveData.factory = {
       grid:             this.grid,
+      tileItems:        this.tileItems,
       factoryVersion:   2,
       tutorialStep:     this.tutorialStep,
       tutorialComplete: this.tutorialComplete
@@ -184,10 +227,15 @@ class Factory {
 
   placeMachine(row, col, type) {
     if (!this.canPlace(row, col)) return false;
-    this.grid[row][col] = {
-      type,
-      heldMaterial: this.isAssemblyType(type) ? null : undefined
-    };
+    if (type === 'conveyor') {
+      // Default conveyor direction is east (right). Player rotates by tapping.
+      this.grid[row][col] = { type, direction: 'E' };
+    } else {
+      this.grid[row][col] = {
+        type,
+        heldMaterial: this.isAssemblyType(type) ? null : undefined
+      };
+    }
     return true;
   }
 
@@ -202,12 +250,51 @@ class Factory {
       }
     });
     this.grid[row][col] = null;
+    // Any item sitting on this tile (e.g. on a deleted conveyor) is lost.
+    if (this.tileItems && this.tileItems[row]) this.tileItems[row][col] = null;
     return true;
   }
 
   getMachineAt(row, col) {
     if (row < 0 || row >= this.ROWS || col < 0 || col >= this.COLS) return null;
     return this.grid[row][col];
+  }
+
+  // ── Tile items API (Milestone 2/3) ─────────────────────────────────────────
+
+  getTileItem(row, col) {
+    if (row < 0 || row >= this.ROWS || col < 0 || col >= this.COLS) return null;
+    return this.tileItems[row][col];
+  }
+
+  setTileItem(row, col, item) {
+    if (row < 0 || row >= this.ROWS || col < 0 || col >= this.COLS) return false;
+    this.tileItems[row][col] = item || null;
+    return true;
+  }
+
+  // ── Conveyor helpers ───────────────────────────────────────────────────────
+
+  rotateConveyor(row, col) {
+    const m = this.getMachineAt(row, col);
+    if (!m || m.type !== 'conveyor') return false;
+    const order = ['N', 'E', 'S', 'W'];
+    const i = order.indexOf(m.direction);
+    m.direction = order[(i + 1) % 4];
+    return true;
+  }
+
+  // Returns the next tile coordinate following a conveyor's direction.
+  getConveyorTarget(row, col) {
+    const m = this.getMachineAt(row, col);
+    if (!m || m.type !== 'conveyor') return null;
+    switch (m.direction) {
+      case 'N': return { row: row - 1, col };
+      case 'S': return { row: row + 1, col };
+      case 'E': return { row, col: col + 1 };
+      case 'W': return { row, col: col - 1 };
+    }
+    return null;
   }
 
   // ── Action system ──────────────────────────────────────────────────────────
@@ -241,6 +328,16 @@ class Factory {
     const [r, c] = stationKey.split(',').map(Number);
     const machine = this.getMachineAt(r, c);
     if (!machine) return null;
+
+    // Conveyor: worker can drop their carried item onto the belt if it's empty.
+    // Belt then carries the item along its direction over subsequent ticks.
+    if (machine.type === 'conveyor') {
+      if (w.inventory.length > 0 && this.tileItems[r][c] === null) {
+        return 'drop_to_belt';
+      }
+      // Could also support pick-up later: if belt has item and worker empty.
+      return null;
+    }
 
     // Smelter: worker deposits scrap, gets refined plastic out
     if (machine.type === 'smelter') {
@@ -288,8 +385,63 @@ class Factory {
 
   // ── Update loop ────────────────────────────────────────────────────────────
 
+  // ── Belt tick (Milestone 3) ────────────────────────────────────────────
+  // Two-phase to avoid order-of-iteration bias:
+  //   1. Collect all (from, to) intended moves where source has item, dest is empty
+  //   2. Resolve conflicts (multiple belts → same dest) — only one wins, others wait
+  //   3. Apply the surviving moves atomically
+  _tickBelts() {
+    const moves = [];
+    for (let r = 0; r < this.ROWS; r++) {
+      for (let c = 0; c < this.COLS; c++) {
+        const m = this.grid[r][c];
+        if (!m || m.type !== 'conveyor') continue;
+        const item = this.tileItems[r][c];
+        if (!item) continue;
+        const target = this.getConveyorTarget(r, c);
+        if (!target) continue;
+        if (target.row < 0 || target.row >= this.ROWS) continue;
+        if (target.col < 0 || target.col >= this.COLS) continue;
+        // Destination must be empty (no item there yet)
+        if (this.tileItems[target.row][target.col] !== null) continue;
+        // Destination must be a conveyor or accept items (assembly bench, smelter)
+        // For M3 simplicity: only conveyor → conveyor moves auto-flow.
+        // Hand-off to assembly/smelter is handled later (workers still tap).
+        const destMachine = this.grid[target.row][target.col];
+        if (!destMachine || destMachine.type !== 'conveyor') continue;
+        moves.push({ fromR: r, fromC: c, toR: target.row, toC: target.col, item });
+      }
+    }
+
+    // Resolve conflicts: if two belts want the same destination, first wins.
+    // Survivors are applied; losers stay where they are.
+    const claimed = new Set();
+    moves.forEach(mv => {
+      const key = mv.toR + ',' + mv.toC;
+      if (claimed.has(key)) return;
+      // Verify source still has the item and dest is still empty
+      // (could have been claimed by an earlier move in this same phase)
+      if (this.tileItems[mv.fromR][mv.fromC] !== mv.item) return;
+      if (this.tileItems[mv.toR][mv.toC] !== null) return;
+      this.tileItems[mv.fromR][mv.fromC] = null;
+      this.tileItems[mv.toR][mv.toC]     = mv.item;
+      claimed.add(key);
+    });
+  }
+
   update(delta) {
     const completed = [];
+
+    // ── Belt tick (Milestone 3) ──────────────────────────────────────────
+    // Conveyors advance their items every BELT_TICK_MS. Accumulator handles
+    // variable frame delta. Items only move into empty destination tiles —
+    // backed-up belts cause queueing. Multiple ticks per frame are possible
+    // if delta is huge (e.g. tab regained focus).
+    this._beltAccumulator += delta;
+    while (this._beltAccumulator >= this.BELT_TICK_MS) {
+      this._beltAccumulator -= this.BELT_TICK_MS;
+      this._tickBelts();
+    }
 
     this.workers.forEach(w => {
       if (!w.unlocked || w.state !== 'working') return;
@@ -306,7 +458,9 @@ class Factory {
         const machine = this.getMachineAt(r, c);
         if (!machine) { w.state = 'idle'; return; }
 
-        if (machine.type === 'smelter') {
+        if (machine.type === 'conveyor') {
+          duration = 1500;   // quick drop, similar to deposit
+        } else if (machine.type === 'smelter') {
           duration = 12000;
         } else if (this.isAssemblyType(machine.type)) {
           duration = w.stationAction === 'deposit'
@@ -361,6 +515,15 @@ class Factory {
     const [r, c] = station.split(',').map(Number);
     const machine = this.getMachineAt(r, c);
     if (!machine) return;
+
+    // Conveyor drop: take first item from worker, place on tile.
+    if (machine.type === 'conveyor') {
+      if (w.inventory.length > 0 && this.tileItems[r][c] === null) {
+        const item = w.inventory.shift();
+        this.tileItems[r][c] = item;
+      }
+      return;
+    }
 
     // Smelter: consume scrap, output refined plastic
     if (machine.type === 'smelter') {

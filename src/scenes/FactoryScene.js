@@ -58,7 +58,8 @@ this.MACHINE_BUILD_COSTS = {
   smelter:            { plasticScrap: 2, salvagedMetal: 2 },
   assembly_gunner:    { plasticScrap: 1, salvagedMetal: 1 },
   assembly_bomber:    { plasticScrap: 2, salvagedMetal: 2 },
-  assembly_barricade: { plasticScrap: 1, salvagedMetal: 2 }
+  assembly_barricade: { plasticScrap: 1, salvagedMetal: 2 },
+  conveyor:           { plasticScrap: 1, salvagedMetal: 1 }
 };
 
 this.factory = new Factory();
@@ -427,12 +428,23 @@ if (!this.factory.tutorialComplete) this.advanceTutorial('placed_' + this.placin
 this.placingMachine = null;
 this.smelterBtn?.setFillStyle(0x1e2530);
 this.assemblyBtn?.setFillStyle(0x1e2530);
+this.conveyorBtn?.setFillStyle(0x1e2530);
 }
 return;
 }
 
 const machine = this.factory.getMachineAt(row, col);
 if (!machine) return;
+
+// Conveyor tile tap → rotate it (N → E → S → W → N).
+// Long-press still triggers delete (handled in drawMachineAt's bg listeners).
+if (machine.type === 'conveyor') {
+  this.factory.rotateConveyor(row, col);
+  this.factory.save();
+  this.redrawMachineAt(row, col);
+  return;
+}
+
 this.openWorkerMenu(row + ',' + col);
 
 }
@@ -662,18 +674,34 @@ const x   = this.GX + col * this.TILE + this.TILE / 2;
 const y   = this.GY + row * this.TILE + this.TILE / 2;
 const key = row + ',' + col;
 
-const bg     = this.add.rectangle(x, y, this.TILE-2, this.TILE-2, mt.colour, 0.15);
-// Capture the stroke rectangle so it gets cleaned up on delete. Previously
-// it was orphaned, leaving a coloured outline ghost where the machine used to be.
-const stroke = this.add.rectangle(x, y, this.TILE-2, this.TILE-2).setStrokeStyle(2, mt.colour);
-const lbl    = this.add.text(x, y-6, mt.shortName || type.substring(0,6).toUpperCase(), { fontFamily:'monospace', fontSize:'10px', color:mt.colourHex, fontStyle:'bold' }).setOrigin(0.5);
-const barBg  = this.add.rectangle(x, y+this.TILE/2-5, this.TILE-4, 5, 0x2a3a4a);
-const bar    = this.add.rectangle(x-(this.TILE-4)/2, y+this.TILE/2-5, 0, 5, mt.colour).setOrigin(0,0.5);
-const statusTxt = this.add.text(x, y+8, '', { fontFamily:'monospace', fontSize:'8px', color:'#5eba7d' }).setOrigin(0.5);
+const isConveyor = type === 'conveyor';
+const machine    = this.factory.getMachineAt(row, col);
 
-this.progressBars[key]       = bar;
-this.machineStatusTexts[key] = statusTxt;
-this.machineSprites[key]     = { bg, stroke, lbl, barBg, bar, statusTxt };
+// Conveyors get a dimmer fill so they don't fight visually with production
+// machines. Also no progress bar (belts don't have a "work" cycle).
+const bgAlpha = isConveyor ? 0.08 : 0.15;
+const bg      = this.add.rectangle(x, y, this.TILE-2, this.TILE-2, mt.colour, bgAlpha);
+const stroke  = this.add.rectangle(x, y, this.TILE-2, this.TILE-2).setStrokeStyle(isConveyor ? 1 : 2, mt.colour);
+
+let lbl, barBg = null, bar = null, statusTxt = null, dirArrow = null;
+
+if (isConveyor) {
+  // Direction arrow (large, centred). Updated by redrawMachineAt on rotation.
+  const arrowChar = { N: '\u2191', E: '\u2192', S: '\u2193', W: '\u2190' }[machine?.direction || 'E'];
+  dirArrow = this.add.text(x, y, arrowChar, {
+    fontFamily: 'monospace', fontSize: '24px', color: mt.colourHex, fontStyle: 'bold'
+  }).setOrigin(0.5);
+  lbl = dirArrow;
+} else {
+  lbl       = this.add.text(x, y-6, mt.shortName || type.substring(0,6).toUpperCase(), { fontFamily:'monospace', fontSize:'10px', color:mt.colourHex, fontStyle:'bold' }).setOrigin(0.5);
+  barBg     = this.add.rectangle(x, y+this.TILE/2-5, this.TILE-4, 5, 0x2a3a4a);
+  bar       = this.add.rectangle(x-(this.TILE-4)/2, y+this.TILE/2-5, 0, 5, mt.colour).setOrigin(0,0.5);
+  statusTxt = this.add.text(x, y+8, '', { fontFamily:'monospace', fontSize:'8px', color:'#5eba7d' }).setOrigin(0.5);
+  this.progressBars[key]       = bar;
+  this.machineStatusTexts[key] = statusTxt;
+}
+
+this.machineSprites[key] = { bg, stroke, lbl, barBg, bar, statusTxt, dirArrow };
 
 let timer = null, pressing = false;
 bg.setInteractive();
@@ -687,6 +715,21 @@ bg.on('pointerup', () => {
 });
 bg.on('pointerout', () => { timer?.remove(); timer = null; pressing = false; });
 
+}
+
+// Re-render a machine in place (used when a conveyor rotates).
+// Cleaner than mutating the existing arrow because we share the
+// drawMachineAt path for state setup.
+redrawMachineAt(row, col) {
+  const key = row + ',' + col;
+  if (this.machineSprites[key]) {
+    Object.values(this.machineSprites[key]).forEach(s => s?.destroy?.());
+    delete this.machineSprites[key];
+    delete this.progressBars[key];
+    delete this.machineStatusTexts[key];
+  }
+  const m = this.factory.getMachineAt(row, col);
+  if (m) this.drawMachineAt(row, col, m.type);
 }
 
 // ── Workers ────────────────────────────────────────────────────────────────
@@ -720,32 +763,54 @@ this.add.rectangle(width/2, (this.PANEL_Y+height)/2, width, height-this.PANEL_Y,
 this.add.rectangle(width/2, this.PANEL_Y, width, 1, 0x334455);
 
 const btnY = this.PANEL_Y + 56;
+// Layout for 4 buttons across the panel.
+// Each button is 86px wide, with 4px gaps; total span ~360px fits comfortably.
+const W   = 86;
+const H_  = 84;
+const ax  = 52;     // ASSEMBLY centre
+const bx  = 144;    // CONVEYOR centre
+const sx  = 236;    // SMELTER centre
+const dx  = 332;    // DEL centre (slightly narrower fits the gap)
 
-// Assembly is the first station unlocked, so it sits leftmost.
-this.assemblyBtn = this.add.rectangle(78, btnY, 128, 84, 0x1e2530).setInteractive();
-this.add.rectangle(78, btnY, 128, 84).setStrokeStyle(1, 0x5eba7d);
-this.add.circle(78, btnY-28, 9, 0x5eba7d);
-this.add.text(78, btnY+4, 'ASSEMBLY', { fontFamily:'monospace', fontSize:'13px', color:'#eef2f8', fontStyle:'bold' }).setOrigin(0.5);
-this.add.text(78, btnY+24, 'SELECT TYPE', { fontFamily:'monospace', fontSize:'10px', color:'#8899aa' }).setOrigin(0.5);
+// ── ASSEMBLY ─────────────────────────────────────────────────────────
+this.assemblyBtn = this.add.rectangle(ax, btnY, W, H_, 0x1e2530).setInteractive();
+this.add.rectangle(ax, btnY, W, H_).setStrokeStyle(1, 0x5eba7d);
+this.add.circle(ax, btnY-30, 8, 0x5eba7d);
+this.add.text(ax, btnY-10, 'ASSEMBLY', { fontFamily:'monospace', fontSize:'11px', color:'#eef2f8', fontStyle:'bold' }).setOrigin(0.5);
+this.add.text(ax, btnY+10, 'SELECT TYPE', { fontFamily:'monospace', fontSize:'9px', color:'#8899aa' }).setOrigin(0.5);
 this.assemblyBtn.on('pointerdown', () => this.selectPlacing('assembly'));
 this.assemblyBtn.on('pointerover', () => this.assemblyBtn.setFillStyle(0x252c38));
 this.assemblyBtn.on('pointerout', () => { this.assemblyBtn.setFillStyle(this.placingMachine==='assembly'?0x2a3a4a:0x1e2530); });
 
-this.smelterBtn = this.add.rectangle(228, btnY, 128, 84, 0x1e2530).setInteractive();
-this.add.rectangle(228, btnY, 128, 84).setStrokeStyle(1, 0xe8a020);
-this.add.circle(228, btnY-30, 8, 0xe8a020);
-this.add.text(228, btnY-10, 'SMELTER', { fontFamily:'monospace', fontSize:'13px', color:'#eef2f8', fontStyle:'bold' }).setOrigin(0.5);
-this.add.text(228, btnY+8, 'SCRAP\u2192REFINED', { fontFamily:'monospace', fontSize:'9px', color:'#8899aa' }).setOrigin(0.5);
-this.add.text(228, btnY+24, this.formatCost(this.MACHINE_BUILD_COSTS.smelter), { fontFamily:'monospace', fontSize:'10px', color:'#e8a020', fontStyle:'bold' }).setOrigin(0.5);
+// ── CONVEYOR (Milestone 3) ───────────────────────────────────────────
+this.conveyorBtn = this.add.rectangle(bx, btnY, W, H_, 0x1e2530).setInteractive();
+this.add.rectangle(bx, btnY, W, H_).setStrokeStyle(1, 0x8899aa);
+// Small arrow icon hint
+this.add.text(bx, btnY-30, '\u2192', { fontFamily:'monospace', fontSize:'18px', color:'#8899aa', fontStyle:'bold' }).setOrigin(0.5);
+this.add.text(bx, btnY-10, 'CONVEYOR', { fontFamily:'monospace', fontSize:'11px', color:'#eef2f8', fontStyle:'bold' }).setOrigin(0.5);
+this.add.text(bx, btnY+8, 'TAP TO ROTATE', { fontFamily:'monospace', fontSize:'8px', color:'#8899aa' }).setOrigin(0.5);
+this.add.text(bx, btnY+24, this.formatCost(this.MACHINE_BUILD_COSTS.conveyor), { fontFamily:'monospace', fontSize:'10px', color:'#8899aa', fontStyle:'bold' }).setOrigin(0.5);
+this.conveyorBtn.on('pointerdown', () => this.selectPlacing('conveyor'));
+this.conveyorBtn.on('pointerover', () => this.conveyorBtn.setFillStyle(0x252c38));
+this.conveyorBtn.on('pointerout', () => { this.conveyorBtn.setFillStyle(this.placingMachine==='conveyor'?0x2a3a4a:0x1e2530); });
+
+// ── SMELTER ──────────────────────────────────────────────────────────
+this.smelterBtn = this.add.rectangle(sx, btnY, W, H_, 0x1e2530).setInteractive();
+this.add.rectangle(sx, btnY, W, H_).setStrokeStyle(1, 0xe8a020);
+this.add.circle(sx, btnY-30, 8, 0xe8a020);
+this.add.text(sx, btnY-10, 'SMELTER', { fontFamily:'monospace', fontSize:'11px', color:'#eef2f8', fontStyle:'bold' }).setOrigin(0.5);
+this.add.text(sx, btnY+8, 'SCRAP\u2192REF', { fontFamily:'monospace', fontSize:'8px', color:'#8899aa' }).setOrigin(0.5);
+this.add.text(sx, btnY+24, this.formatCost(this.MACHINE_BUILD_COSTS.smelter), { fontFamily:'monospace', fontSize:'10px', color:'#e8a020', fontStyle:'bold' }).setOrigin(0.5);
 this.smelterBtn.on('pointerdown', () => this.selectPlacing('smelter'));
 this.smelterBtn.on('pointerover', () => this.smelterBtn.setFillStyle(0x252c38));
 this.smelterBtn.on('pointerout', () => { this.smelterBtn.setFillStyle(this.placingMachine==='smelter'?0x2a3a4a:0x1e2530); });
 
-const delBtn = this.add.rectangle(346, btnY, 80, 84, 0x1e2530).setInteractive();
-this.add.rectangle(346, btnY, 80, 84).setStrokeStyle(1, 0x553333);
-this.add.text(346, btnY-10, 'DEL', { fontFamily:'monospace', fontSize:'16px', color:'#aa4444', fontStyle:'bold' }).setOrigin(0.5);
-this.add.text(346, btnY+14, 'HOLD', { fontFamily:'monospace', fontSize:'10px', color:'#aa4444' }).setOrigin(0.5);
-this.add.text(346, btnY+28, 'MACHINE', { fontFamily:'monospace', fontSize:'10px', color:'#aa4444' }).setOrigin(0.5);
+// ── DEL ──────────────────────────────────────────────────────────────
+const delBtn = this.add.rectangle(dx, btnY, 70, H_, 0x1e2530).setInteractive();
+this.add.rectangle(dx, btnY, 70, H_).setStrokeStyle(1, 0x553333);
+this.add.text(dx, btnY-12, 'DEL', { fontFamily:'monospace', fontSize:'14px', color:'#aa4444', fontStyle:'bold' }).setOrigin(0.5);
+this.add.text(dx, btnY+10, 'HOLD', { fontFamily:'monospace', fontSize:'9px', color:'#aa4444' }).setOrigin(0.5);
+this.add.text(dx, btnY+24, 'MACHINE', { fontFamily:'monospace', fontSize:'9px', color:'#aa4444' }).setOrigin(0.5);
 delBtn.on('pointerdown', () => this.showMessage('Hold any machine to delete it', '#c43a3a'));
 
 }
@@ -764,13 +829,17 @@ selectPlacing(type) {
 this.placingMachine = this.placingMachine === type ? null : type;
 this.smelterBtn?.setFillStyle(this.placingMachine==='smelter'?0x2a3a4a:0x1e2530);
 this.assemblyBtn?.setFillStyle(this.placingMachine==='assembly'?0x2a3a4a:0x1e2530);
+this.conveyorBtn?.setFillStyle(this.placingMachine==='conveyor'?0x2a3a4a:0x1e2530);
 if (this.placingMachine) {
 let msg;
 if (type === 'assembly') {
 msg = 'Tap an empty tile \u2014 you will choose the tower type';
+} else if (type === 'conveyor') {
+const cost = this.MACHINE_BUILD_COSTS.conveyor;
+msg = 'Tap an empty tile to place CONVEYOR (cost: ' + this.formatCost(cost) + ')';
 } else {
 const cost = this.MACHINE_BUILD_COSTS[type];
-msg = 'Tap empty tile to build SMELTER (cost: ' + this.formatCost(cost) + ')';
+msg = 'Tap empty tile to build ' + type.toUpperCase() + ' (cost: ' + this.formatCost(cost) + ')';
 }
 this.showMessage(msg, '#e8a020');
 }
@@ -1263,6 +1332,42 @@ for (let r = 0; r < this.ROWS; r++) {
   }
 }
 
+// ── Tile items (Milestone 3) ─────────────────────────────────────────
+// Render small dots on tiles that hold items (e.g. items moving along
+// conveyors). Uses a per-tile cached sprite to avoid recreating every
+// frame. Colours match the material for readability.
+this._renderTileItems();
+
+}
+
+_renderTileItems() {
+  if (!this._itemSprites) this._itemSprites = {};
+  const colours = {
+    plasticScrap:   0x3a8fc4,
+    salvagedMetal:  0x5eba7d,
+    refinedPlastic: 0xe8a020,
+    towerComponent: 0xffffff
+  };
+  for (let r = 0; r < this.ROWS; r++) {
+    for (let c = 0; c < this.COLS; c++) {
+      const key  = r + ',' + c;
+      const item = this.factory.getTileItem ? this.factory.getTileItem(r, c) : null;
+      const existing = this._itemSprites[key];
+      if (item) {
+        const x = this.GX + c * this.TILE + this.TILE / 2;
+        const y = this.GY + r * this.TILE + this.TILE / 2;
+        const colour = colours[item] || 0xffffff;
+        if (!existing) {
+          this._itemSprites[key] = this.add.circle(x, y, 8, colour).setDepth(8).setStrokeStyle(1, 0x0d1117);
+        } else {
+          existing.setPosition(x, y).setFillStyle(colour);
+        }
+      } else if (existing) {
+        existing.destroy();
+        delete this._itemSprites[key];
+      }
+    }
+  }
 }
 
 addTowerToStockpile(type) {

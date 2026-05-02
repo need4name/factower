@@ -39,18 +39,25 @@ this.saveData   = JSON.parse(localStorage.getItem(saveKey));
 this._workerWalkTweens = {};
 this._lastFactoryRun   = this.shouldFactoryRun();
 
-// ── Starter material grant ──────────────────────────────────────────
-// Tightly tuned to the tutorial path:
-//   2 SCRAP + 1 METAL → build 1 Gunner Assembly (1S+1M) → 1 SCRAP, 0 METAL
-//   → produce 1 Gunner tower (1S consumed from store) → 0 SCRAP, 0 METAL.
-// After tutorial the player has zero resources and must do combat to earn more.
-if (!this.saveData.materialsGranted) {
-  if (!this.saveData.materials) this.saveData.materials = { plasticScrap: 0, refinedPlastic: 0, salvagedMetal: 0 };
-  this.saveData.materials.plasticScrap  = (this.saveData.materials.plasticScrap  || 0) + 2;
-  this.saveData.materials.salvagedMetal = (this.saveData.materials.salvagedMetal || 0) + 1;
-  this.saveData.materialsGranted = true;
-  localStorage.setItem(saveKey, JSON.stringify(this.saveData));
+// ── Dev resource floor (Milestone 3 — testing aid) ──────────────────
+// During automation development we want plentiful materials on every visit
+// so the player can iterate on belts/machines without farming combat.
+// Top up to a floor of 50 scrap + 50 metal whenever entering the factory.
+// Replaces the earlier tight starter grant. Revisit this when balancing —
+// for production play we'll lower the floor and make players earn it.
+const DEV_FLOOR = { plasticScrap: 50, salvagedMetal: 50 };
+if (!this.saveData.materials) this.saveData.materials = { plasticScrap: 0, refinedPlastic: 0, salvagedMetal: 0 };
+let _toppedUp = false;
+if ((this.saveData.materials.plasticScrap || 0) < DEV_FLOOR.plasticScrap) {
+  this.saveData.materials.plasticScrap = DEV_FLOOR.plasticScrap;
+  _toppedUp = true;
 }
+if ((this.saveData.materials.salvagedMetal || 0) < DEV_FLOOR.salvagedMetal) {
+  this.saveData.materials.salvagedMetal = DEV_FLOOR.salvagedMetal;
+  _toppedUp = true;
+}
+this.saveData.materialsGranted = true;   // legacy flag, kept set so older code doesn't re-trigger
+if (_toppedUp) localStorage.setItem(saveKey, JSON.stringify(this.saveData));
 
 // ── Build costs (resources consumed when placing a machine on a tile) ──
 // Separate from per-tower costs (which assembly menus consume per build).
@@ -765,12 +772,21 @@ this.add.rectangle(width/2, this.PANEL_Y, width, 1, 0x334455);
 const btnY = this.PANEL_Y + 56;
 // Layout for 4 buttons across the panel.
 // Each button is 86px wide, with 4px gaps; total span ~360px fits comfortably.
-const W   = 86;
-const H_  = 84;
-const ax  = 52;     // ASSEMBLY centre
-const bx  = 144;    // CONVEYOR centre
-const sx  = 236;    // SMELTER centre
-const dx  = 332;    // DEL centre (slightly narrower fits the gap)
+// Hoisted onto `this` so tutorial highlight code can reuse exact positions.
+this._btnW   = 86;
+this._btnH   = 84;
+this._btnY   = btnY;
+this._asmX   = 52;     // ASSEMBLY centre
+this._belX   = 144;    // CONVEYOR centre
+this._smeX   = 236;    // SMELTER centre
+this._delX   = 332;    // DEL centre
+
+const W   = this._btnW;
+const H_  = this._btnH;
+const ax  = this._asmX;
+const bx  = this._belX;
+const sx  = this._smeX;
+const dx  = this._delX;
 
 // ── ASSEMBLY ─────────────────────────────────────────────────────────
 this.assemblyBtn = this.add.rectangle(ax, btnY, W, H_, 0x1e2530).setInteractive();
@@ -1045,7 +1061,7 @@ const { width } = this.scale;
 const btnY = this.PANEL_Y + 56;
 switch (step) {
 // 0: place assembly → highlight ASSEMBLY button
-case 0: this.showTutorialHighlight(78, btnY, 128, 84); break;
+case 0: this.showTutorialHighlight(this._asmX, this._btnY, this._btnW, this._btnH); break;
 // 1: collect scrap → highlight scrap store
 case 1: this.showTutorialHighlight(this.SCRAP_X, this.STORE_Y, this.STORE_W, 52); break;
 // 3: deposit at assembly → highlight the placed assembly bench
@@ -1182,7 +1198,7 @@ this.clearTutorialHighlight();
 const { width } = this.scale;
 const btnY = this.PANEL_Y + 56;
 
-if (target === 'assembly_btn')      this.showTutorialHighlight(78, btnY, 128, 84);
+if (target === 'assembly_btn')      this.showTutorialHighlight(this._asmX, this._btnY, this._btnW, this._btnH);
 else if (target === 'scrap_store')  this.showTutorialHighlight(this.SCRAP_X, this.STORE_Y, this.STORE_W, 52);
 else if (target === 'depository')   this.showTutorialHighlight(width/2, this.DEPOT_Y, width-48, 40);
 else if (target && target.includes(',')) {

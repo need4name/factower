@@ -104,6 +104,7 @@ this.PANEL_Y  = Math.max(this.DEPOT_Y + 36, height - 100);
 this.WORKER_SPEED = 80;
 
 this.placingMachine      = null;
+this.deleteMode          = false;   // toggled by DEL button — single-tap-to-delete affordance
 this.progressBars        = {};
 this.machineSprites      = {};
 this.machineStatusTexts  = {};
@@ -415,6 +416,15 @@ const y = this.GY + row * this.TILE + this.TILE / 2;
 }
 
 tileTapped(tile, row, col) {
+// Delete mode wins over everything. Tapping any machine triggers its
+// delete-confirm dialog. Empty tiles do nothing in delete mode (so you
+// can tap an empty area to "miss" without consequences).
+if (this.deleteMode) {
+  const m = this.factory.getMachineAt(row, col);
+  if (m) this.confirmDelete(row, col);
+  return;
+}
+
 if (this.placingMachine) {
 if (this.factory.getMachineAt(row, col)) return;
 if (this.placingMachine === 'assembly') {
@@ -443,12 +453,13 @@ return;
 const machine = this.factory.getMachineAt(row, col);
 if (!machine) return;
 
-// Conveyor tile tap → rotate it (N → E → S → W → N).
-// Long-press still triggers delete (handled in drawMachineAt's bg listeners).
+// Conveyor tap (short-press only — long-press is rotate, handled in bg listeners):
+// always treated as "interact with belt" → open worker menu. The menu's
+// canWorkerStartAt check decides whether any worker can actually do something.
+// If no worker can act (belt is empty, no one is carrying), the menu falls back
+// to a friendly error in tryAssignWorker.
 if (machine.type === 'conveyor') {
-  this.factory.rotateConveyor(row, col);
-  this.factory.save();
-  this.redrawMachineAt(row, col);
+  this.openWorkerMenu(row + ',' + col);
   return;
 }
 
@@ -633,7 +644,16 @@ const w = this.factory.workers[workerId];
   } else {
     const [r, c] = stationKey.split(',').map(Number);
     const machine = this.factory.getMachineAt(r, c);
-    if (machine && this.factory.isAssemblyType(machine.type)) {
+    if (machine && machine.type === 'conveyor') {
+      // Worker can drop onto a conveyor only if carrying an item and tile empty
+      if (w.inventory.length === 0) {
+        this.showMessage('W'+(workerId+1)+': Carry an item first to drop on belt', '#e8a020');
+      } else if (this.factory.getTileItem(r, c) !== null) {
+        this.showMessage('W'+(workerId+1)+': Belt is occupied here', '#e8a020');
+      } else {
+        this.showMessage('W'+(workerId+1)+': Cannot drop on belt right now', '#c43a3a');
+      }
+    } else if (machine && this.factory.isAssemblyType(machine.type)) {
       const pri = MACHINE_TYPES[machine.type].primaryInput;
       if (machine.heldMaterial === null && !w.inventory.includes(pri)) {
         this.showMessage('W'+(workerId+1)+': Bench needs ' + pri.replace(/([A-Z])/g,' $1').trim().toUpperCase(), '#e8a020');
@@ -710,17 +730,36 @@ if (isConveyor) {
 
 this.machineSprites[key] = { bg, stroke, lbl, barBg, bar, statusTxt, dirArrow };
 
-let timer = null, pressing = false;
+let timer = null, pressing = false, longPressed = false;
 bg.setInteractive();
 bg.on('pointerdown', () => {
   pressing = true;
-  timer = this.time.delayedCall(700, () => { pressing = false; this.confirmDelete(row, col); });
+  longPressed = false;
+  // Long-press on a conveyor rotates it. No long-press action on other
+  // machines — deletion is now via DEL mode (see toggleDeleteMode).
+  if (isConveyor) {
+    timer = this.time.delayedCall(550, () => {
+      longPressed = true;
+      pressing = false;
+      this.factory.rotateConveyor(row, col);
+      this.factory.save();
+      this.redrawMachineAt(row, col);
+    });
+  }
 });
 bg.on('pointerup', () => {
   timer?.remove(); timer = null;
-  if (pressing) { pressing = false; this.tileTapped(null, row, col); }
+  if (pressing && !longPressed) {
+    pressing = false;
+    this.tileTapped(null, row, col);
+  }
+  pressing = false;
 });
-bg.on('pointerout', () => { timer?.remove(); timer = null; pressing = false; });
+bg.on('pointerout', () => {
+  timer?.remove(); timer = null;
+  pressing = false;
+  longPressed = false;
+});
 
 }
 
@@ -822,13 +861,45 @@ this.smelterBtn.on('pointerover', () => this.smelterBtn.setFillStyle(0x252c38));
 this.smelterBtn.on('pointerout', () => { this.smelterBtn.setFillStyle(this.placingMachine==='smelter'?0x2a3a4a:0x1e2530); });
 
 // ── DEL ──────────────────────────────────────────────────────────────
-const delBtn = this.add.rectangle(dx, btnY, 70, H_, 0x1e2530).setInteractive();
-this.add.rectangle(dx, btnY, 70, H_).setStrokeStyle(1, 0x553333);
-this.add.text(dx, btnY-12, 'DEL', { fontFamily:'monospace', fontSize:'14px', color:'#aa4444', fontStyle:'bold' }).setOrigin(0.5);
-this.add.text(dx, btnY+10, 'HOLD', { fontFamily:'monospace', fontSize:'9px', color:'#aa4444' }).setOrigin(0.5);
-this.add.text(dx, btnY+24, 'MACHINE', { fontFamily:'monospace', fontSize:'9px', color:'#aa4444' }).setOrigin(0.5);
-delBtn.on('pointerdown', () => this.showMessage('Hold any machine to delete it', '#c43a3a'));
+// Toggle button. Active state is red-tinted; while active any tap on a
+// machine opens its delete-confirm dialog. Tapping DEL again exits the mode.
+this.delBtn = this.add.rectangle(dx, btnY, 70, H_, 0x1e2530).setInteractive();
+this.delBtnBorder = this.add.rectangle(dx, btnY, 70, H_).setStrokeStyle(1, 0x553333);
+this.add.text(dx, btnY-14, 'DEL', { fontFamily:'monospace', fontSize:'14px', color:'#aa4444', fontStyle:'bold' }).setOrigin(0.5);
+this.add.text(dx, btnY+8, 'TAP THEN', { fontFamily:'monospace', fontSize:'9px', color:'#aa4444' }).setOrigin(0.5);
+this.add.text(dx, btnY+22, 'A MACHINE', { fontFamily:'monospace', fontSize:'9px', color:'#aa4444' }).setOrigin(0.5);
+this.delBtn.on('pointerdown', () => this.toggleDeleteMode());
+this.delBtn.on('pointerover', () => this.delBtn.setFillStyle(this.deleteMode ? 0x4a1818 : 0x252c38));
+this.delBtn.on('pointerout',  () => this.delBtn.setFillStyle(this.deleteMode ? 0x3a1010 : 0x1e2530));
 
+}
+
+// ── Delete mode ────────────────────────────────────────────────────────────
+// While active: tapping any machine triggers confirmDelete, no other action
+// runs. Placement mode and delete mode are mutually exclusive.
+
+toggleDeleteMode() {
+  this.deleteMode = !this.deleteMode;
+  // Cancel anything else that might conflict
+  if (this.deleteMode) {
+    this.placingMachine = null;
+    this.smelterBtn?.setFillStyle(0x1e2530);
+    this.assemblyBtn?.setFillStyle(0x1e2530);
+    this.conveyorBtn?.setFillStyle(0x1e2530);
+  }
+  // Visual feedback
+  if (this.delBtn)       this.delBtn.setFillStyle(this.deleteMode ? 0x3a1010 : 0x1e2530);
+  if (this.delBtnBorder) this.delBtnBorder.setStrokeStyle(1, this.deleteMode ? 0xc43a3a : 0x553333);
+  if (this.deleteMode) {
+    this.showMessage('DELETE MODE \u2014 tap a machine to remove', '#c43a3a');
+  }
+}
+
+exitDeleteMode() {
+  if (!this.deleteMode) return;
+  this.deleteMode = false;
+  if (this.delBtn)       this.delBtn.setFillStyle(0x1e2530);
+  if (this.delBtnBorder) this.delBtnBorder.setStrokeStyle(1, 0x553333);
 }
 
 // ── Status bar ─────────────────────────────────────────────────────────────
@@ -1018,6 +1089,9 @@ confirmBtn.on('pointerdown', () => {
     this.refundBuildCost(totalRefund);
     this.showMessage('Refunded ' + this.formatCost(totalRefund), '#5eba7d');
   }
+  // Successful delete exits delete mode so the player isn't left in a
+  // dangerous tap-to-delete state. Tap DEL again to delete more.
+  this.exitDeleteMode();
 });
 confirmBtn.on('pointerover', () => confirmBtn.setFillStyle(0x4a1818));
 confirmBtn.on('pointerout',  () => confirmBtn.setFillStyle(0x3a1010));

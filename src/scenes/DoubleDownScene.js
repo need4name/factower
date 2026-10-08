@@ -354,13 +354,13 @@ class DoubleDownScene extends Phaser.Scene {
     this.tweens.add({ targets:pulse, alpha:0.4, duration:600, yoyo:true, repeat:-1 });
     const cardY=height-152;
     const card  =this.add.rectangle(width/2,cardY,width-32,96,0x0a0e14,0.98).setDepth(52);
-    this.add.rectangle(width/2,cardY,width-32,96).setStrokeStyle(1,0xe8a020,0.6).setDepth(52);
+    const cardBdr=this.add.rectangle(width/2,cardY,width-32,96).setStrokeStyle(1,0xe8a020,0.6).setDepth(52);
     const tT=this.add.text(width/2,cardY-28,'',{ fontFamily:'monospace',fontSize:'13px',color:'#e8a020',fontStyle:'bold',letterSpacing:3 }).setOrigin(0.5).setDepth(53);
     const tB=this.add.text(width/2,cardY+4, '',{ fontFamily:'monospace',fontSize:'11px',color:'#8899aa',align:'center',wordWrap:{width:width-60} }).setOrigin(0.5).setDepth(53);
-    this.add.text(width/2,cardY+38,'TAP TO CONTINUE',{ fontFamily:'monospace',fontSize:'9px',color:'#334455',letterSpacing:3 }).setOrigin(0.5).setDepth(53);
+    const tapTxt=this.add.text(width/2,cardY+38,'TAP TO CONTINUE',{ fontFamily:'monospace',fontSize:'9px',color:'#334455',letterSpacing:3 }).setOrigin(0.5).setDepth(53);
     const show=(i)=>{ const s=steps[i]; pulse.setPosition(s.tx,s.ty).setSize(s.tw+10,s.th+10); tT.setText(s.title); tB.setText(s.body); };
     show(0);
-    const next=()=>{ step++; if(step>=steps.length){ [overlay,pulse,card,tT,tB].forEach(e=>e.destroy()); this.saveData.tutorials.doubleDown=true; this._save(); return; } show(step); };
+    const next=()=>{ step++; if(step>=steps.length){ [overlay,pulse,card,cardBdr,tT,tB,tapTxt].forEach(e=>e.destroy()); this.saveData.tutorials.doubleDown=true; this._save(); return; } show(step); };
     overlay.setInteractive();
     overlay.on('pointerdown', next);
   }

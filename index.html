@@ -26,9 +26,53 @@
 html, body { background: #0a0d12; overflow: hidden; width: 100%; height: 100%; height: 100dvh;
              -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: none; }
 canvas { display: block; }
+/* The game sits in a box sized by script to the truly visible height
+   (window.innerHeight). CSS units alone (100%, 100dvh) can report the full
+   screen in an iOS home-screen app, which pushes the bottom of the game
+   off screen. */
+#game { position: fixed; left: 0; top: 0; width: 100%; height: var(--app-h, 100dvh); }
+#crash { position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+         background: rgba(5,7,10,0.92); z-index: 10; padding: 24px; font-family: Inter, sans-serif; }
+#crash .box { max-width: 340px; background: #141a23; border: 1px solid #e5534b; border-radius: 16px; padding: 22px; color: #eef2f7; }
+#crash h2 { font: 700 20px "Chakra Petch", sans-serif; margin-bottom: 8px; }
+#crash p { font-size: 14px; color: #a7b2c1; line-height: 1.45; margin-bottom: 12px; }
+#crash code { display: block; font-size: 12px; color: #ff8a83; background: #0a0d12; border-radius: 8px; padding: 8px; margin-bottom: 16px; word-break: break-word; }
+#crash button { width: 100%; height: 48px; border: 0; border-radius: 12px; background: #f2a93b; color: #0a0d12; font: 700 16px "Chakra Petch", sans-serif; }
 </style>
 </head>
 <body>
+<div id="game"></div>
+<div id="crash"><div class="box">
+  <h2>Something went wrong</h2>
+  <p>The game hit an error. Your save is safe — reload to carry on. If it keeps happening, send a screenshot of this message.</p>
+  <code id="crash-msg"></code>
+  <button type="button" onclick="location.reload()">Reload</button>
+</div></div>
+<script>
+// Size the game box to the visible viewport, and keep it in sync.
+(function () {
+  function fit() {
+    const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    document.documentElement.style.setProperty('--app-h', Math.round(h) + 'px');
+    if (window.__factowerGame) window.__factowerGame.scale.refresh();
+  }
+  fit();
+  window.addEventListener('resize', fit);
+  window.addEventListener('orientationchange', () => setTimeout(fit, 250));
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', fit);
+})();
+// Never fail silently: a crash shows a message instead of a frozen screen.
+(function () {
+  function show(msg) {
+    const el = document.getElementById('crash');
+    if (el.style.display === 'flex') return;
+    document.getElementById('crash-msg').textContent = String(msg || 'Unknown error').slice(0, 300);
+    el.style.display = 'flex';
+  }
+  window.addEventListener('error', e => show(e.message + (e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ')' : '')));
+  window.addEventListener('unhandledrejection', e => show(e.reason && e.reason.message || e.reason));
+})();
+</script>
 
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
 <script src="src/ui/UI.js"></script>
@@ -54,6 +98,7 @@ canvas { display: block; }
 <script>
 const config = {
   type: Phaser.AUTO,
+  parent: 'game',
   width: 390,
   height: 844,
   backgroundColor: '#0a0c0f',
@@ -75,7 +120,7 @@ const fontsReady = document.fonts
   : Promise.resolve();
 Promise.race([fontsReady, new Promise(r => setTimeout(r, 3000))])
   .catch(() => {})
-  .then(() => new Phaser.Game(config));
+  .then(() => { window.__factowerGame = new Phaser.Game(config); });
 </script>
 </body>
 </html>

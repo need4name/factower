@@ -191,6 +191,7 @@ const UI = {
 
     let enabled = !o.disabled, pressed = false, hover = false;
     const draw = () => {
+      if (!c.scene) return;   // destroyed (e.g. a stale reference from a previous visit)
       const fill = enabled ? v.fill : UI.C.surface;
       const stroke = enabled ? v.stroke : UI.C.lineSoft;
       UI.drawPanel(bg, 0, 0, w, h, {
@@ -222,8 +223,9 @@ const UI = {
     c.label = label;
     c.subLabel = sub;
     c.setEnabled = (on) => { enabled = !!on; draw(); return c; };
+    const origSetLabel = (str, subStr) => { label.setText(str); if (sub && subStr !== undefined) sub.setText(subStr); return c; };
     c.isEnabled  = () => enabled;
-    c.setLabel   = (str, subStr) => { label.setText(str); if (sub && subStr !== undefined) sub.setText(subStr); return c; };
+    c.setLabel   = (str, subStr) => c.scene ? origSetLabel(str, subStr) : c;
     c.setVariant = (name, colour) => {
       v = Object.assign({}, variants[name]);
       if (colour !== undefined) { v.fill = colour; v.stroke = colour; }
@@ -325,6 +327,7 @@ const UI = {
     txt.x = -w / 2 + 28;
     c.add([bg, ic, txt]);
     c.setValue = (v) => {
+      if (!c.scene) return c;
       txt.setText(String(v));
       const nw = Math.max(54, txt.width + 38);
       if (nw !== c.cw) { c.cw = nw; draw(); ic.x = -nw / 2 + 16; txt.x = -nw / 2 + 28; }

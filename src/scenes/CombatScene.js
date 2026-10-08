@@ -1066,7 +1066,8 @@ if (victory) this.saveProgress();
 
 const width = this.scale.width, height = this.H;
 const D = 40;
-this.add.rectangle(width / 2, height / 2, width, height, 0x05070a, 0.9).setInteractive().setDepth(D);
+this.add.rectangle(width / 2, height / 2, width, height, UI.C.bg, 1).setInteractive().setDepth(D);
+UI.backdrop(this).setDepth(D);
 const accent = victory ? UI.C.green : UI.C.red;
 
 UI.text(this, width / 2, 74, victory ? 'VICTORY' : 'BASE LOST', 'hero', { size: 44, origin: 0.5, color: UI.hex(accent), depth: D + 1 });

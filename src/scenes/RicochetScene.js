@@ -661,13 +661,13 @@ class RicochetScene extends Phaser.Scene {
     this.tweens.add({targets:pl,alpha:0.4,duration:600,yoyo:true,repeat:-1});
     const cy=height-160;
     const c =this.add.rectangle(width/2,cy,width-32,100,0x0a0e14,0.98).setDepth(52);
-    this.add.rectangle(width/2,cy,width-32,100).setStrokeStyle(1,0xe8a020,0.6).setDepth(52);
+    const cBdr=this.add.rectangle(width/2,cy,width-32,100).setStrokeStyle(1,0xe8a020,0.6).setDepth(52);
     const tT=this.add.text(width/2,cy-30,'',{fontFamily:'monospace',fontSize:'13px',color:'#e8a020',fontStyle:'bold',letterSpacing:3}).setOrigin(0.5).setDepth(53);
     const tB=this.add.text(width/2,cy+2, '',{fontFamily:'monospace',fontSize:'11px',color:'#8899aa',align:'center',wordWrap:{width:width-60}}).setOrigin(0.5).setDepth(53);
-    this.add.text(width/2,cy+38,'TAP TO CONTINUE',{fontFamily:'monospace',fontSize:'9px',color:'#334455',letterSpacing:3}).setOrigin(0.5).setDepth(53);
+    const tapTxt=this.add.text(width/2,cy+38,'TAP TO CONTINUE',{fontFamily:'monospace',fontSize:'9px',color:'#334455',letterSpacing:3}).setOrigin(0.5).setDepth(53);
     const show=(i)=>{const s=steps[i];pl.setPosition(s.tx,s.ty).setSize(s.tw+12,s.th+12);tT.setText(s.title);tB.setText(s.body);};
     show(0);
-    const adv=()=>{step++;if(step>=steps.length){[ov,pl,c,tT,tB].forEach(e=>e.destroy());this.saveData.tutorials.ricochet=true;this._save();return;}show(step);};
+    const adv=()=>{step++;if(step>=steps.length){[ov,pl,c,cBdr,tT,tB,tapTxt].forEach(e=>e.destroy());this.saveData.tutorials.ricochet=true;this._save();return;}show(step);};
     ov.setInteractive();ov.on('pointerdown',adv);
   }
 }

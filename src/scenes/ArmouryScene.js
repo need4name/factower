@@ -30,7 +30,10 @@ class ArmouryScene extends Phaser.Scene {
       chips: [{ kind: 'nuts', value: this.saveData.nuts }]
     });
 
+    // Phaser reuses this scene object between visits — clear references to
+    // the previous visit's (destroyed) objects before anything touches them.
     this.cardItems = [];
+    this.dockBtn = null;
     this.drawTowerCards();
 
     const by = height - 46;

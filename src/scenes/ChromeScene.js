@@ -280,10 +280,10 @@ class ChromeScene extends Phaser.Scene {
 
     const cardY   = height - 148;
     const card    = this.add.rectangle(width / 2, cardY, width - 32, 88, 0x0a0e14, 0.98).setDepth(52);
-    this.add.rectangle(width / 2, cardY, width - 32, 88).setStrokeStyle(1, 0xe8a020, 0.6).setDepth(52);
+    const cardBdr = this.add.rectangle(width / 2, cardY, width - 32, 88).setStrokeStyle(1, 0xe8a020, 0.6).setDepth(52);
     const tTitle  = this.add.text(width / 2, cardY - 24, '', { fontFamily: 'monospace', fontSize: '13px', color: '#e8a020', fontStyle: 'bold', letterSpacing: 3 }).setOrigin(0.5).setDepth(53);
     const tBody   = this.add.text(width / 2, cardY + 4,  '', { fontFamily: 'monospace', fontSize: '11px', color: '#8899aa', align: 'center', wordWrap: { width: width - 60 } }).setOrigin(0.5).setDepth(53);
-    this.add.text(width / 2, cardY + 34, 'TAP TO CONTINUE', { fontFamily: 'monospace', fontSize: '9px', color: '#334455', letterSpacing: 3 }).setOrigin(0.5).setDepth(53);
+    const tapTxt = this.add.text(width / 2, cardY + 34, 'TAP TO CONTINUE', { fontFamily: 'monospace', fontSize: '9px', color: '#334455', letterSpacing: 3 }).setOrigin(0.5).setDepth(53);
 
     const show = (i) => {
       const s = steps[i];
@@ -296,7 +296,7 @@ class ChromeScene extends Phaser.Scene {
     const next = () => {
       step++;
       if (step >= steps.length) {
-        [overlay, pulse, card, tTitle, tBody].forEach(e => e.destroy());
+        [overlay, pulse, card, cardBdr, tTitle, tBody, tapTxt].forEach(e => e.destroy());
         this.saveData.tutorials.chrome = true;
         this._save();
         return;

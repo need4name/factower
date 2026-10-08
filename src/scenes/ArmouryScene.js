@@ -12,9 +12,7 @@ class ArmouryScene extends Phaser.Scene {
 
   create() {
     const { width, height } = this.scale;
-    const slotIndex = localStorage.getItem('factower_active_slot');
-    this.saveKey    = `factower_save_${slotIndex}`;
-    this.saveData   = JSON.parse(localStorage.getItem(this.saveKey));
+    this.saveData = SaveManager.load();
 
     if (this.saveData.nuts === undefined) this.saveData.nuts = 0;
 
@@ -175,7 +173,7 @@ class ArmouryScene extends Phaser.Scene {
     stockpile[type]--;
     this.saveData.nuts = (this.saveData.nuts || 0) + nutValue;
     this.saveData.stockpile = stockpile;
-    localStorage.setItem(this.saveKey, JSON.stringify(this.saveData));
+    SaveManager.write(this.saveData);
 
     this.nutText.setText('NUTS: ' + this.saveData.nuts);
     this.dismissConfirm();

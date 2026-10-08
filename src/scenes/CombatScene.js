@@ -18,9 +18,7 @@ const width = this.scale.width;
 this.H = Math.min(this.scale.height, window.innerHeight || this.scale.height);
 const height = this.H;
 
-const slotIndex = localStorage.getItem('factower_active_slot');
-const saveKey   = 'factower_save_' + slotIndex;
-this.saveData   = JSON.parse(localStorage.getItem(saveKey));
+this.saveData = SaveManager.load();
 
 // ── Automation foundation (Milestone 0) ─────────────────────────────
 // Mark the factory as inactive while the player is in combat. The flag
@@ -1269,13 +1267,7 @@ btn.on('pointerout',  () => btn.setFillStyle(0x161b22));
 // Single source of truth for the factory's active state. Reads, mutates,
 // writes back. Used on combat entry (false) and all three exits (true).
 setFactoryActive(active) {
-  const slotIndex = localStorage.getItem('factower_active_slot');
-  if (slotIndex === null) return;
-  const saveKey = 'factower_save_' + slotIndex;
-  const save    = JSON.parse(localStorage.getItem(saveKey));
-  if (!save) return;
-  save.factoryActive = !!active;
-  localStorage.setItem(saveKey, JSON.stringify(save));
+  SaveManager.update(save => { save.factoryActive = !!active; });
   if (this.saveData) this.saveData.factoryActive = !!active;
 }
 
@@ -1319,9 +1311,7 @@ showAbortConfirm() {
 }
 
 saveProgress() {
-const slotIndex = localStorage.getItem('factower_active_slot');
-const saveKey   = 'factower_save_' + slotIndex;
-const save      = JSON.parse(localStorage.getItem(saveKey));
+const save      = SaveManager.load();
 
 if (!save.completedLevels) save.completedLevels = {};
 const key = this.isEndless ? 'endless' : 'storyline' + this.storylineId;
@@ -1374,7 +1364,7 @@ save.materials.salvagedMetal = (save.materials.salvagedMetal || 0) + this.materi
 if (this.levelId === 1 && this.storylineId === 1 && !save.workers) save.workers = 2;
 if (this.levelId === 8 && this.storylineId === 1) save.factionOneComplete = true;
 
-localStorage.setItem(saveKey, JSON.stringify(save));
+SaveManager.write(save);
 
 }
 

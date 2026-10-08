@@ -6,10 +6,7 @@ constructor() {
 create() {
   const { width, height } = this.scale;
 
-  const slotIndex = localStorage.getItem('factower_active_slot');
-  const saveKey   = 'factower_save_' + slotIndex;
-  this.saveData   = JSON.parse(localStorage.getItem(saveKey)) || {};
-  this.saveKey    = saveKey;
+  this.saveData = SaveManager.load() || {};
 
   // ── Derive unlock states ──────────────────────────────────────────────────
   if (!this.saveData.flags) this.saveData.flags = {};
@@ -35,7 +32,7 @@ create() {
   if (armouryUnlocked     && !this.saveData.flags.armouryUnlocked)     { this.saveData.flags.armouryUnlocked     = true; flagsDirty = true; }
   if (uplinkUnlocked      && !this.saveData.flags.skillTreeUnlocked)   { this.saveData.flags.skillTreeUnlocked   = true; flagsDirty = true; }
   if (marketplaceUnlocked && !this.saveData.flags.marketplaceUnlocked) { this.saveData.flags.marketplaceUnlocked = true; flagsDirty = true; }
-  if (flagsDirty) localStorage.setItem(saveKey, JSON.stringify(this.saveData));
+  if (flagsDirty) SaveManager.write(this.saveData);
 
   const isFirstVisit = !this.saveData.flags.baseTutDone;
 
@@ -122,7 +119,7 @@ create() {
   if (isFirstVisit) {
     this._showTutorial(armouryUnlocked);
     this.saveData.flags.baseTutDone = true;
-    localStorage.setItem(saveKey, JSON.stringify(this.saveData));
+    SaveManager.write(this.saveData);
   }
 }
 

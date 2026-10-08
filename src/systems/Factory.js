@@ -194,10 +194,10 @@ class Factory {
   }
 
   save() {
-    const slotIndex = localStorage.getItem('factower_active_slot');
-    const saveKey   = 'factower_save_' + slotIndex;
-    const saveData  = JSON.parse(localStorage.getItem(saveKey));
+    SaveManager.update(saveData => this.writeInto(saveData));
+  }
 
+  writeInto(saveData) {
     // Write materials to canonical top-level location
     saveData.materials = {
       plasticScrap:   this.materials.plasticScrap   || 0,
@@ -217,7 +217,6 @@ class Factory {
       tutorialComplete: this.tutorialComplete
     };
     saveData.worker2Introduced = this.worker2Introduced;
-    localStorage.setItem(saveKey, JSON.stringify(saveData));
   }
 
   // ── Worker helpers ─────────────────────────────────────────────────────────
@@ -424,10 +423,41 @@ class Factory {
 
   // ── Update loop ────────────────────────────────────────────────────────────
 
+  // ── Belt → bench handoff (Milestone 4) ────────────────────────────────
+  // A belt feeds whatever machine it points at. An assembly bench accepts the
+  // item only if it's the bench's primaryInput, its slot is empty, and no
+  // worker is working at / walking to it (a worker deposit in flight would
+  // otherwise land on top of the belt's item). Anything else waits on the belt.
+  // Smelters don't take belt input yet (planned with smelter output, M6).
+  canBenchAcceptFromBelt(row, col, item) {
+    const m = this.getMachineAt(row, col);
+    if (!m || !this.isAssemblyType(m.type)) return false;
+    if (item !== MACHINE_TYPES[m.type].primaryInput) return false;
+    if (m.heldMaterial !== null) return false;
+    if (this.getWorkerAtStation(row + ',' + col)) return false;
+    return true;
+  }
+
+  // Returns the wrong item jammed at the front of a belt feeding this bench,
+  // or null. Used by the scene to label the bench "WRONG ITEM".
+  getBenchJam(row, col) {
+    const m = this.getMachineAt(row, col);
+    if (!m || !this.isAssemblyType(m.type)) return null;
+    const pri = MACHINE_TYPES[m.type].primaryInput;
+    const neighbours = [[row - 1, col], [row + 1, col], [row, col - 1], [row, col + 1]];
+    for (const [r, c] of neighbours) {
+      const t = this.getConveyorTarget(r, c);
+      if (!t || t.row !== row || t.col !== col) continue;
+      const item = this.getTileItem(r, c);
+      if (item && item !== pri) return item;
+    }
+    return null;
+  }
+
   // ── Belt tick (Milestone 3) ────────────────────────────────────────────
   // Two-phase to avoid order-of-iteration bias:
   //   1. Collect all (from, to) intended moves where source has item, dest is empty
-  //   2. Resolve conflicts (multiple belts → same dest) — only one wins, others wait
+  //   2. Resolve conflicts (multiple belts → same belt or bench) — only one wins, others wait
   //   3. Apply the surviving moves atomically
   _tickBelts() {
     const moves = [];
@@ -441,14 +471,16 @@ class Factory {
         if (!target) continue;
         if (target.row < 0 || target.row >= this.ROWS) continue;
         if (target.col < 0 || target.col >= this.COLS) continue;
-        // Destination must be empty (no item there yet)
-        if (this.tileItems[target.row][target.col] !== null) continue;
-        // Destination must be a conveyor or accept items (assembly bench, smelter)
-        // For M3 simplicity: only conveyor → conveyor moves auto-flow.
-        // Hand-off to assembly/smelter is handled later (workers still tap).
         const destMachine = this.grid[target.row][target.col];
-        if (!destMachine || destMachine.type !== 'conveyor') continue;
-        moves.push({ fromR: r, fromC: c, toR: target.row, toC: target.col, item });
+        if (!destMachine) continue;
+        if (destMachine.type === 'conveyor') {
+          // Belt → belt: destination tile must be empty
+          if (this.tileItems[target.row][target.col] !== null) continue;
+          moves.push({ fromR: r, fromC: c, toR: target.row, toC: target.col, item, intoBench: false });
+        } else if (this.canBenchAcceptFromBelt(target.row, target.col, item)) {
+          // Belt → bench (M4): item goes into the bench's held slot
+          moves.push({ fromR: r, fromC: c, toR: target.row, toC: target.col, item, intoBench: true });
+        }
       }
     }
 
@@ -461,9 +493,10 @@ class Factory {
       // Verify source still has the item and dest is still empty
       // (could have been claimed by an earlier move in this same phase)
       if (this.tileItems[mv.fromR][mv.fromC] !== mv.item) return;
-      if (this.tileItems[mv.toR][mv.toC] !== null) return;
+      if (!mv.intoBench && this.tileItems[mv.toR][mv.toC] !== null) return;
       this.tileItems[mv.fromR][mv.fromC] = null;
-      this.tileItems[mv.toR][mv.toC]     = mv.item;
+      if (mv.intoBench) this.grid[mv.toR][mv.toC].heldMaterial = mv.item;
+      else              this.tileItems[mv.toR][mv.toC] = mv.item;
       claimed.add(key);
     });
   }
@@ -578,6 +611,7 @@ class Factory {
       const pri = MACHINE_TYPES[machine.type].primaryInput;
 
       if (w.stationAction === 'deposit') {
+        if (machine.heldMaterial !== null) return;   // slot filled meanwhile — keep item
         w.inventory = w.inventory.filter(i => i !== pri);
         machine.heldMaterial = pri;
         return;

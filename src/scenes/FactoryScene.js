@@ -26,9 +26,7 @@ const width = this.scale.width;
 this.H = Math.min(this.scale.height, window.innerHeight || this.scale.height);
 const height = this.H;
 
-const slotIndex = localStorage.getItem('factower_active_slot');
-const saveKey   = 'factower_save_' + slotIndex;
-this.saveData   = JSON.parse(localStorage.getItem(saveKey));
+this.saveData = SaveManager.load();
 
 // ── Automation foundation (Milestone 1) ─────────────────────────────
 // Track whether the factory is currently allowed to run. CombatScene
@@ -57,7 +55,7 @@ if ((this.saveData.materials.salvagedMetal || 0) < DEV_FLOOR.salvagedMetal) {
   _toppedUp = true;
 }
 this.saveData.materialsGranted = true;   // legacy flag, kept set so older code doesn't re-trigger
-if (_toppedUp) localStorage.setItem(saveKey, JSON.stringify(this.saveData));
+if (_toppedUp) SaveManager.write(this.saveData);
 
 // ── Build costs (resources consumed when placing a machine on a tile) ──
 // Separate from per-tower costs (which assembly menus consume per build).
@@ -203,14 +201,11 @@ btn.on('pointerdown', () => {
   this.saveData.flags.towerTutorialsSeen[towerType] = true;
   // Write only the flag into the latest save — this.saveData is a create()-time
   // snapshot and would overwrite anything factory.save() has written since.
-  const saveKey = 'factower_save_' + localStorage.getItem('factower_active_slot');
-  const latest  = JSON.parse(localStorage.getItem(saveKey));
-  if (latest) {
+  SaveManager.update(latest => {
     if (!latest.flags) latest.flags = {};
     if (!latest.flags.towerTutorialsSeen) latest.flags.towerTutorialsSeen = {};
     latest.flags.towerTutorialsSeen[towerType] = true;
-    localStorage.setItem(saveKey, JSON.stringify(latest));
-  }
+  });
 
   // If both were just unlocked (typical case at Level 2), chain the second banner
   if (towerType === 'barricade' && !this.saveData.flags.towerTutorialsSeen.bomber
@@ -1407,7 +1402,14 @@ for (let r = 0; r < this.ROWS; r++) {
     const machine    = this.factory.getMachineAt(r, c);
     const statusTxt  = this.machineStatusTexts[key];
     if (statusTxt && machine && this.factory.isAssemblyType(machine.type)) {
-      statusTxt.setText(machine.heldMaterial ? '+'+machine.heldMaterial.substring(0,3).toUpperCase() : '');
+      // A belt pointing in with the wrong material jams the feed (M4) — that
+      // takes priority, since the item will never enter on its own.
+      const jam  = this.factory.getBenchJam(r, c);
+      const text = jam ? 'WRONG ITEM'
+                 : machine.heldMaterial ? '+'+machine.heldMaterial.substring(0,3).toUpperCase() : '';
+      if (statusTxt.text !== text) {
+        statusTxt.setText(text).setColor(jam ? '#c43a3a' : '#5eba7d');
+      }
     }
   }
 }
@@ -1451,13 +1453,10 @@ _renderTileItems() {
 }
 
 addTowerToStockpile(type) {
-const slotIndex = localStorage.getItem('factower_active_slot');
-const saveKey   = 'factower_save_' + slotIndex;
-const save      = JSON.parse(localStorage.getItem(saveKey));
-if (!save.stockpile) save.stockpile = { gunner:0, bomber:0, barricade:0 };
-save.stockpile[type] = (save.stockpile[type] || 0) + 1;
-localStorage.setItem(saveKey, JSON.stringify(save));
-this.saveData = save;
+this.saveData = SaveManager.update(save => {
+  if (!save.stockpile) save.stockpile = { gunner:0, bomber:0, barricade:0 };
+  save.stockpile[type] = (save.stockpile[type] || 0) + 1;
+});
 this.showMessage(type.toUpperCase() + ' added to Armoury!', '#5eba7d');
 this.factory.save();
 }

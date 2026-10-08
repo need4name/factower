@@ -7,9 +7,7 @@ class DockScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const TOP = 55;
 
-    const slotIndex = localStorage.getItem('factower_active_slot');
-    const saveKey   = 'factower_save_' + slotIndex;
-    this.saveData   = JSON.parse(localStorage.getItem(saveKey));
+    this.saveData = SaveManager.load();
 
     this.add.rectangle(width / 2, height / 2, width, height, 0x0d1117);
 

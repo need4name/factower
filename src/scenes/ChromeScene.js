@@ -17,9 +17,7 @@ class ChromeScene extends Phaser.Scene {
 
   create() {
     const { width, height } = this.scale;
-    const slotIndex   = localStorage.getItem('factower_active_slot');
-    this.saveKey      = `factower_save_${slotIndex}`;
-    this.saveData     = JSON.parse(localStorage.getItem(this.saveKey)) || {};
+    this.saveData = SaveManager.load() || {};
     if (!this.saveData.nuts)            this.saveData.nuts = 0;
     if (!this.saveData.bolts)           this.saveData.bolts = 0;
     if (!this.saveData.merchantFatigue) this.saveData.merchantFatigue = { chrome: 0, ricochet: 0, doubleDown: 0 };
@@ -262,7 +260,7 @@ class ChromeScene extends Phaser.Scene {
   _save() {
     this.saveData.merchantFatigue.chrome = this.fatigue;
     this.saveData.chromeState.pityCount  = this.pityCount;
-    localStorage.setItem(this.saveKey, JSON.stringify(this.saveData));
+    SaveManager.write(this.saveData);
   }
 
   _showTutorial() {

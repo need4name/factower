@@ -7,9 +7,7 @@ class SkillTreeScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const TOP = 55;
 
-    const slotIndex = localStorage.getItem('factower_active_slot');
-    this.saveKey    = 'factower_save_' + slotIndex;
-    this.saveData   = JSON.parse(localStorage.getItem(this.saveKey));
+    this.saveData = SaveManager.load();
 
     if (!this.saveData.skillTree) this.saveData.skillTree = {};
     if (this.saveData.bolts === undefined) this.saveData.bolts = 0;
@@ -307,7 +305,7 @@ class SkillTreeScene extends Phaser.Scene {
 
     this.saveData.bolts -= node.cost;
     this.saveData.skillTree[node.id] = true;
-    localStorage.setItem(this.saveKey, JSON.stringify(this.saveData));
+    SaveManager.write(this.saveData);
 
     this.boltCountText.setText('' + this.saveData.bolts + ' BOLTS');
     this.cameras.main.flash(120, branch.colour >> 16 & 0xff, branch.colour >> 8 & 0xff, branch.colour & 0xff, false);

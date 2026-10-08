@@ -35,9 +35,7 @@ color: '#334455'
 }
 
 createSlot(index, x, y, width) {
-const saveKey  = 'factower_save_' + index;
-const saveData = localStorage.getItem(saveKey);
-const isEmpty  = saveData === null;
+const isEmpty  = !SaveManager.exists(index);
 
 const bg = this.add.rectangle(x, y, width - 48, 150, 0x161b22).setInteractive();
 this.add.rectangle(x, y, width - 48, 150)
@@ -64,7 +62,7 @@ color: '#334455',
 letterSpacing: 3
 }).setOrigin(0.5);
 } else {
-const data = JSON.parse(saveData);
+const data = SaveManager.load(index);
 this.add.text(x, y - 28, data.playerName || 'THE PIRATE KING', {
 fontFamily: 'monospace',
 fontSize: '20px',
@@ -105,15 +103,15 @@ bg.on('pointerout',  () => bg.setFillStyle(0x161b22));
 }
 
 deleteSlot(index) {
-localStorage.removeItem('factower_save_' + index);
+SaveManager.remove(index);
 this.cameras.main.fade(200, 0, 0, 0);
 this.time.delayedCall(200, () => this.scene.restart());
 }
 
 selectSlot(index, isEmpty) {
-const saveKey = 'factower_save_' + index;
 if (isEmpty) {
 const newSave = {
+saveVersion: SAVE_VERSION,
 slot:       index,
 playerName: 'THE PIRATE KING',
 storyline:  1,
@@ -161,29 +159,18 @@ baseTutDone:       false
 factoryActive: true,
 createdAt: Date.now()
 };
-localStorage.setItem(saveKey, JSON.stringify(newSave));
+SaveManager.write(newSave, index);
 } else {
-// Migration — ensure existing saves have all required fields
-const existing = JSON.parse(localStorage.getItem(saveKey));
-let   dirty    = false;
-if (existing.nuts            === undefined) { existing.nuts            = 0;   dirty = true; }
-if (existing.bolts           === undefined) { existing.bolts           = 0;   dirty = true; }
-if (existing.skillTree       === undefined) { existing.skillTree       = {};  dirty = true; }
-if (existing.merchantFatigue === undefined) { existing.merchantFatigue = { chrome: 0, ricochet: 0, doubleDown: 0 }; dirty = true; }
-if (existing.merchantUnlocks === undefined) { existing.merchantUnlocks = { chrome: false, ricochet: false, doubleDown: false }; dirty = true; }
-if (existing.chromeState     === undefined) { existing.chromeState     = { pityCount: 0 }; dirty = true; }
-if (existing.ricochetState   === undefined) { existing.ricochetState   = {}; dirty = true; }
-if (existing.ddState         === undefined) { existing.ddState         = {}; dirty = true; }
-if (existing.tutorials       === undefined) { existing.tutorials       = {}; dirty = true; }
-if (existing.flags           === undefined) { existing.flags           = { armouryUnlocked: false, skillTreeUnlocked: false, baseTutDone: false }; dirty = true; }
-if (existing.materials       === undefined) { existing.materials       = { plasticScrap: 2, refinedPlastic: 0, salvagedMetal: 0 }; dirty = true; }
+// Bring older saves up to the current format (see SaveManager.js)
+const existing = SaveManager.load(index);
+let   dirty    = SaveManager.migrate(existing);
 // Nobody is in combat while picking a slot. If the app was closed mid-battle,
 // CombatScene never got to clear this, and the factory would stay frozen.
-if (existing.factoryActive   !== true)      { existing.factoryActive   = true; dirty = true; }
-if (dirty) localStorage.setItem(saveKey, JSON.stringify(existing));
+if (existing.factoryActive !== true) { existing.factoryActive = true; dirty = true; }
+if (dirty) SaveManager.write(existing, index);
 }
 
-localStorage.setItem('factower_active_slot', index);
+SaveManager.setActiveSlot(index);
 this.cameras.main.flash(200, 232, 160, 32);
 this.time.delayedCall(250, () => {
 this.scene.start('BaseScene');

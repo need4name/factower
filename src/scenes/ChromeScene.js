@@ -160,6 +160,7 @@ class ChromeScene extends Phaser.Scene {
     if (this.saveData.nuts < cost) return;
 
     this.saveData.nuts -= cost;
+    this._save();   // persist the stake now — reloading mid-spin must not refund it
     this.nutsText.setText(`${this.saveData.nuts} NUTS`);
     this.spinning       = true;
     this.reelSpinning   = [true, true, true];

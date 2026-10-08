@@ -409,6 +409,7 @@ class RicochetScene extends Phaser.Scene {
     }
 
     this.saveData.nuts-=cost;
+    this._save();   // persist the stake now — reloading mid-shot must not refund it
     this.nutsText.setText(this.saveData.nuts+' NUTS');
     this.ballActive=true;
     this.pegHitCount=0;

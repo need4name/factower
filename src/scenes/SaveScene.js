@@ -177,7 +177,9 @@ if (existing.ddState         === undefined) { existing.ddState         = {}; dir
 if (existing.tutorials       === undefined) { existing.tutorials       = {}; dirty = true; }
 if (existing.flags           === undefined) { existing.flags           = { armouryUnlocked: false, skillTreeUnlocked: false, baseTutDone: false }; dirty = true; }
 if (existing.materials       === undefined) { existing.materials       = { plasticScrap: 2, refinedPlastic: 0, salvagedMetal: 0 }; dirty = true; }
-if (existing.factoryActive   === undefined) { existing.factoryActive   = true; dirty = true; }
+// Nobody is in combat while picking a slot. If the app was closed mid-battle,
+// CombatScene never got to clear this, and the factory would stay frozen.
+if (existing.factoryActive   !== true)      { existing.factoryActive   = true; dirty = true; }
 if (dirty) localStorage.setItem(saveKey, JSON.stringify(existing));
 }
 

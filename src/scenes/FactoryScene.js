@@ -181,7 +181,7 @@ const config = {
 const c = config[towerType];
 if (!c) return;
 
-const overlay = this.add.rectangle(width/2, height/2, width, height, 0x000000, 0.88).setDepth(50);
+const overlay = this.add.rectangle(width/2, height/2, width, height, 0x000000, 0.88).setInteractive().setDepth(50);
 const box     = this.add.rectangle(width/2, height/2, width-48, 220, 0x161b22).setDepth(51);
 const border  = this.add.rectangle(width/2, height/2, width-48, 220).setStrokeStyle(2, c.colour).setDepth(51);
 const title   = this.add.text(width/2, height/2-62, c.title, {
@@ -201,7 +201,16 @@ all.push(overlay, box, border, title, body, btn, btnBdr, btnLbl);
 btn.on('pointerdown', () => {
   all.forEach(e => e?.destroy?.());
   this.saveData.flags.towerTutorialsSeen[towerType] = true;
-  localStorage.setItem('factower_save_' + localStorage.getItem('factower_active_slot'), JSON.stringify(this.saveData));
+  // Write only the flag into the latest save — this.saveData is a create()-time
+  // snapshot and would overwrite anything factory.save() has written since.
+  const saveKey = 'factower_save_' + localStorage.getItem('factower_active_slot');
+  const latest  = JSON.parse(localStorage.getItem(saveKey));
+  if (latest) {
+    if (!latest.flags) latest.flags = {};
+    if (!latest.flags.towerTutorialsSeen) latest.flags.towerTutorialsSeen = {};
+    latest.flags.towerTutorialsSeen[towerType] = true;
+    localStorage.setItem(saveKey, JSON.stringify(latest));
+  }
 
   // If both were just unlocked (typical case at Level 2), chain the second banner
   if (towerType === 'barricade' && !this.saveData.flags.towerTutorialsSeen.bomber
@@ -238,7 +247,7 @@ const width = this.scale.width;
 const height = this.H;
 const all = [];
 
-const overlay   = this.add.rectangle(width/2, height/2, width, height, 0x000000, 0.95).setDepth(50);
+const overlay   = this.add.rectangle(width/2, height/2, width, height, 0x000000, 0.95).setInteractive().setDepth(50);
 const box       = this.add.rectangle(width/2, height/2, width-48, 220, 0x161b22).setDepth(51);
 const boxBorder = this.add.rectangle(width/2, height/2, width-48, 220).setStrokeStyle(1, 0x3a8fc4).setDepth(51);
 const dot       = this.add.circle(width/2, height/2-72, 20, 0x3a8fc4).setDepth(52);
@@ -483,7 +492,7 @@ const panelH  = 380;
 const rowGap  = 90;
 const btnH    = 78;
 
-const overlay  = this.add.rectangle(width/2, height/2, width, height, 0x000000, 0.88).setDepth(40);
+const overlay  = this.add.rectangle(width/2, height/2, width, height, 0x000000, 0.88).setInteractive().setDepth(40);
 const box      = this.add.rectangle(width/2, height/2, width-40, panelH, 0x161b22).setDepth(41);
 const boxBorder= this.add.rectangle(width/2, height/2, width-40, panelH).setStrokeStyle(1, 0x5eba7d).setDepth(41);
 const title    = this.add.text(width/2, height/2 - panelH/2 + 18, 'SELECT TOWER TYPE', { fontFamily:'monospace', fontSize:'14px', color:'#8899aa', letterSpacing:3 }).setOrigin(0.5).setDepth(42);
@@ -670,7 +679,9 @@ const w = this.factory.workers[workerId];
 }
 
 this.walkWorkerTo(workerId, stationKey, () => {
-  this.factory.startWorkAt(stationKey, workerId);
+  if (!this.factory.startWorkAt(stationKey, workerId)) {
+    this.showMessage('W'+(workerId+1)+': Station no longer available', '#e8a020');
+  }
   this.updateStatus();
   if (!this.factory.tutorialComplete) this.advanceTutorial('assigned_' + stationKey);
 });
@@ -942,8 +953,7 @@ if (!sprite) return;
 const target = this.getStationPos(stationKey);
 const dist   = Phaser.Math.Distance.Between(sprite.x, sprite.y, target.x, target.y);
 
-this.factory.workers[workerId].state    = 'walking';
-this.factory.workers[workerId].progress = 0;
+this.factory.markWalking(stationKey, workerId);
 this.updateStatus();
 
 this.tweens.killTweensOf(sprite);
@@ -1001,7 +1011,7 @@ const refund     = this.MACHINE_BUILD_COSTS[machine.type];
 const refundStr  = refund ? this.formatCost(refund) : '';
 
 // Bumped from 0.75 → 0.92 so the grid behind doesn't ghost through.
-const overlay     = this.add.rectangle(width/2, height/2, width, height, 0x000000, 0.92).setDepth(40);
+const overlay     = this.add.rectangle(width/2, height/2, width, height, 0x000000, 0.92).setInteractive().setDepth(40);
 const box         = this.add.rectangle(width/2, height/2, width-60, 200, 0x161b22).setDepth(41);
 const boxBorder   = this.add.rectangle(width/2, height/2, width-60, 200).setStrokeStyle(1, 0xc43a3a).setDepth(41);
 const title       = this.add.text(width/2, height/2-62, 'DELETE ' + mt.name + '?', { fontFamily:'monospace', fontSize:'16px', color:'#eef2f8', fontStyle:'bold' }).setOrigin(0.5).setDepth(42);
@@ -1024,6 +1034,10 @@ confirmBtn.on('pointerdown', () => {
   dismiss();
   const key = row + ',' + col;
 
+  // Guard against a stale dialog: if this machine is already gone (or the
+  // tile now holds a different one) a second confirm must not refund again.
+  if (this.factory.getMachineAt(row, col) !== machine) return;
+
   // Destroy machine graphics
   if (this.machineSprites[key]) {
     Object.values(this.machineSprites[key]).forEach(s => s?.destroy?.());
@@ -1032,57 +1046,29 @@ confirmBtn.on('pointerdown', () => {
     delete this.machineStatusTexts[key];
   }
 
-  // ── Worker cleanup ──────────────────────────────────────────────────
-  // A worker can be mid-task at the bench we're about to delete:
-  //   • assigned to it (w.station === key)
-  //   • carrying raw material they were going to deposit there
-  //   • carrying a tower component / refined plastic that came FROM it
-  // If we don't reset them, the tutorial state machine sees the in-flight
-  // work and skips ahead to step 5 (deliver) when a new bench is placed —
-  // even though the player never re-did the deposit/assemble steps. Raw
-  // materials get refunded; finished work products are discarded since the
-  // machine that made them is gone.
-  const refundFromInventory = { plasticScrap: 0, salvagedMetal: 0 };
-  const isAssembly = this.factory.isAssemblyType && this.factory.isAssemblyType(machine.type);
-  const isSmelter  = machine.type === 'smelter';
-
-  if (Array.isArray(this.factory.workers)) {
-    this.factory.workers.forEach(w => {
-      if (!w || !w.unlocked) return;
-
-      if (w.station === key) {
-        w.station  = null;
-        w.state    = 'idle';
-        w.progress = 0;
-      }
-
-      if (Array.isArray(w.inventory) && w.inventory.length > 0) {
-        const newInv = [];
-        w.inventory.forEach(item => {
-          if (item === 'plasticScrap' || item === 'salvagedMetal') {
-            refundFromInventory[item] = (refundFromInventory[item] || 0) + 1;
-            return; // dropped → returned to stock
-          }
-          if (item === 'towerComponent' && isAssembly) return; // discard
-          if (item === 'refinedPlastic' && isSmelter)  return; // discard
-          newInv.push(item);
-        });
-        w.inventory = newInv;
-      }
-    });
-  }
+  // ── Contents refund ─────────────────────────────────────────────────
+  // Whatever is sitting IN the machine (material held by an assembly bench,
+  // an item on a conveyor tile) goes back to stock. Refined plastic has no
+  // store, so it refunds as the scrap it was smelted from. Workers' own
+  // inventories are left alone — they aren't tied to any one machine.
+  // Factory.deleteMachine resets any worker working at this tile; workers
+  // still walking here re-validate on arrival and go idle.
+  const contentsRefund = { plasticScrap: 0, salvagedMetal: 0 };
+  const refundItem = item => {
+    if (item === 'plasticScrap' || item === 'refinedPlastic') contentsRefund.plasticScrap++;
+    else if (item === 'salvagedMetal') contentsRefund.salvagedMetal++;
+  };
+  if (machine.heldMaterial) refundItem(machine.heldMaterial);
+  refundItem(this.factory.getTileItem(row, col));
 
   this.factory.deleteMachine(row, col);
-
-  // Persist worker state changes BEFORE refundBuildCost calls loadFromSave
-  // (otherwise loadFromSave would restore the pre-cleanup worker state).
   this.factory.save();
 
-  // Combined refund: build cost + any raw materials workers had to drop
+  // Combined refund: build cost + the machine's contents
   const buildRefund = this.MACHINE_BUILD_COSTS[machine.type] || {};
   const totalRefund = {
-    plasticScrap:  (buildRefund.plasticScrap  || 0) + refundFromInventory.plasticScrap,
-    salvagedMetal: (buildRefund.salvagedMetal || 0) + refundFromInventory.salvagedMetal
+    plasticScrap:  (buildRefund.plasticScrap  || 0) + contentsRefund.plasticScrap,
+    salvagedMetal: (buildRefund.salvagedMetal || 0) + contentsRefund.salvagedMetal
   };
   const hasRefund = totalRefund.plasticScrap > 0 || totalRefund.salvagedMetal > 0;
   if (hasRefund) {
@@ -1320,6 +1306,8 @@ const width = this.scale.width;
 const height = this.H;
 const all = [];
 
+// Interactive overlay blocks taps reaching the factory behind the banner
+const overlay     = this.add.rectangle(width/2, height/2, width, height, 0x000000, 0.6).setInteractive().setDepth(34);
 const banner      = this.add.rectangle(width/2, height/2, width-48, 180, 0x161b22).setDepth(35);
 const bannerBorder= this.add.rectangle(width/2, height/2, width-48, 180).setStrokeStyle(1, 0x5eba7d).setDepth(35);
 const title       = this.add.text(width/2, height/2-52, 'TOWER BUILT!', { fontFamily:'monospace', fontSize:'24px', color:'#5eba7d', fontStyle:'bold' }).setOrigin(0.5).setDepth(36);
@@ -1328,7 +1316,7 @@ const dockBtn     = this.add.rectangle(width/2, height/2+64, 220, 48, 0x1a2210).
 const dockBtnBrd  = this.add.rectangle(width/2, height/2+64, 220, 48).setStrokeStyle(1, 0xe8a020).setDepth(36);
 const dockBtnLbl  = this.add.text(width/2, height/2+64, 'GO TO DOCK \u2192', { fontFamily:'monospace', fontSize:'16px', color:'#e8a020', fontStyle:'bold' }).setOrigin(0.5).setDepth(37);
 
-all.push(banner, bannerBorder, title, body, dockBtn, dockBtnBrd, dockBtnLbl);
+all.push(overlay, banner, bannerBorder, title, body, dockBtn, dockBtnBrd, dockBtnLbl);
 
 dockBtn.on('pointerdown', () => { all.forEach(e => e?.destroy?.()); this.factory.save(); this.cameras.main.fade(200,0,0,0); this.time.delayedCall(200, () => this.scene.start('DockScene')); });
 dockBtn.on('pointerover', () => dockBtn.setFillStyle(0x253318));
@@ -1383,6 +1371,8 @@ completedWorkers.forEach(workerId => {
     this.tutorialWorkCompleted(w.station, workerId);
   }
 });
+
+if (completedWorkers.length > 0) this.factory.save();
 
 // Drive tutorial from live factory state — can never desync
 if (!this.factory.tutorialComplete) {

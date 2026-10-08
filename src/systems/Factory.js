@@ -121,6 +121,7 @@ class Factory {
       stationAction: null,
       progress:      0,
       inventory:     [],
+      targetStation: null,   // station the worker is walking to (claims it)
       _producedTowerType: null
     };
   }
@@ -166,6 +167,17 @@ class Factory {
     } else {
       this.tileItems = Array.from({ length: this.ROWS }, () => Array(this.COLS).fill(null));
     }
+    // Restore what each worker was carrying. Materials are deducted from the
+    // pool at collection, so dropping carried items on save would destroy them.
+    // In-progress work is not resumed — workers come back idle.
+    if (Array.isArray(f.workers)) {
+      f.workers.forEach((saved, i) => {
+        const w = this.workers[i];
+        if (!w || !saved) return;
+        if (Array.isArray(saved.inventory)) w.inventory = saved.inventory.slice();
+        w._producedTowerType = saved.producedTowerType || null;
+      });
+    }
     if (typeof f.tutorialStep    === 'number')  this.tutorialStep     = f.tutorialStep;
     if (typeof f.tutorialComplete === 'boolean') this.tutorialComplete = f.tutorialComplete;
 
@@ -196,6 +208,10 @@ class Factory {
     saveData.factory = {
       grid:             this.grid,
       tileItems:        this.tileItems,
+      workers:          this.workers.map(w => ({
+        inventory:         w.inventory.slice(),
+        producedTowerType: w._producedTowerType
+      })),
       factoryVersion:   2,
       tutorialStep:     this.tutorialStep,
       tutorialComplete: this.tutorialComplete
@@ -210,8 +226,13 @@ class Factory {
     return this.workers.filter(w => w.unlocked);
   }
 
+  // A station is occupied by a worker working there OR walking to it, so two
+  // workers can't both be sent for the same last unit / empty bench.
   getWorkerAtStation(stationKey) {
-    return this.workers.find(w => w.unlocked && w.station === stationKey && w.state === 'working');
+    return this.workers.find(w => w.unlocked && (
+      (w.state === 'working' && w.station === stationKey) ||
+      (w.state === 'walking' && w.targetStation === stationKey)
+    ));
   }
 
   isAssemblyType(type) {
@@ -243,7 +264,7 @@ class Factory {
     if (!this.grid[row] || !this.grid[row][col]) return false;
     const key = row + ',' + col;
     this.workers.forEach(w => {
-      if (w.station === key) {
+      if (w.station === key && w.state !== 'walking') {
         w.state = 'idle';
         w.progress = 0;
         w.stationAction = null;
@@ -373,14 +394,32 @@ class Factory {
     return true;
   }
 
-  startWorkAt(stationKey, workerId) {
+  markWalking(stationKey, workerId) {
     const w = this.workers[workerId];
     if (!w) return;
+    w.state         = 'walking';
+    w.progress      = 0;
+    w.targetStation = stationKey;
+  }
+
+  // Re-validates on arrival — stock, bench contents or the machine itself may
+  // have changed during the walk. Returns false (worker goes idle) if so.
+  startWorkAt(stationKey, workerId) {
+    const w = this.workers[workerId];
+    if (!w) return false;
+    if (!this.canWorkerStartAt(stationKey, workerId)) {
+      w.state         = 'idle';
+      w.progress      = 0;
+      w.targetStation = null;
+      return false;
+    }
     const action = this.getWorkerAction(stationKey, workerId);
+    w.targetStation = null;
     w.station       = stationKey;
     w.state         = 'working';
     w.progress      = 0;
     w.stationAction = action;
+    return true;
   }
 
   // ── Update loop ────────────────────────────────────────────────────────────

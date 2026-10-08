@@ -115,11 +115,20 @@ const LEVEL_DATA = {
         // ── L1: FIRST CONTACT ─────────────────────────────────────────────────
         {
           id: 1, name: 'FIRST CONTACT',
-          description: 'A small scouting party. Learn your towers.',
+          description: 'A scouting party probes your shore. Two well-placed Gunners will hold them.',
           difficulty: 1, towerSlots: 6, baseHp: 10,
+          // Tuned with a headless sim of CombatScene's rules: no towers or one
+          // tower always loses, two badly placed Gunners lose, two Gunners near
+          // the road's bends win every time.
+          recommendedTowers: 2,
+          // Spots the tutorial points at (x, oy — same space as path points)
+          tutorialSpots: [{ x: 170, oy: 336 }, { x: 230, oy: 244 }],
           waves: [
             { preWaveDelay: 3000, enemies: [
-              { type: 'saltChild', count: 4, interval: 2500 }
+              { type: 'saltChild', count: 4, interval: 2600 }
+            ]},
+            { preWaveDelay: 4000, enemies: [
+              { type: 'saltChild', count: 6, interval: 2200 }
             ]}
           ],
           materialRewards: {

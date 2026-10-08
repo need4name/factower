@@ -4,314 +4,242 @@ class SkillTreeScene extends Phaser.Scene {
   }
 
   create() {
-    const { width, height } = this.scale;
-    const TOP = 55;
-
-    this.saveData = SaveManager.load();
-
+    const { width } = this.scale;
+    this.saveData = SaveManager.load() || {};
     if (!this.saveData.skillTree) this.saveData.skillTree = {};
     if (this.saveData.bolts === undefined) this.saveData.bolts = 0;
+    UI.backdrop(this);
+    UI.fadeIn(this);
 
     this.activeBranchIndex = 0;
     this.contentContainer  = null;
+    this.nodePanel         = null;
 
-    // ── Background
-    this.add.rectangle(width / 2, height / 2, width, height, 0x0d1117);
-
-    // ── Header
-    this.add.rectangle(width / 2, TOP + 94, width, 100, 0x161b22).setDepth(10);
-    this.add.rectangle(width / 2, TOP + 144, width, 1, 0x334455).setDepth(10);
-
-    const backBtn = this.add.rectangle(44, TOP + 94, 72, 48, 0x1e2530).setInteractive().setDepth(11);
-    this.add.text(44, TOP + 94, '<- BACK', {
-      fontFamily: 'monospace', fontSize: '14px', color: '#e8a020'
-    }).setOrigin(0.5).setDepth(11);
-    backBtn.on('pointerdown', () => {
-      this.cameras.main.fade(200, 0, 0, 0);
-      this.time.delayedCall(200, () => this.scene.start('BaseScene'));
+    this.hdr = UI.header(this, {
+      title: 'UPLINK', sub: 'PERMANENT UPGRADES', accent: UI.C.amber,
+      onBack: () => UI.go(this, 'BaseScene'),
+      chips: [{ kind: 'bolts', value: this.saveData.bolts }]
     });
-    backBtn.on('pointerover', () => backBtn.setFillStyle(0x252c38));
-    backBtn.on('pointerout',  () => backBtn.setFillStyle(0x1e2530));
 
-    this.add.text(width / 2 + 20, TOP + 80, 'UPLINK', {
-      fontFamily: 'monospace', fontSize: '22px', color: '#eef2f8', fontStyle: 'bold'
-    }).setOrigin(0.5).setDepth(11);
-
-    // Bolt counter in the header
-    const boltGfx = this.add.graphics().setDepth(11);
-    boltGfx.fillStyle(0xe8a020, 1);
-    const bx = width - 92, by = TOP + 108;
-    boltGfx.fillTriangle(bx, by - 6, bx + 6, by + 4, bx - 6, by + 4);
-    this.boltCountText = this.add.text(width - 80, TOP + 108, '' + this.saveData.bolts + ' BOLTS', {
-      fontFamily: 'monospace', fontSize: '12px', color: '#e8a020', fontStyle: 'bold'
-    }).setOrigin(0, 0.5).setDepth(11);
+    // Fixed band under the header: branch tabs + status note
+    this.TABS_Y  = UI.HEADER_H + 30;
+    this.CONTENT_TOP = UI.HEADER_H + 96;
+    const band = this.add.graphics().setDepth(18);
+    band.fillStyle(UI.C.bg, 0.96);
+    band.fillRect(0, UI.HEADER_H, width, this.CONTENT_TOP - UI.HEADER_H - 6);
+    UI.text(this, width / 2, this.TABS_Y + 38, 'Preview — purchases are saved but don’t take effect yet.', 'small',
+      { origin: 0.5, size: 11, color: UI.T.amber, depth: 19 });
 
     this.drawTabs();
     this.drawBranch(0);
 
-    // ── Scroll state for tree content
-    this._dragStart = undefined;
-    this._dragBase  = 0;
-    this._dragging  = false;
-    this.scrollY    = 0;
-    this.scrollMinY = 0;
-
+    // ── Drag-to-scroll ───────────────────────────────────────────────────
+    this._dragStart = undefined; this._dragBase = 0; this._dragging = false;
+    this.scrollY = 0; this.scrollMinY = 0;
     this._onDown = (p) => {
-      if (p.y < TOP + 210) return;   // do not scroll on header / tabs
-      this._dragStart = p.y;
-      this._dragBase  = this.scrollY;
-      this._dragging  = false;
+      if (p.y < this.CONTENT_TOP || this.nodePanel) return;
+      this._dragStart = p.y; this._dragBase = this.scrollY; this._dragging = false;
     };
     this._onMove = (p) => {
       if (this._dragStart === undefined) return;
       const dy = p.y - this._dragStart;
-      if (Math.abs(dy) > 5) this._dragging = true;
+      if (Math.abs(dy) > 8) this._dragging = true;
       if (!this._dragging) return;
       const ny = Phaser.Math.Clamp(this._dragBase + dy, this.scrollMinY, 0);
       if (this.contentContainer) this.contentContainer.setY(ny);
       this.scrollY = ny;
     };
-    this._onUp = () => { this._dragStart = undefined; };
+    this._onUp = () => { this._dragStart = undefined; this.time.delayedCall(0, () => { this._dragging = false; }); };
     this.input.on('pointerdown', this._onDown);
     this.input.on('pointermove', this._onMove);
     this.input.on('pointerup',   this._onUp);
   }
 
-  // ── Tab bar ──────────────────────────────────────────────────────────
+  // ── Branch tabs ──────────────────────────────────────────────────────
   drawTabs() {
     const { width } = this.scale;
-    const TOP = 55;
-    const tabY  = TOP + 180;
-    const tabH  = 44;
-    const tabW  = (width - 28) / SKILL_TREE.branches.length;
+    const n = SKILL_TREE.branches.length;
+    const tabW = (width - 32) / n, tabH = 46;
+    if (this.tabItems) this.tabItems.forEach(t => t.destroy());
+    this.tabItems = [];
 
-    if (this.tabButtons) this.tabButtons.forEach(t => t.destroy());
-    this.tabButtons = [];
+    const track = this.add.graphics().setDepth(19);
+    track.fillStyle(UI.C.surface, 1);
+    track.fillRoundedRect(16, this.TABS_Y - tabH / 2, width - 32, tabH, 12);
+    this.tabItems.push(track);
 
     SKILL_TREE.branches.forEach((branch, i) => {
-      const cx = 14 + tabW * i + tabW / 2;
+      const cx = 16 + tabW * i + tabW / 2;
       const active = i === this.activeBranchIndex;
-
-      const bg  = this.add.rectangle(cx, tabY, tabW - 4, tabH, active ? 0x1e2530 : 0x141a22).setInteractive().setDepth(10);
-      const bdr = this.add.rectangle(cx, tabY, tabW - 4, tabH).setStrokeStyle(1, active ? branch.colour : 0x2a3a4a).setDepth(10);
-      const label = this.add.text(cx, tabY - 7, branch.id.toUpperCase(), {
-        fontFamily: 'monospace', fontSize: '11px',
-        color: active ? branch.colourHex : '#556677',
-        fontStyle: 'bold', letterSpacing: 2
-      }).setOrigin(0.5).setDepth(11);
-
-      // Purchased count indicator
-      const purchased  = branch.nodes.filter(n => this.saveData.skillTree[n.id]).length;
-      const total      = branch.nodes.length;
-      const countLabel = this.add.text(cx, tabY + 10, purchased + '/' + total, {
-        fontFamily: 'monospace', fontSize: '9px',
-        color: active ? '#eef2f8' : '#445566'
-      }).setOrigin(0.5).setDepth(11);
-
-      bg.on('pointerdown', () => {
-        if (this.activeBranchIndex === i) return;
+      const bought = branch.nodes.filter(nd => this.saveData.skillTree[nd.id]).length;
+      if (active) {
+        const g = this.add.graphics().setDepth(19);
+        g.fillStyle(UI.C.raised, 1);
+        g.fillRoundedRect(cx - tabW / 2 + 3, this.TABS_Y - tabH / 2 + 3, tabW - 6, tabH - 6, 9);
+        g.fillStyle(branch.colour, 1);
+        g.fillRoundedRect(cx - 10, this.TABS_Y + tabH / 2 - 7, 20, 3, 1.5);
+        this.tabItems.push(g);
+      }
+      this.tabItems.push(
+        UI.text(this, cx, this.TABS_Y - 6, branch.id.toUpperCase(), 'tag',
+          { size: 9.5, origin: 0.5, ls: 0.5, depth: 20, color: active ? branch.colourHex : UI.T.mute }),
+        UI.text(this, cx, this.TABS_Y + 9, bought + '/' + branch.nodes.length, 'small',
+          { size: 10, origin: 0.5, depth: 20, color: active ? UI.T.text : UI.T.faint })
+      );
+      const zone = this.add.zone(cx, this.TABS_Y, tabW, tabH).setInteractive().setDepth(21);
+      zone.on('pointerup', () => {
+        if (this.activeBranchIndex === i || this.nodePanel) return;
         this.activeBranchIndex = i;
-        this.scrollY    = 0;
-        if (this.contentContainer) this.contentContainer.setY(0);
+        this.scrollY = 0;
         this.drawTabs();
         this.drawBranch(i);
       });
-
-      this.tabButtons.push(bg, bdr, label, countLabel);
+      this.tabItems.push(zone);
     });
   }
 
   // ── Branch tree ──────────────────────────────────────────────────────
   drawBranch(branchIndex) {
     const { width, height } = this.scale;
-    const TOP = 55;
-
-    if (this.contentContainer) {
-      this.contentContainer.destroy(true);
-      this.contentContainer = null;
-    }
+    if (this.contentContainer) { this.contentContainer.destroy(true); this.contentContainer = null; }
     this.dismissNodePanel();
 
     const branch = SKILL_TREE.branches[branchIndex];
-    this.contentContainer = this.add.container(0, 0).setDepth(5);
+    const C = this.add.container(0, 0).setDepth(5);
+    this.contentContainer = C;
 
-    // Branch header (scrolls with content)
-    const topY = TOP + 222;
-    const headBg  = this.add.rectangle(width / 2, topY + 30, width - 28, 60, 0x0f1620);
-    const headBdr = this.add.rectangle(width / 2, topY + 30, width - 28, 60).setStrokeStyle(1, branch.colour);
-    const accent  = this.add.rectangle(22, topY + 30, 4, 44, branch.colour);
-    const tHead1  = this.add.text(36, topY + 14, branch.name, { fontFamily: 'monospace', fontSize: '14px', color: branch.colourHex, fontStyle: 'bold', letterSpacing: 2 });
-    const tHead2  = this.add.text(36, topY + 36, branch.desc, { fontFamily: 'monospace', fontSize: '10px', color: '#8899aa' });
+    const top = this.CONTENT_TOP + 6;
+    C.add([
+      UI.text(this, 16, top, branch.name, 'heading', { size: 18, color: branch.colourHex }),
+      UI.text(this, 16, top + 26, branch.desc, 'small', { size: 12 })
+    ]);
 
-    this.contentContainer.add([headBg, headBdr, accent, tHead1, tHead2]);
+    const gridTop = top + 62;
+    const colW = (width - 32) / 3;
+    const rowH = 100;
+    const nodeW = colW - 12, nodeH = 74;
+    const pos = nd => ({ x: 16 + colW * nd.col + colW / 2, y: gridTop + rowH * (nd.tier - 1) + nodeH / 2 });
 
-    // Layout nodes in a grid: columns 0–2, tiers going down
-    const gridTopY = topY + 78;
-    const colW     = (width - 56) / 3;
-    const rowH     = 92;
-    const nodeR    = 28;
+    // Connectors first so they sit under the nodes
+    const lines = this.add.graphics();
+    C.add(lines);
+    branch.nodes.forEach(nd => nd.prereqs.forEach(pid => {
+      const p = branch.nodes.find(n => n.id === pid);
+      if (!p) return;
+      const a = pos(p), b = pos(nd);
+      const lit = !!this.saveData.skillTree[pid];
+      lines.lineStyle(2, lit ? branch.colour : UI.C.line, lit ? 0.7 : 1);
+      lines.beginPath();
+      lines.moveTo(a.x, a.y + nodeH / 2);
+      lines.lineTo(a.x, (a.y + b.y) / 2);
+      lines.lineTo(b.x, (a.y + b.y) / 2);
+      lines.lineTo(b.x, b.y - nodeH / 2);
+      lines.strokePath();
+    }));
 
-    // Draw connection lines first so they render below nodes
-    branch.nodes.forEach(node => {
-      node.prereqs.forEach(prereqId => {
-        const prereq = branch.nodes.find(n => n.id === prereqId);
-        if (!prereq) return;
-        const x1 = 28 + colW * prereq.col + colW / 2;
-        const y1 = gridTopY + rowH * (prereq.tier - 1) + rowH / 2;
-        const x2 = 28 + colW * node.col + colW / 2;
-        const y2 = gridTopY + rowH * (node.tier - 1) + rowH / 2;
-        const purchased = this.saveData.skillTree[prereqId];
-        const line = this.add.graphics();
-        line.lineStyle(2, purchased ? branch.colour : 0x2a3a4a, purchased ? 0.55 : 0.35);
-        line.lineBetween(x1, y1, x2, y2);
-        this.contentContainer.add(line);
+    branch.nodes.forEach(nd => {
+      const { x, y } = pos(nd);
+      const state = this.getNodeState(nd);
+      const bought = state === 'purchased', avail = state === 'available';
+      const g = this.add.graphics();
+      UI.drawPanel(g, x, y, nodeW, nodeH, {
+        fill: bought ? branch.colour : avail ? UI.C.surface2 : 0x10151c,
+        fillAlpha: bought ? 0.22 : 1,
+        stroke: bought || avail ? branch.colour : UI.C.lineSoft,
+        strokeAlpha: avail ? 0.9 : 1, strokeWidth: nd.kind === 'capstone' ? 2 : 1, radius: 12
       });
+      C.add(g);
+      if (nd.kind === 'gamechanger' || nd.kind === 'capstone') {
+        C.add(UI.icon(this, x + nodeW / 2 - 12, y - nodeH / 2 + 12, 'star', 9, state === 'locked' ? 0x465163 : branch.colour));
+      }
+      C.add(UI.text(this, x, y - 8, nd.name, 'heading', {
+        size: 12.5, origin: 0.5, align: 'center', wrap: nodeW - 14, lineSpacing: -2,
+        color: state === 'locked' ? UI.T.faint : UI.T.text
+      }));
+      C.add(bought
+        ? UI.icon(this, x, y + 22, 'check', 12, branch.colour)
+        : UI.text(this, x, y + 22, nd.cost + ' bolts', 'small', { size: 11, origin: 0.5, color: avail ? UI.T.amber : UI.T.faint }));
+
+      const zone = this.add.zone(x, y, nodeW, nodeH).setInteractive();
+      zone.on('pointerup', () => { if (!this._dragging && !this.nodePanel) this.showNodePanel(branch, nd, state); });
+      C.add(zone);
     });
 
-    // Draw each node
-    branch.nodes.forEach(node => {
-      const cx = 28 + colW * node.col + colW / 2;
-      const cy = gridTopY + rowH * (node.tier - 1) + rowH / 2;
-      const state = this.getNodeState(branch, node);
-
-      let fill, stroke, textCol;
-      if (state === 'purchased') {
-        fill    = branch.colour;
-        stroke  = branch.colour;
-        textCol = '#0d1117';
-      } else if (state === 'available') {
-        fill    = 0x1e2530;
-        stroke  = branch.colour;
-        textCol = branch.colourHex;
-      } else {
-        fill    = 0x161b22;
-        stroke  = 0x2a3a4a;
-        textCol = '#445566';
-      }
-
-      const bg    = this.add.circle(cx, cy, nodeR, fill);
-      const bdr   = this.add.circle(cx, cy, nodeR).setStrokeStyle(2, stroke);
-      const label = this.add.text(cx, cy, this.abbreviate(node.name), {
-        fontFamily: 'monospace', fontSize: '9px', color: textCol, fontStyle: 'bold', align: 'center', wordWrap: { width: nodeR * 2 - 6 }
-      }).setOrigin(0.5);
-
-      // Capstone visual marker
-      if (node.kind === 'capstone') {
-        this.contentContainer.add(this.add.circle(cx, cy, nodeR + 4).setStrokeStyle(1, branch.colour, 0.5));
-      }
-      // Gamechanger diamond notch
-      if (node.kind === 'gamechanger' && state !== 'locked') {
-        const gx = this.add.graphics();
-        gx.fillStyle(branch.colour, 0.9);
-        gx.fillTriangle(cx, cy - nodeR - 6, cx + 5, cy - nodeR + 1, cx - 5, cy - nodeR + 1);
-        this.contentContainer.add(gx);
-      }
-
-      this.contentContainer.add([bg, bdr, label]);
-
-      // Interactive
-      bg.setInteractive();
-      bg.on('pointerup', () => {
-        if (this._dragging) return;
-        this.showNodePanel(branch, node, state);
-      });
-    });
-
-    // Calculate scroll bounds
-    const maxTier    = Math.max(...branch.nodes.map(n => n.tier));
-    const contentBot = gridTopY + rowH * maxTier + 60;
-    this.scrollMinY  = Math.min(0, height - contentBot);
+    const maxTier = Math.max(...branch.nodes.map(n => n.tier));
+    const contentBot = gridTop + rowH * maxTier + 30;
+    this.scrollMinY = Math.min(0, height - contentBot);
   }
 
-  getNodeState(branch, node) {
+  getNodeState(node) {
     if (this.saveData.skillTree[node.id]) return 'purchased';
-    const allPrereqsMet = node.prereqs.every(pid => this.saveData.skillTree[pid]);
-    if (allPrereqsMet) return 'available';
-    return 'locked';
+    return node.prereqs.every(pid => this.saveData.skillTree[pid]) ? 'available' : 'locked';
   }
 
-  abbreviate(name) {
-    // Fit long names inside a small circle
-    if (name.length <= 8) return name;
-    return name.split(' ').map(w => w.substring(0, 5)).join('\n');
-  }
-
-  // ── Node detail panel ────────────────────────────────────────────────
+  // ── Node detail sheet ────────────────────────────────────────────────
   showNodePanel(branch, node, state) {
     this.dismissNodePanel();
     const { width, height } = this.scale;
+    const items = [];
+    const dim = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.55).setInteractive().setDepth(40);
+    dim.on('pointerup', () => this.dismissNodePanel());
+    items.push(dim);
 
-    const panelH = 220;
-    const panelY = height - panelH / 2 - 8;
+    const kind = { capstone: 'CAPSTONE', gamechanger: 'GAME CHANGER', significant: 'MAJOR', incremental: 'MINOR' }[node.kind] || '';
+    const w = width - 24, lx = 12 + 22;
+    const effT = UI.text(this, lx, 0, node.effect, 'body', { size: 14, wrap: w - 44, color: UI.T.dim });
+    const prereqNames = node.prereqs.map(pid => (branch.nodes.find(n => n.id === pid) || { name: pid }).name);
+    const preT = UI.text(this, lx, 0, prereqNames.length ? 'Requires: ' + prereqNames.join(', ') : 'No requirements', 'small', { size: 12, wrap: w - 44 });
+    const h = 20 + 18 + 30 + effT.height + 10 + preT.height + 20 + 52 + 22;
+    const top = height - h - 12;
 
-    const bg  = this.add.rectangle(width / 2, panelY, width - 16, panelH, 0x060c06, 0.98).setDepth(25);
-    const bdr = this.add.rectangle(width / 2, panelY, width - 16, panelH).setStrokeStyle(2, branch.colour).setDepth(25);
-    const closeBtn = this.add.rectangle(width - 32, panelY - panelH / 2 + 22, 32, 32, 0x1e2530).setInteractive().setDepth(26);
-    const closeTxt = this.add.text(width - 32, panelY - panelH / 2 + 22, 'X', { fontFamily: 'monospace', fontSize: '12px', color: '#8899aa', fontStyle: 'bold' }).setOrigin(0.5).setDepth(27);
-    closeBtn.on('pointerdown', () => this.dismissNodePanel());
+    items.push(UI.panel(this, width / 2, top + h / 2, w, h, { fill: UI.C.surface, stroke: branch.colour, strokeAlpha: 0.7, radius: 18, depth: 41 }));
+    // Panel must swallow taps so they don't close the sheet
+    items.push(this.add.zone(width / 2, top + h / 2, w, h).setInteractive().setDepth(41));
+    let y = top + 20;
+    items.push(UI.text(this, lx, y, branch.name + '  ·  ' + kind, 'tag', { size: 11, color: branch.colourHex, depth: 42 })); y += 18;
+    items.push(UI.text(this, lx, y, node.name, 'title', { size: 22, depth: 42 })); y += 32;
+    effT.setY(y).setDepth(42); items.push(effT); y += effT.height + 10;
+    preT.setY(y).setDepth(42); items.push(preT); y += preT.height + 20;
 
-    const panelTop = panelY - panelH / 2;
-    const kindStr  = node.kind === 'capstone'    ? 'CAPSTONE'    :
-                     node.kind === 'gamechanger' ? 'GAME CHANGER' :
-                     node.kind === 'significant' ? 'SIGNIFICANT'  : 'INCREMENTAL';
-
-    const tKind   = this.add.text(24, panelTop + 14, kindStr, { fontFamily: 'monospace', fontSize: '9px', color: branch.colourHex, letterSpacing: 3 }).setDepth(26);
-    const tName   = this.add.text(24, panelTop + 30, node.name, { fontFamily: 'monospace', fontSize: '20px', color: '#eef2f8', fontStyle: 'bold' }).setDepth(26);
-    const tEffect = this.add.text(24, panelTop + 62, node.effect, { fontFamily: 'monospace', fontSize: '13px', color: '#ccd6e0', wordWrap: { width: width - 56 } }).setDepth(26);
-
-    const prereqsLabel = node.prereqs.length > 0 ? 'REQUIRES: ' + node.prereqs.map(pid => {
-      const p = branch.nodes.find(n => n.id === pid);
-      return p ? p.name : pid;
-    }).join(', ') : 'NO PREREQUISITES';
-    const tPrereq = this.add.text(24, panelTop + 100, prereqsLabel, { fontFamily: 'monospace', fontSize: '10px', color: '#556677', wordWrap: { width: width - 56 } }).setDepth(26);
-
-    this.nodePanel = [bg, bdr, closeBtn, closeTxt, tKind, tName, tEffect, tPrereq];
-
-    // Action area
+    const by = y + 26;
     if (state === 'purchased') {
-      const ownTxt = this.add.text(width / 2, panelY + panelH / 2 - 32, '✓ UNLOCKED', { fontFamily: 'monospace', fontSize: '16px', color: branch.colourHex, fontStyle: 'bold', letterSpacing: 3 }).setOrigin(0.5).setDepth(26);
-      this.nodePanel.push(ownTxt);
+      items.push(UI.button(this, width / 2, by, w - 44, 52, { label: 'OWNED', variant: 'ghost', disabled: true, depth: 43 }));
     } else if (state === 'locked') {
-      const lockTxt = this.add.text(width / 2, panelY + panelH / 2 - 32, 'LOCKED', { fontFamily: 'monospace', fontSize: '16px', color: '#445566', fontStyle: 'bold', letterSpacing: 3 }).setOrigin(0.5).setDepth(26);
-      this.nodePanel.push(lockTxt);
+      items.push(UI.button(this, width / 2, by, w - 44, 52, { label: 'LOCKED — UNLOCK REQUIREMENTS FIRST', variant: 'ghost', disabled: true, depth: 43, size: 13 }));
     } else {
-      const canAfford = this.saveData.bolts >= node.cost;
-      const costTxt   = this.add.text(24, panelY + panelH / 2 - 36, node.cost + ' BOLTS', { fontFamily: 'monospace', fontSize: '18px', color: canAfford ? '#e8a020' : '#c43a3a', fontStyle: 'bold' }).setDepth(26);
-      const bgCol     = canAfford ? 0x162616 : 0x161b22;
-      const btnBg     = this.add.rectangle(width - 84, panelY + panelH / 2 - 32, 128, 56, bgCol).setInteractive().setDepth(26);
-      const btnBdr    = this.add.rectangle(width - 84, panelY + panelH / 2 - 32, 128, 56).setStrokeStyle(1, canAfford ? 0x5eba7d : 0x334455).setDepth(26);
-      const btnTxt    = this.add.text(width - 84, panelY + panelH / 2 - 32, 'PURCHASE', { fontFamily: 'monospace', fontSize: '13px', color: canAfford ? '#5eba7d' : '#445566', fontStyle: 'bold' }).setOrigin(0.5).setDepth(27);
-
-      if (canAfford) {
-        btnBg.on('pointerdown', () => this.purchaseNode(branch, node));
-        btnBg.on('pointerover', () => btnBg.setFillStyle(0x1e3a1e));
-        btnBg.on('pointerout',  () => btnBg.setFillStyle(bgCol));
-      }
-
-      this.nodePanel.push(costTxt, btnBg, btnBdr, btnTxt);
+      const afford = this.saveData.bolts >= node.cost;
+      items.push(UI.button(this, width / 2, by, w - 44, 52, {
+        label: afford ? 'UNLOCK FOR ' + node.cost + ' BOLTS' : 'NEED ' + node.cost + ' BOLTS (HAVE ' + this.saveData.bolts + ')',
+        variant: 'primary', colour: branch.colour, disabled: !afford, depth: 43, size: afford ? 16 : 13,
+        onTap: () => this.purchaseNode(branch, node)
+      }));
     }
+    this.nodePanel = items;
   }
 
   dismissNodePanel() {
-    if (this.nodePanel) {
-      this.nodePanel.forEach(e => { if (e && e.destroy) e.destroy(); });
-      this.nodePanel = null;
-    }
+    if (this.nodePanel) { this.nodePanel.forEach(e => e && e.destroy && e.destroy()); this.nodePanel = null; }
   }
 
   purchaseNode(branch, node) {
     if (this.saveData.bolts < node.cost) return;
     if (this.saveData.skillTree[node.id]) return;
+    if (!node.prereqs.every(pid => this.saveData.skillTree[pid])) return;
 
-    this.saveData.bolts -= node.cost;
-    this.saveData.skillTree[node.id] = true;
-    SaveManager.write(this.saveData);
+    this.saveData = SaveManager.update(s => {
+      if (!s.skillTree) s.skillTree = {};
+      s.bolts = (s.bolts || 0) - node.cost;
+      s.skillTree[node.id] = true;
+    }) || this.saveData;
 
-    this.boltCountText.setText('' + this.saveData.bolts + ' BOLTS');
+    this.hdr.chips.bolts.setValue(this.saveData.bolts).pulse();
     this.cameras.main.flash(120, branch.colour >> 16 & 0xff, branch.colour >> 8 & 0xff, branch.colour & 0xff, false);
     this.dismissNodePanel();
+    const keepY = this.scrollY;
     this.drawTabs();
     this.drawBranch(this.activeBranchIndex);
+    this.scrollY = Phaser.Math.Clamp(keepY, this.scrollMinY, 0);
     if (this.contentContainer) this.contentContainer.setY(this.scrollY);
+    UI.toast(this, node.name + ' unlocked', 'good');
   }
 }

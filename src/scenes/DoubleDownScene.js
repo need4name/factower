@@ -26,28 +26,16 @@ class DoubleDownScene extends Phaser.Scene {
     this.minBank   = 300;
 
     // ── Background & header ───────────────────────────────────────────────
-    this.add.rectangle(width/2, height/2, width, height, 0x0d1117);
-    this.add.rectangle(width/2, 0, width, 4, 0xc43a3a, 0.4);
-    this.add.rectangle(width/2, 144, width, 100, 0x161b22);
-    this.add.rectangle(width/2, 194, width, 1, 0x334455);
-
-    // Back button — NO inRound gate. Always works.
-    const back = this.add.rectangle(44, 144, 72, 48, 0x1e2530).setInteractive();
-    this.add.text(44, 144, '<- BACK', { fontFamily:'monospace', fontSize:'14px', color:'#e8a020' }).setOrigin(0.5);
-    back.on('pointerdown', () => {
-      this._save();
-      this.cameras.main.fade(200, 0, 0, 0);
-      this.time.delayedCall(200, () => this.scene.start('MarketplaceScene'));
+    UI.backdrop(this);
+    UI.fadeIn(this);
+    // Shared header — nuts/bolts live in its chips (they accept setText for legacy calls)
+    this.hdr = UI.header(this, {
+      title: 'DOUBLE-DOWN', sub: 'PRESS YOUR LUCK', accent: UI.C.red,
+      onBack: () => { this._save(); UI.go(this, 'MarketplaceScene'); },
+      chips: [{ kind: 'nuts', value: this.saveData.nuts }, { kind: 'bolts', value: this.saveData.bolts }]
     });
-    back.on('pointerover', () => back.setFillStyle(0x252c38));
-    back.on('pointerout',  () => back.setFillStyle(0x1e2530));
-
-    this.add.text(width/2+20, 125, 'DOUBLE-DOWN',    { fontFamily:'monospace', fontSize:'22px', color:'#c43a3a', fontStyle:'bold' }).setOrigin(0.5);
-    this.add.text(width/2+20, 152, 'PRESS YOUR LUCK', { fontFamily:'monospace', fontSize:'11px', color:'#8899aa', letterSpacing:2 }).setOrigin(0.5);
-
-    this.nutsText  = this.add.text(width/2-70, 216, this.saveData.nuts  +' NUTS',  { fontFamily:'monospace', fontSize:'12px', color:'#e8a020',  fontStyle:'bold' }).setOrigin(0.5);
-    this.add.text(width/2, 216, '\xb7', { fontFamily:'monospace', fontSize:'12px', color:'#334455' }).setOrigin(0.5);
-    this.boltsText = this.add.text(width/2+70, 216, this.saveData.bolts +' BOLTS', { fontFamily:'monospace', fontSize:'12px', color:'#8ab4cc', fontStyle:'bold' }).setOrigin(0.5);
+    this.nutsText  = this.hdr.chips.nuts;
+    this.boltsText = this.hdr.chips.bolts;
 
     // ── Instruction banner ─────────────────────────────────────────────────
     // Always tells the player what to do right now.

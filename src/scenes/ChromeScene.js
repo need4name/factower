@@ -33,30 +33,25 @@ class ChromeScene extends Phaser.Scene {
     this.autoStopTimers = [null, null, null];
     this._pendingResults = [];
 
-    this.add.rectangle(width / 2, height / 2, width, height, 0x0d1117);
-    this.add.rectangle(width / 2, 0, width, 4, 0xe8a020, 0.4);
+    UI.backdrop(this);
 
-    // ── Header ────────────────────────────────────────────────────────────
-    this.add.rectangle(width / 2, 144, width, 100, 0x161b22);
-    this.add.rectangle(width / 2, 194, width, 1, 0x334455);
+    UI.fadeIn(this);
 
-    const back = this.add.rectangle(44, 144, 72, 48, 0x1e2530).setInteractive();
-    this.add.text(44, 144, '<- BACK', { fontFamily: 'monospace', fontSize: '14px', color: '#e8a020' }).setOrigin(0.5);
-    back.on('pointerdown', () => {
-      if (this.spinning) return;
-      this._save();
-      this.cameras.main.fade(200, 0, 0, 0);
-      this.time.delayedCall(200, () => this.scene.start('MarketplaceScene'));
+    // Shared header — nuts/bolts live in its chips (they accept setText for legacy calls)
+
+    this.hdr = UI.header(this, {
+
+      title: 'CHROME', sub: 'THE SLOTS', accent: UI.C.amber,
+
+      onBack: () => { if (this.spinning) return; this._save(); UI.go(this, 'MarketplaceScene'); },
+
+      chips: [{ kind: 'nuts', value: this.saveData.nuts }, { kind: 'bolts', value: this.saveData.bolts }]
+
     });
-    back.on('pointerover', () => back.setFillStyle(0x252c38));
-    back.on('pointerout',  () => back.setFillStyle(0x1e2530));
 
-    this.add.text(width / 2 + 20, 125, 'CHROME', { fontFamily: 'monospace', fontSize: '26px', color: '#e8a020', fontStyle: 'bold' }).setOrigin(0.5);
-    this.add.text(width / 2 + 20, 152, 'THE SLOTS', { fontFamily: 'monospace', fontSize: '11px', color: '#8899aa', letterSpacing: 3 }).setOrigin(0.5);
+    this.nutsText  = this.hdr.chips.nuts;
 
-    this.nutsText  = this.add.text(width / 2 - 70, 218, `${this.saveData.nuts} NUTS`,  { fontFamily: 'monospace', fontSize: '13px', color: '#e8a020', fontStyle: 'bold' }).setOrigin(0.5);
-    this.add.text(width / 2, 218, '·', { fontFamily: 'monospace', fontSize: '13px', color: '#334455' }).setOrigin(0.5);
-    this.boltsText = this.add.text(width / 2 + 70, 218, `${this.saveData.bolts} BOLTS`, { fontFamily: 'monospace', fontSize: '13px', color: '#8ab4cc', fontStyle: 'bold' }).setOrigin(0.5);
+    this.boltsText = this.hdr.chips.bolts;
 
     // ── Cabinet ───────────────────────────────────────────────────────────
     const cabY = 445, cabH = 300;

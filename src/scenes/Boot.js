@@ -5,28 +5,29 @@ class BootScene extends Phaser.Scene {
 
   create() {
     const { width, height } = this.scale;
+    UI.backdrop(this);
+    UI.fadeIn(this);
 
-    this.add.rectangle(width / 2, height / 2, width, height, 0x0a0c0f);
+    const cy = height / 2 - 40;
 
-    this.add.text(width / 2, height / 2 - 40, 'FACTOWER', {
-      fontFamily: 'monospace',
-      fontSize: '48px',
-      color: '#e8a020',
-      fontStyle: 'bold'
-    }).setOrigin(0.5);
+    // Logo mark — a stylised tower on a factory base
+    const mark = this.add.graphics();
+    mark.fillStyle(UI.C.amber, 1);
+    mark.fillRoundedRect(width / 2 - 26, cy - 112, 52, 10, 3);          // base
+    mark.fillRect(width / 2 - 8, cy - 150, 16, 40);                      // tower
+    mark.fillTriangle(width / 2 - 16, cy - 150, width / 2 + 16, cy - 150, width / 2, cy - 166);
+    mark.fillStyle(UI.C.bg, 1);
+    mark.fillRect(width / 2 - 3, cy - 140, 6, 8);                        // window
 
-    this.add.text(width / 2, height / 2 + 20, 'TAP TO START', {
-      fontFamily: 'monospace',
-      fontSize: '16px',
-      color: '#6a7585',
-      letterSpacing: 6
-    }).setOrigin(0.5);
+    UI.text(this, width / 2, cy - 40, 'FACTOWER', 'hero', { size: 52, origin: 0.5, ls: 4 });
+    this.add.rectangle(width / 2, cy, 120, 3, UI.C.amber);
+    UI.text(this, width / 2, cy + 26, 'BUILD THE TOWERS. HOLD THE ISLAND.', 'label', { origin: 0.5, size: 12, color: UI.T.dim });
 
-    this.input.once('pointerdown', () => {
-      this.cameras.main.fade(300, 0, 0, 0);
-      this.time.delayedCall(300, () => {
-        this.scene.start('SaveScene');
-      });
-    });
+    const tap = UI.text(this, width / 2, height - 170, 'TAP TO START', 'heading', { origin: 0.5, size: 18, ls: 4, color: UI.T.text });
+    this.tweens.add({ targets: tap, alpha: 0.35, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+
+    UI.text(this, width / 2, height - 40, 'v0.2', 'small', { origin: 0.5, color: UI.T.faint });
+
+    this.input.once('pointerup', () => UI.go(this, 'SaveScene'));
   }
 }

@@ -12,10 +12,9 @@ this.isEndless   = data.isEndless   || false;
 
 create() {
 const width = this.scale.width;
-// iOS Safari can report a configured canvas height (e.g. 844) larger than
-// the actual visible viewport. Use the smaller of the two so the bottom
-// panel never lands below the Safari toolbar.
-this.H = Math.min(this.scale.height, window.innerHeight || this.scale.height);
+// index.html sizes the page to the visible viewport (100dvh), so the
+// whole canvas is always on screen and layout can use its full height.
+this.H = this.scale.height;
 const height = this.H;
 
 this.saveData = SaveManager.load();
@@ -1362,6 +1361,9 @@ save.materials.salvagedMetal = (save.materials.salvagedMetal || 0) + this.materi
 // ─────────────────────────────────────────────────────────────────────────
 
 if (this.levelId === 1 && this.storylineId === 1 && !save.workers) save.workers = 2;
+// Merchants recover while you're away fighting — fatigue would otherwise only
+// ever grow, making the Market steadily worse to use.
+save.merchantFatigue = { chrome: 0, ricochet: 0, doubleDown: 0 };
 if (this.levelId === 8 && this.storylineId === 1) save.factionOneComplete = true;
 
 SaveManager.write(save);

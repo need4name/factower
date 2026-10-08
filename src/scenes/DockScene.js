@@ -4,181 +4,245 @@ class DockScene extends Phaser.Scene {
   }
 
   create() {
-    const { width, height } = this.scale;
-    const TOP = 55;
+    this.saveData = SaveManager.load() || {};
+    UI.backdrop(this);
+    UI.fadeIn(this);
 
-    this.saveData = SaveManager.load();
-
-    this.add.rectangle(width / 2, height / 2, width, height, 0x0d1117);
-
-    // Fixed header background
-    this.add.rectangle(width / 2, TOP + 94, width, 100, 0x161b22).setDepth(10);
-    this.add.rectangle(width / 2, TOP + 144, width, 1, 0x334455).setDepth(10);
-
-    const backBtn = this.add.rectangle(44, TOP + 94, 72, 48, 0x1e2530).setInteractive().setDepth(11);
-    this.add.text(44, TOP + 94, '<- BACK', {
-      fontFamily: 'monospace', fontSize: '14px', color: '#e8a020'
-    }).setOrigin(0.5).setDepth(11);
-    
-    backBtn.on('pointerdown', () => {
-      if (this.currentView === 'levels') {
-        this.showCampaignSelect();
-      } else {
-        this.cameras.main.fade(200, 0, 0, 0);
-        this.time.delayedCall(200, () => this.scene.start('BaseScene'));
-      }
+    this.hdr = UI.header(this, {
+      title: 'DOCK', sub: 'CHOOSE A MISSION', accent: UI.C.red,
+      onBack: () => {
+        if (this.currentView === 'levels') this.showCampaignSelect();
+        else UI.go(this, 'BaseScene');
+      },
+      chips: [{ kind: 'towers', value: this.stockTotal() }]
     });
-    backBtn.on('pointerover', () => backBtn.setFillStyle(0x252c38));
-    backBtn.on('pointerout',  () => backBtn.setFillStyle(0x1e2530));
-
-    this.headerTitle = this.add.text(width / 2 + 20, TOP + 80, 'DOCK', {
-      fontFamily: 'monospace', fontSize: '22px', color: '#eef2f8', fontStyle: 'bold'
-    }).setOrigin(0.5).setDepth(11);
-
-    this.headerSub = this.add.text(width / 2 + 20, TOP + 108, 'SELECT CAMPAIGN', {
-      fontFamily: 'monospace', fontSize: '12px', color: '#8899aa', letterSpacing: 2
-    }).setOrigin(0.5).setDepth(11);
-
-    // --- NEW CURRENCY DISPLAY (PINNED TO HEADER) ---
-    const currentNuts = this.saveData.nuts || 0;
-    const currentBolts = this.saveData.bolts || 0;
-    this.add.text(width - 24, TOP + 94, `${currentNuts} NUTS\n${currentBolts} BOLTS`, {
-      fontFamily: 'monospace', fontSize: '12px', color: '#eef2f8', fontStyle: 'bold', align: 'right'
-    }).setOrigin(1, 0.5).setDepth(11);
-    // -----------------------------------------------
 
     this.contentContainer = null;
     this.currentView      = 'campaigns';
     this.scrollY          = 0;
     this.scrollMinY       = 0;
 
-    // Named scroll handlers
-    this._onDown  = (p) => { this._dragStart = p.y; this._dragBase = this.scrollY; this._dragging = false; };
+    // Drag-to-scroll for the level list
+    this._onDown  = (p) => { if (p.y < UI.HEADER_H) return; this._dragStart = p.y; this._dragBase = this.scrollY; this._dragging = false; };
     this._onMove  = (p) => {
-      if (this._dragStart === null || this._dragStart === undefined) return;
+      if (this._dragStart === undefined || !this.contentContainer) return;
       const delta = p.y - this._dragStart;
-      if (Math.abs(delta) > 5) this._dragging = true;
+      if (Math.abs(delta) > 8) this._dragging = true;
       if (!this._dragging) return;
       const clamped = Phaser.Math.Clamp(this._dragBase + delta, this.scrollMinY, 0);
       this.contentContainer.setY(clamped);
       this.scrollY = clamped;
     };
-    this._onUp    = () => { this._dragStart = undefined; };
+    this._onUp    = () => { this._dragStart = undefined; this.time.delayedCall(0, () => { this._dragging = false; }); };
     this._dragStart = undefined;
-    this._dragBase  = 0;
     this._dragging  = false;
 
     this.showCampaignSelect();
   }
 
+  stockTotal() {
+    return Object.values(this.saveData.stockpile || {}).reduce((a, b) => a + b, 0);
+  }
+
+  completedS1() {
+    return (this.saveData.completedLevels && this.saveData.completedLevels.storyline1) || [];
+  }
+
+  titleCase(str) { return str.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()); }
+
   clearContent() {
-    if (this.contentContainer) {
-      this.contentContainer.destroy(true);
-      this.contentContainer = null;
-    }
-    this.input.off('pointerdown',  this._onDown);
-    this.input.off('pointermove',  this._onMove);
-    this.input.off('pointerup',    this._onUp);
-    this.scrollY    = 0;
-    this.scrollMinY = 0;
-    this._dragStart = undefined;
-    this._dragging  = false;
+    if (this.contentContainer) { this.contentContainer.destroy(true); this.contentContainer = null; }
+    this.input.off('pointerdown', this._onDown);
+    this.input.off('pointermove', this._onMove);
+    this.input.off('pointerup',   this._onUp);
+    this.scrollY = 0; this.scrollMinY = 0;
+    this._dragStart = undefined; this._dragging = false;
   }
 
   enableScroll() {
-    this.input.on('pointerdown',  this._onDown);
-    this.input.on('pointermove',  this._onMove);
-    this.input.on('pointerup',    this._onUp);
+    this.input.on('pointerdown', this._onDown);
+    this.input.on('pointermove', this._onMove);
+    this.input.on('pointerup',   this._onUp);
   }
 
+  // ── Campaign list ──────────────────────────────────────────────────────
   showCampaignSelect() {
     this.clearContent();
     this.currentView = 'campaigns';
-    const TOP = 55;
-
-    this.headerTitle.setText('DOCK');
-    this.headerSub.setText('SELECT CAMPAIGN');
-
+    this.hdr.title.setText('DOCK');
+    this.hdr.sub.setText('CHOOSE A MISSION');
     this.contentContainer = this.add.container(0, 0).setDepth(5);
 
-    const completedS1  = (this.saveData && this.saveData.completedLevels && this.saveData.completedLevels.storyline1)
-      ? this.saveData.completedLevels.storyline1 : [];
-    const anyCompleted = completedS1.length > 0;
-    const contentTop   = TOP + 162;
+    const done = this.completedS1();
+    const s1 = LEVEL_DATA.storylines[0];
+    let y = UI.HEADER_H + 24;
 
-    this.addCampaignCard(contentTop + 18, {
-      title:    'SALT & PLASTIC',
-      tag:      'CAMPAIGN 1  —  8 LEVELS',
-      tagCol:   '#e8a020',
-      colour:   0xe8a020,
-      sub:      'Establish your base. Survive the first raids.',
-      progress: completedS1.length + ' / 8 complete',
-      unlocked: true,
-      onTap:    () => this.showLevelList(LEVEL_DATA.storylines[0])
+    y = this.addCampaignCard(y, {
+      tag: 'CAMPAIGN 1  ·  ' + s1.levels.length + ' LEVELS', title: 'Salt & Plastic', colour: UI.C.amber,
+      body: s1.description + ' Enemy: ' + s1.faction + '.',
+      progress: done.length / s1.levels.length, progressLabel: done.length + ' / ' + s1.levels.length + ' cleared',
+      unlocked: true, onTap: () => this.showLevelList(s1)
     });
 
-    this.addCampaignCard(contentTop + 18 + 174, {
-      title:    'ENDLESS MODE',
-      tag:      'ENDLESS',
-      tagCol:   anyCompleted ? '#3a8fc4' : '#334455',
-      colour:   anyCompleted ? 0x3a8fc4 : 0x334455,
-      sub:      anyCompleted
-        ? 'Continuous waves from all unlocked maps.\nPower zones randomised each run.'
-        : 'Complete at least one level to unlock.',
-      progress: anyCompleted ? completedS1.length + ' maps in pool' : 'LOCKED',
-      unlocked: anyCompleted,
-      onTap:    anyCompleted ? () => this.startEndless() : null
+    const anyDone = done.length > 0;
+    this.addCampaignCard(y + 14, {
+      tag: 'ENDLESS', title: 'Endless Raids', colour: UI.C.blue,
+      body: anyDone ? 'Waves keep coming on a map you have cleared. Power zones change every run. How long can you hold?'
+                    : 'Clear Level 1 of Salt & Plastic to unlock.',
+      progressLabel: anyDone ? done.length + ' map' + (done.length === 1 ? '' : 's') + ' in the pool' : null,
+      unlocked: anyDone, onTap: anyDone ? () => this.launch(null, true) : null
     });
   }
 
-  addCampaignCard(y, { title, tag, tagCol, colour, sub, progress, unlocked, onTap }) {
+  addCampaignCard(top, c) {
     const { width } = this.scale;
-    const cardH  = 156;
-    const border = unlocked ? colour : 0x334455;
-    const titCol = unlocked ? '#eef2f8' : '#445566';
-
-    const bg   = this.add.rectangle(width / 2, y + cardH / 2, width - 48, cardH, 0x161b22);
-    const bdr  = this.add.rectangle(width / 2, y + cardH / 2, width - 48, cardH).setStrokeStyle(2, border);
-    const acc  = this.add.rectangle(28, y + cardH / 2, 6, cardH - 16, border);
-    const tTag = this.add.text(48, y + 14, tag,   { fontFamily: 'monospace', fontSize: '10px', color: tagCol, letterSpacing: 3 });
-    const tTit = this.add.text(48, y + 32, title, { fontFamily: 'monospace', fontSize: '20px', color: titCol, fontStyle: 'bold' });
-    const tSub = this.add.text(48, y + 58, sub,   { fontFamily: 'monospace', fontSize: '11px', color: '#8899aa', wordWrap: { width: width - 120 } });
-    const tPrg = this.add.text(48, y + cardH - 26, progress, { fontFamily: 'monospace', fontSize: '11px', color: unlocked ? tagCol : '#334455' });
-
-    this.contentContainer.add([bg, bdr, acc, tTag, tTit, tSub, tPrg]);
-
-    if (unlocked && onTap) {
-      bg.setInteractive();
-      bg.on('pointerup',   () => onTap());
-      bg.on('pointerover', () => bg.setFillStyle(0x1e2530));
-      bg.on('pointerout',  () => bg.setFillStyle(0x161b22));
-      const arrow = this.add.text(width - 32, y + cardH / 2, '->', {
-        fontFamily: 'monospace', fontSize: '22px',
-        color: '#' + colour.toString(16).padStart(6, '0')
-      }).setOrigin(1, 0.5);
-      this.contentContainer.add(arrow);
+    const w = width - 32, lx = 16 + 20;
+    const items = [];
+    const tagT   = UI.text(this, lx, top + 18, c.tag, 'tag', { size: 11, color: c.unlocked ? UI.hex(c.colour) : UI.T.faint });
+    const titleT = UI.text(this, lx, top + 36, c.title, 'title', { size: 24, color: c.unlocked ? UI.T.text : UI.T.faint });
+    const bodyT  = UI.text(this, lx, top + 70, c.body, 'body', { size: 13, wrap: w - 80, color: c.unlocked ? UI.T.dim : UI.T.faint });
+    let h = 70 + bodyT.height + 18;
+    if (c.progressLabel) h += 30;
+    const panel = UI.panel(this, width / 2, top + h / 2, w, h, {
+      fill: UI.C.surface, stroke: c.unlocked ? c.colour : UI.C.lineSoft, strokeAlpha: c.unlocked ? 0.55 : 1,
+      accent: c.unlocked ? c.colour : undefined, radius: 16
+    });
+    items.push(panel, tagT, titleT, bodyT);
+    if (c.progressLabel) {
+      const py = top + h - 26;
+      if (c.progress !== undefined) {
+        const bar = this.add.graphics();
+        bar.fillStyle(UI.C.surface2, 1); bar.fillRoundedRect(lx, py - 3, 140, 6, 3);
+        bar.fillStyle(c.colour, 1);     bar.fillRoundedRect(lx, py - 3, Math.max(6, 140 * c.progress), 6, 3);
+        items.push(bar, UI.text(this, lx + 152, py, c.progressLabel, 'small', { origin: [0, 0.5] }));
+      } else {
+        items.push(UI.text(this, lx, py, c.progressLabel, 'small', { origin: [0, 0.5] }));
+      }
     }
+    if (c.unlocked) {
+      items.push(UI.icon(this, width - 16 - 24, top + h / 2, 'chevron', 14, c.colour));
+      const zone = this.add.zone(width / 2, top + h / 2, w, h).setInteractive();
+      let pressed = false;
+      zone.on('pointerdown', () => { pressed = true; panel.setAlpha(0.8); });
+      zone.on('pointerout',  () => { pressed = false; panel.setAlpha(1); });
+      zone.on('pointerup',   () => { panel.setAlpha(1); if (pressed && c.onTap) c.onTap(); pressed = false; });
+      items.push(zone);
+    } else {
+      items.push(UI.icon(this, width - 16 - 24, top + h / 2, 'lock', 15, 0x465163));
+    }
+    this.contentContainer.add(items);
+    return top + h;
   }
 
-  startEndless() {
-    const ids = (this.saveData && this.saveData.completedLevels && this.saveData.completedLevels.storyline1)
-      ? this.saveData.completedLevels.storyline1 : [];
-    if (ids.length === 0) return;
+  // ── Level list ─────────────────────────────────────────────────────────
+  showLevelList(storyline) {
+    this.clearContent();
+    this.currentView = 'levels';
+    const { height } = this.scale;
+    this.hdr.title.setText(storyline.name);
+    this.hdr.sub.setText('VS ' + storyline.faction.toUpperCase());
+    this.contentContainer = this.add.container(0, 0).setDepth(5);
 
-    const base = LEVEL_DATA.storylines[0].levels.find(l => l.id === ids[Math.floor(Math.random() * ids.length)]);
-    if (!base) return;
-
-    const data = Object.assign({}, base, {
-      name:         base.name + '  —  ENDLESS',
-      baseHp:       10,
-      tutorialText: null,
-      waves:        this.buildEndlessWaves(6)
+    const done = this.completedS1();
+    let y = UI.HEADER_H + 16;
+    storyline.levels.forEach((level, i) => {
+      const isDone     = done.includes(level.id);
+      const isUnlocked = i === 0 || done.includes(storyline.levels[i - 1].id);
+      const isNext     = isUnlocked && !isDone;
+      y = this.addLevelCard(level, y, isUnlocked, isDone, isNext) + 10;
     });
+    this.scrollMinY = Math.min(0, height - (y + 20));
+    this.enableScroll();
+  }
 
-    this.cameras.main.fade(200, 0, 0, 0);
-    this.time.delayedCall(200, () => {
-      this.scene.start('CombatScene', { storylineId: 1, levelId: base.id, levelData: data, isEndless: true });
+  addLevelCard(level, top, unlocked, done, isNext) {
+    const { width } = this.scale;
+    const w = width - 32, h = 92;
+    const colour = done ? UI.C.green : unlocked ? UI.C.amber : UI.C.line;
+    const cy = top + h / 2;
+    const items = [];
+
+    const panel = UI.panel(this, width / 2, cy, w, h, {
+      fill: unlocked ? UI.C.surface : 0x10151c, stroke: isNext ? UI.C.amber : UI.C.lineSoft,
+      strokeAlpha: isNext ? 0.8 : 1, radius: 14, glow: isNext ? UI.C.amber : undefined
     });
+    items.push(panel);
+
+    // Level number badge
+    const bx = 16 + 34;
+    const badge = this.add.graphics();
+    badge.fillStyle(colour, unlocked ? 0.16 : 0.5); badge.fillRoundedRect(bx - 20, cy - 20, 40, 40, 10);
+    items.push(badge);
+    if (done)            items.push(UI.icon(this, bx, cy, 'check', 16, UI.C.green));
+    else if (!unlocked)  items.push(UI.icon(this, bx, cy, 'lock', 15, 0x465163));
+    else                 items.push(UI.text(this, bx, cy, String(level.id), 'number', { size: 20, origin: 0.5, color: UI.T.amber }));
+
+    const lx = bx + 34;
+    const waves  = level.waves ? level.waves.length : 1;
+    const enemyN = (level.waves || []).reduce((s, wv) => s + wv.enemies.reduce((a, g) => a + g.count, 0), 0);
+    items.push(
+      UI.text(this, lx, cy - 22, this.titleCase(level.name), 'heading', { size: 17, origin: [0, 0.5], color: unlocked ? UI.T.text : UI.T.faint }),
+      UI.text(this, lx, cy + 1, unlocked ? level.description : 'Clear the previous level to unlock.', 'small',
+        { size: 12, origin: [0, 0.5], wrap: w - 130, color: unlocked ? UI.T.mute : UI.T.faint }),
+      UI.text(this, lx, cy + 26, waves + ' wave' + (waves === 1 ? '' : 's') + '  ·  ' + enemyN + ' raiders', 'label',
+        { size: 11, origin: [0, 0.5], color: unlocked ? UI.T.dim : UI.T.faint })
+    );
+    if (isNext) items.push(UI.text(this, width - 16 - 16, cy - 30, 'NEXT', 'tag', { size: 10, origin: [1, 0.5] }));
+    if (unlocked) items.push(UI.icon(this, width - 16 - 22, cy, 'chevron', 13, 0x6f7b8d));
+
+    if (unlocked) {
+      const zone = this.add.zone(width / 2, cy, w, h).setInteractive();
+      let pressed = false;
+      zone.on('pointerdown', () => { pressed = true; });
+      zone.on('pointerout',  () => { pressed = false; });
+      zone.on('pointerup',   () => { if (pressed && !this._dragging) this.showBriefing(level); pressed = false; });
+      items.push(zone);
+    }
+    this.contentContainer.add(items);
+    return top + h;
+  }
+
+  // ── Mission briefing ───────────────────────────────────────────────────
+  // Shows who is coming and what you're bringing, so the player can make an
+  // informed choice — and can't launch into a fight with zero towers.
+  showBriefing(level) {
+    const stock = this.saveData.stockpile || {};
+    const total = this.stockTotal();
+    const counts = {};
+    (level.waves || []).forEach(wv => wv.enemies.forEach(g => { counts[g.type] = (counts[g.type] || 0) + g.count; }));
+    const enemyLines = Object.entries(counts).map(([t, n]) => n + ' × ' + this.titleCase(ENEMY_DATA[t] ? ENEMY_DATA[t].name : t)).join('\n');
+    const towers = ['gunner', 'bomber', 'barricade'].filter(t => stock[t] > 0)
+      .map(t => stock[t] + ' ' + this.titleCase(TOWER_DATA[t].name)).join(',  ') || 'none';
+    const rec = level.recommendedTowers;
+
+    let body = 'Incoming:\n' + enemyLines + '\n\nYour towers: ' + towers;
+    if (rec && total < rec) body += '\n\nRecommended: at least ' + rec + ' towers.';
+
+    const buttons = total > 0
+      ? [{ label: 'CANCEL', variant: 'secondary' }, { label: 'LAUNCH', variant: 'primary', colour: UI.C.red, onTap: () => this.launch(level, false) }]
+      : [{ label: 'CANCEL', variant: 'secondary' }, { label: 'BUILD TOWERS', variant: 'primary', colour: UI.C.blue, onTap: () => UI.go(this, 'FactoryScene') }];
+    if (total === 0) body += '\n\nYou have no towers. Build some in the Factory first.';
+
+    UI.modal(this, {
+      title: 'Level ' + level.id + ' — ' + this.titleCase(level.name),
+      body, icon: 'anchor', accent: total > 0 ? UI.C.red : UI.C.blue,
+      buttons, dismissOnBackdrop: true
+    });
+  }
+
+  launch(level, endless) {
+    if (endless) {
+      const ids = this.completedS1();
+      if (ids.length === 0) return;
+      const base = LEVEL_DATA.storylines[0].levels.find(l => l.id === ids[Math.floor(Math.random() * ids.length)]);
+      if (!base) return;
+      const data = Object.assign({}, base, {
+        name: base.name + '  —  ENDLESS', baseHp: 10, tutorial: null, waves: this.buildEndlessWaves(6)
+      });
+      UI.go(this, 'CombatScene', { storylineId: 1, levelId: base.id, levelData: data, isEndless: true });
+      return;
+    }
+    UI.go(this, 'CombatScene', { storylineId: 1, levelId: level.id, levelData: level });
   }
 
   buildEndlessWaves(startDiff) {
@@ -194,79 +258,5 @@ class DockScene extends Phaser.Scene {
       waves.push({ preWaveDelay: w === 0 ? 3000 : 2000, enemies: e });
     }
     return waves;
-  }
-
-  showLevelList(storyline) {
-    this.clearContent();
-    this.currentView = 'levels';
-    const { width, height } = this.scale;
-    const TOP = 55;
-
-    this.headerTitle.setText(storyline.name);
-    this.headerSub.setText('ENEMY: ' + storyline.faction.toUpperCase());
-
-    this.contentContainer = this.add.container(0, 0).setDepth(5);
-
-    const completed  = (this.saveData && this.saveData.completedLevels && this.saveData.completedLevels.storyline1)
-      ? this.saveData.completedLevels.storyline1 : [];
-    const contentTop = TOP + 162;
-    const cardH      = 84;
-    const cardGap    = 4;
-    let   contentY   = 12;
-
-    storyline.levels.forEach((level, i) => {
-      const isDone     = completed.includes(level.id);
-      const isUnlocked = i === 0 || completed.includes(storyline.levels[i - 1].id);
-      this.addLevelCard(level, contentTop + contentY, isUnlocked, isDone, cardH);
-      contentY += cardH + cardGap;
-    });
-
-    contentY += 20;
-    this.scrollMinY = Math.min(0, height - (contentTop + contentY));
-
-    this.enableScroll();
-  }
-
-  addLevelCard(level, cardY, isUnlocked, isCompleted, cardH) {
-    const { width } = this.scale;
-    const colour = isCompleted ? 0x5eba7d : isUnlocked ? 0xe8a020 : 0x334455;
-    const titCol = isCompleted ? '#5eba7d' : isUnlocked ? '#eef2f8' : '#445566';
-
-    const bg  = this.add.rectangle(width / 2, cardY + cardH / 2, width - 48, cardH, 0x161b22);
-    const bdr = this.add.rectangle(width / 2, cardY + cardH / 2, width - 48, cardH).setStrokeStyle(1, colour);
-    const acc = this.add.rectangle(28, cardY + cardH / 2, 5, cardH - 16, colour);
-
-    this.contentContainer.add([bg, bdr, acc]);
-
-    if (isUnlocked || isCompleted) {
-      bg.setInteractive();
-      bg.on('pointerup', () => {
-        if (this._dragging) return;
-        this.cameras.main.fade(200, 0, 0, 0);
-        this.time.delayedCall(200, () => {
-          this.scene.start('CombatScene', { storylineId: 1, levelId: level.id, levelData: level });
-        });
-      });
-      bg.on('pointerover', () => { if (!this._dragging) bg.setFillStyle(0x1e2530); });
-      bg.on('pointerout',  () => bg.setFillStyle(0x161b22));
-    }
-
-    const totalWaves = level.waves ? level.waves.length : 1;
-    const tLvl  = this.add.text(48, cardY + 9,  'LEVEL ' + level.id, { fontFamily: 'monospace', fontSize: '10px', color: '#8899aa', letterSpacing: 3 });
-    const tName = this.add.text(48, cardY + 23, level.name,           { fontFamily: 'monospace', fontSize: '15px', color: titCol, fontStyle: 'bold' });
-    const tDesc = this.add.text(48, cardY + 44, level.description,    { fontFamily: 'monospace', fontSize: '10px', color: '#556677', wordWrap: { width: width - 200 } });
-
-    this.contentContainer.add([tLvl, tName, tDesc]);
-
-    for (let w = 0; w < 5; w++) {
-      this.contentContainer.add(this.add.circle(width - 42 - (4 - w) * 14, cardY + 16, 4, w < totalWaves ? colour : 0x2a3a4a));
-    }
-
-    const tW = this.add.text(width - 36, cardY + 28, totalWaves + ' WAVES', { fontFamily: 'monospace', fontSize: '9px', color: '#556677', letterSpacing: 1 }).setOrigin(1, 0);
-    this.contentContainer.add(tW);
-
-    if (isCompleted) {
-      this.contentContainer.add(this.add.text(width - 36, cardY + 60, 'v DONE', { fontFamily: 'monospace', fontSize: '9px', color: '#5eba7d', letterSpacing: 1 }).setOrigin(1, 0));
-    }
   }
 }

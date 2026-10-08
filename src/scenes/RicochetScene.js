@@ -118,23 +118,16 @@ class RicochetScene extends Phaser.Scene {
     this._safetyTimer  = null;
 
     // ── Background & header ──────────────────────────────────────────────────
-    this.add.rectangle(width/2, height/2, width, height, 0x0d1117);
-    this.add.rectangle(width/2, 0, width, 4, 0x5eba7d, 0.4);
-    this.add.rectangle(width/2, 144, width, 100, 0x161b22);
-    this.add.rectangle(width/2, 194, width, 1, 0x334455);
-
-    const back = this.add.rectangle(44, 144, 72, 48, 0x1e2530).setInteractive();
-    this.add.text(44, 144, '<- BACK', { fontFamily:'monospace', fontSize:'14px', color:'#e8a020' }).setOrigin(0.5);
-    back.on('pointerdown', () => { this._save(); this.cameras.main.fade(200,0,0,0); this.time.delayedCall(200,()=>this.scene.start('MarketplaceScene')); });
-    back.on('pointerover', () => back.setFillStyle(0x252c38));
-    back.on('pointerout',  () => back.setFillStyle(0x1e2530));
-
-    this.add.text(width/2+20, 125, 'RICOCHET',  { fontFamily:'monospace', fontSize:'26px', color:'#5eba7d', fontStyle:'bold' }).setOrigin(0.5);
-    this.add.text(width/2+20, 152, 'THE BOARD', { fontFamily:'monospace', fontSize:'11px', color:'#8899aa', letterSpacing:3 }).setOrigin(0.5);
-
-    this.nutsText  = this.add.text(width/2-72, 216, this.saveData.nuts  +' NUTS',  { fontFamily:'monospace', fontSize:'12px', color:'#e8a020',  fontStyle:'bold' }).setOrigin(0.5);
-    this.add.text(width/2, 216, '\xb7', { fontFamily:'monospace', fontSize:'12px', color:'#334455' }).setOrigin(0.5);
-    this.boltsText = this.add.text(width/2+72, 216, this.saveData.bolts +' BOLTS', { fontFamily:'monospace', fontSize:'12px', color:'#8ab4cc', fontStyle:'bold' }).setOrigin(0.5);
+    UI.backdrop(this);
+    UI.fadeIn(this);
+    // Shared header — nuts/bolts live in its chips (they accept setText for legacy calls)
+    this.hdr = UI.header(this, {
+      title: 'RICOCHET', sub: 'THE BOARD', accent: UI.C.green,
+      onBack: () => { if (this.ballActive) return; this._save(); UI.go(this, 'MarketplaceScene'); },
+      chips: [{ kind: 'nuts', value: this.saveData.nuts }, { kind: 'bolts', value: this.saveData.bolts }]
+    });
+    this.nutsText  = this.hdr.chips.nuts;
+    this.boltsText = this.hdr.chips.bolts;
 
     // ── Play field ───────────────────────────────────────────────────────────
     this.add.rectangle(this.PLAY_LEFT+this.PLAY_W/2, this.PLAY_TOP+this.PLAY_H/2, this.PLAY_W, this.PLAY_H, 0x0a0e14);
@@ -144,7 +137,7 @@ class RicochetScene extends Phaser.Scene {
     this.add.text(width/2, this.PLAY_TOP + this.PLAY_H*0.6, 'TIANXIA\nINTEGRATED\nHOLDINGS', {
       fontFamily:'monospace', fontSize:'28px', color:'#e8a020',
       align:'center', lineSpacing:4
-    }).setOrigin(0.5).setAlpha(0.04).setDepth(1);
+    }).setOrigin(0.5).setAlpha(0.025).setDepth(1);
 
     // Faint amber connector lines tracing gate structure
     this._drawLogoLines();

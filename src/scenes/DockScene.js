@@ -155,12 +155,24 @@ class DockScene extends Phaser.Scene {
     this.enableScroll();
   }
 
+
   addLevelCard(level, top, unlocked, done, isNext) {
     const { width } = this.scale;
-    const w = width - 32, h = 92;
+    const w = width - 32;
     const colour = done ? UI.C.green : unlocked ? UI.C.amber : UI.C.line;
-    const cy = top + h / 2;
     const items = [];
+    const bx = 16 + 34, lx = bx + 34, textW = w - (lx - 16) - 40;
+
+    // Text first, so the card can grow to fit the description
+    const waves  = level.waves ? level.waves.length : 1;
+    const enemyN = (level.waves || []).reduce((s, wv) => s + wv.enemies.reduce((a, g) => a + g.count, 0), 0);
+    const titleT = UI.text(this, lx, top + 16, this.titleCase(level.name), 'heading', { size: 17, color: unlocked ? UI.T.text : UI.T.faint });
+    const descT  = UI.text(this, lx, top + 40, unlocked ? level.description : 'Clear the previous level to unlock.', 'small',
+      { size: 12, wrap: textW, color: unlocked ? UI.T.mute : UI.T.faint });
+    const metaT  = UI.text(this, lx, top + 46 + descT.height, waves + ' wave' + (waves === 1 ? '' : 's') + '  ·  ' + enemyN + ' raiders', 'label',
+      { size: 11, color: unlocked ? UI.T.dim : UI.T.faint });
+    const h = Math.max(92, 46 + descT.height + 16 + 16);
+    const cy = top + h / 2;
 
     const panel = UI.panel(this, width / 2, cy, w, h, {
       fill: unlocked ? UI.C.surface : 0x10151c, stroke: isNext ? UI.C.amber : UI.C.lineSoft,
@@ -168,8 +180,6 @@ class DockScene extends Phaser.Scene {
     });
     items.push(panel);
 
-    // Level number badge
-    const bx = 16 + 34;
     const badge = this.add.graphics();
     badge.fillStyle(colour, unlocked ? 0.16 : 0.5); badge.fillRoundedRect(bx - 20, cy - 20, 40, 40, 10);
     items.push(badge);
@@ -177,18 +187,9 @@ class DockScene extends Phaser.Scene {
     else if (!unlocked)  items.push(UI.icon(this, bx, cy, 'lock', 15, 0x465163));
     else                 items.push(UI.text(this, bx, cy, String(level.id), 'number', { size: 20, origin: 0.5, color: UI.T.amber }));
 
-    const lx = bx + 34;
-    const waves  = level.waves ? level.waves.length : 1;
-    const enemyN = (level.waves || []).reduce((s, wv) => s + wv.enemies.reduce((a, g) => a + g.count, 0), 0);
-    items.push(
-      UI.text(this, lx, cy - 22, this.titleCase(level.name), 'heading', { size: 17, origin: [0, 0.5], color: unlocked ? UI.T.text : UI.T.faint }),
-      UI.text(this, lx, cy + 1, unlocked ? level.description : 'Clear the previous level to unlock.', 'small',
-        { size: 12, origin: [0, 0.5], wrap: w - 130, color: unlocked ? UI.T.mute : UI.T.faint }),
-      UI.text(this, lx, cy + 26, waves + ' wave' + (waves === 1 ? '' : 's') + '  ·  ' + enemyN + ' raiders', 'label',
-        { size: 11, origin: [0, 0.5], color: unlocked ? UI.T.dim : UI.T.faint })
-    );
-    if (isNext) items.push(UI.text(this, width - 16 - 16, cy - 30, 'NEXT', 'tag', { size: 10, origin: [1, 0.5] }));
-    if (unlocked) items.push(UI.icon(this, width - 16 - 22, cy, 'chevron', 13, 0x6f7b8d));
+    items.push(titleT, descT, metaT);
+    if (isNext) items.push(UI.text(this, width - 16 - 16, top + 16, 'NEXT', 'tag', { size: 10, origin: [1, 0] }));
+    if (unlocked) items.push(UI.icon(this, width - 16 - 22, cy + 6, 'chevron', 13, 0x6f7b8d));
 
     if (unlocked) {
       const zone = this.add.zone(width / 2, cy, w, h).setInteractive();

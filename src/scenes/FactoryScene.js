@@ -84,6 +84,12 @@ create() {
   this.workerLabels       = {};
   this.workerMenuActive   = false;
   this._asmMenuOpen       = false;
+  this._asmGunnerRect     = null;
+  this._itemSprites       = {};
+  // Phaser reuses the scene object between visits, so every per-visit flag
+  // must be reset here or it leaks in from the previous visit.
+  this.tutorialActive     = false;
+  this._introDone         = false;
 
   this.unlockedAssemblyTypes = this.getUnlockedAssemblyTypes();
 

@@ -116,26 +116,13 @@ class DoubleDownScene extends Phaser.Scene {
     const half = (width-60)/2;
 
     // Single unified ROLL/PLAY button — no listener accumulation
-    this.rollBg  = this.add.rectangle(24+half/2, bY, half, 60, 0x1a0808).setInteractive();
-    this.rollBdr = this.add.rectangle(24+half/2, bY, half, 60).setStrokeStyle(2, 0xc43a3a);
-    this.rollTxt = this.add.text(24+half/2, bY-9, 'PLAY', { fontFamily:'monospace', fontSize:'20px', color:'#c43a3a', fontStyle:'bold' }).setOrigin(0.5);
-    this.rollSub = this.add.text(24+half/2, bY+14, '', { fontFamily:'monospace', fontSize:'9px', color:'#556677', letterSpacing:1 }).setOrigin(0.5);
-    this.rollBg.on('pointerdown', () => {
-      if (this.rolling) return;
-      if (!this.inRound) this._startRound();
-      else               this._doRoll();
+    this.rollBtn = UI.button(this, 24+half/2, bY, half, 64, {
+      label: 'PLAY', sub: '', variant: 'primary', colour: UI.C.red, size: 20,
+      onTap: () => { if (this.rolling) return; if (!this.inRound) this._startRound(); else this._doRoll(); }
     });
-    this.rollBg.on('pointerover', () => this.rollBg.setFillStyle(0x261008));
-    this.rollBg.on('pointerout',  () => this.rollBg.setFillStyle(0x1a0808));
-
-    const bx2   = width-24-half/2;
-    this.bankBg  = this.add.rectangle(bx2, bY, half, 60, 0x0d1e10).setInteractive();
-    this.bankBdr = this.add.rectangle(bx2, bY, half, 60).setStrokeStyle(2, 0x5eba7d);
-    this.bankTxt = this.add.text(bx2, bY-9, 'BANK', { fontFamily:'monospace', fontSize:'20px', color:'#5eba7d', fontStyle:'bold' }).setOrigin(0.5);
-    this.bankSub = this.add.text(bx2, bY+14, 'MIN 300 pts', { fontFamily:'monospace', fontSize:'9px', color:'#556677', letterSpacing:1 }).setOrigin(0.5);
-    this.bankBg.on('pointerdown', () => this._doBank());
-    this.bankBg.on('pointerover', () => this.bankBg.setFillStyle(0x122018));
-    this.bankBg.on('pointerout',  () => this.bankBg.setFillStyle(0x0d1e10));
+    this.bankBtn = UI.button(this, width-24-half/2, bY, half, 64, {
+      label: 'BANK', sub: 'MIN 300 pts', variant: 'success', size: 20, onTap: () => this._doBank()
+    });
   }
 
   // ── Round logic ───────────────────────────────────────────────────────────
@@ -319,17 +306,8 @@ class DoubleDownScene extends Phaser.Scene {
     const canBank =this.inRound&&this.accScore>=this.minBank&&!this.rolling;
 
     const rollActive=canStart||canRoll;
-    this.rollTxt.setText(this.inRound?'ROLL':'PLAY');
-    this.rollTxt.setStyle({ color:rollActive?'#c43a3a':'#445566' });
-    this.rollBg.setFillStyle(rollActive?0x1a0808:0x161b22);
-    this.rollBdr.setStrokeStyle(2, rollActive?0xc43a3a:0x334455);
-    this.rollSub.setText(this.inRound?'PRESS YOUR LUCK':'COSTS '+cost+' NUTS');
-    if(rollActive) this.rollBg.setInteractive(); else this.rollBg.disableInteractive();
-
-    this.bankTxt.setStyle({color:canBank?'#5eba7d':'#445566'});
-    this.bankBg.setFillStyle(canBank?0x0d1e10:0x161b22);
-    this.bankBdr.setStrokeStyle(2, canBank?0x5eba7d:0x334455);
-    if(canBank) this.bankBg.setInteractive(); else this.bankBg.disableInteractive();
+    this.rollBtn.setLabel(this.inRound?'ROLL':'PLAY', this.inRound?'PRESS YOUR LUCK':'COSTS '+cost+' NUTS').setEnabled(rollActive);
+    this.bankBtn.setEnabled(canBank);
 
     this._updateBanner();
   }

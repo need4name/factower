@@ -46,9 +46,18 @@ this.upgradePanel      = null;
 this.activeTower       = null;
 this.previewCircle     = null;
 this.previewRing       = null;
+this.previewMultText   = null;
+this._pausedTweens     = null;
+this._uiToast          = null;
 this.towerTapped       = false;
-this.tutorialPhase     = null;
-this.tutorialOverlays  = [];
+this.tutorial         = null;
+this.coach             = null;
+this.simNow            = 0;      // tower fire-rate clock (scaled by speed, stops when paused)
+this.speed             = 1;
+this.paused            = false;
+this._modalOpen        = false;
+this._confirmedNoTowers = false;
+this.time.timeScale = 1; this.tweens.timeScale = 1; this.time.paused = false;
 
 this.towerStats = {
   gunner:    { damageDealt: 0, kills: 0 },
@@ -120,7 +129,8 @@ if (this.isEndless) {
 this._pathScaleY = sy;
 
 // ── Draw scene ───────────────────────────────────────────────────────
-this.add.rectangle(width / 2, height / 2, width, height, 0x0d1117);
+UI.backdrop(this);
+UI.fadeIn(this);
 this.drawHotspots();
 this.drawUBZs();
 this.drawPath();
@@ -130,17 +140,16 @@ this.setupPlacementInput();
 
 // ── Checks ───────────────────────────────────────────────────────────
 const total = this.loadout.gunner + this.loadout.bomber + this.loadout.barricade;
+const tutorialDone = this.saveData && this.saveData.tutorials && this.saveData.tutorials.combat1;
 if (total === 0) {
-  this.add.rectangle(width / 2, height / 2, width - 48, 160, 0x1a0a0a).setDepth(20);
-  this.add.rectangle(width / 2, height / 2, width - 48, 160).setStrokeStyle(1, 0xc43a3a).setDepth(20);
-  this.add.text(width / 2, height / 2 - 24, 'NO TOWERS IN STOCK', {
-    fontFamily: 'monospace', fontSize: '18px', color: '#c43a3a', fontStyle: 'bold'
-  }).setOrigin(0.5).setDepth(21);
-  this.add.text(width / 2, height / 2 + 12, 'Build towers in the Factory first', {
-    fontFamily: 'monospace', fontSize: '13px', color: '#8899aa'
-  }).setOrigin(0.5).setDepth(21);
-} else if (this.levelData && this.levelData.tutorialText) {
-  this.showTutorialHint();
+  this._modalOpen = true;
+  UI.modal(this, {
+    title: 'No towers in stock', icon: 'shield', accent: UI.C.amber,
+    body: 'You need towers to defend the island. Build them in the Factory, then come back.',
+    buttons: [{ label: 'TO THE FACTORY', variant: 'primary', onTap: () => { this.setFactoryActive(true); UI.go(this, 'FactoryScene'); } }]
+  });
+} else if (this.storylineId === 1 && this.levelId === 1 && !this.isEndless && !tutorialDone) {
+  this.startTutorial();
 }
 
 }
@@ -254,58 +263,92 @@ return best;
 }
 
 // ── Input ─────────────────────────────────────────────────────────────
+
+// ── Input ─────────────────────────────────────────────────────────────
 setupPlacementInput() {
 this.input.on('pointermove', (pointer) => {
-if (!this.selectedTowerType || this.gameOver) return;
-if (!this.isInPlayArea(pointer.x, pointer.y)) { this.hidePreview(); return; }
-this.updatePreview(pointer.x, pointer.y);
+  if (!this.selectedTowerType || this.gameOver || this._modalOpen) return;
+  if (!this.isInPlayArea(pointer.x, pointer.y)) { this.hidePreview(); return; }
+  this.updatePreview(pointer.x, pointer.y);
 });
 
 this.input.on('pointerup', (pointer) => {
-  if (this.gameOver) return;
+  if (this.gameOver || this._modalOpen) return;
+  // These are scene-wide listeners, so the tutorial's dimmer can't swallow
+  // them — ask the coach whether this point is blocked.
+  if (this.coach && this.coach.blocks(pointer.x, pointer.y)) return;
 
   if (this.upgradePanel) {
     if (!this.towerTapped) this.dismissUpgradePanel();
     this.towerTapped = false;
     return;
   }
-
   if (!this.selectedTowerType) return;
   if (!this.isInPlayArea(pointer.x, pointer.y)) return;
   if (this.canPlaceAt(pointer.x, pointer.y)) this.placeTower(pointer.x, pointer.y);
+  else {
+    const why = this.isOnPath(pointer.x, pointer.y) ? 'Towers can’t go on the road'
+              : this.isInUBZ(pointer.x, pointer.y)  ? 'Unstable ground — can’t build here'
+              : this.isOccupied(pointer.x, pointer.y) ? 'Too close to another tower' : 'Can’t build here';
+    UI.toast(this, why, 'bad', { y: this.PLAY_TOP + 22 });
+  }
 });
 
 this.input.on('pointerout', () => this.hidePreview());
+}
 
+// Length of road (px) inside a circle — how much of the path a tower reaches
+roadCoverage(x, y, r) {
+  let len = 0;
+  for (let i = 0; i < this.pathPoints.length - 1; i++) {
+    const a = this.pathPoints[i], b = this.pathPoints[i + 1];
+    const L = Math.hypot(b.x - a.x, b.y - a.y), n = Math.max(1, Math.ceil(L / 6));
+    for (let k = 0; k < n; k++) {
+      const t = (k + 0.5) / n;
+      if (Math.hypot(a.x + (b.x - a.x) * t - x, a.y + (b.y - a.y) * t - y) <= r) len += L / n;
+    }
+  }
+  return len;
+}
+
+// 0–4 rating: 2× the radius is a straight pass through the ring's centre;
+// bends that wrap around a tower score higher.
+coverageRating(x, y, r) {
+  const ratio = this.roadCoverage(x, y, r) / (2 * r);
+  return ratio < 0.15 ? 0 : ratio < 0.7 ? 1 : ratio < 1.2 ? 2 : ratio < 1.7 ? 3 : 4;
 }
 
 // ── Preview (REQ 8 — clears on placement) ────────────────────────────
+
+// ── Placement preview: ring + road-coverage meter ─────────────────────
 updatePreview(x, y) {
-const data   = TOWER_DATA[this.selectedTowerType];
-const valid  = this.canPlaceAt(x, y);
-const mult   = valid ? this.getPowerMultiplier(x, y) : 1;
-const colour = valid ? data.colour : 0xc43a3a;
+const data  = TOWER_DATA[this.selectedTowerType];
+const valid = this.canPlaceAt(x, y);
+const mult  = valid ? this.getPowerMultiplier(x, y) : 1;
+const range = Math.round(data.range * (Math.abs(mult - 1) > 0.04 ? mult : 1));
+const colour = valid ? data.colour : UI.C.red;
 
 if (!this.previewCircle) {
-  this.previewCircle = this.add.circle(x, y, 14, colour, 0.25).setDepth(15);
-  this.previewRing   = this.add.circle(x, y, data.range).setStrokeStyle(1, colour, 0.4).setDepth(15);
+  this.previewCircle = this.add.circle(x, y, 14, colour, 0.35).setDepth(15);
+  this.previewRing   = this.add.circle(x, y, range).setDepth(15);
+  this.previewMultText = UI.text(this, x, y, '', 'tag', { size: 12, origin: [0.5, 1], depth: 16 })
+    .setBackgroundColor('#0a0d12').setPadding(8, 4, 8, 4);
+}
+this.previewCircle.setPosition(x, y).setFillStyle(colour, 0.35);
+this.previewRing.setPosition(x, y).setRadius(range).setFillStyle(colour, 0.07).setStrokeStyle(1.5, colour, 0.6);
+
+let label, col;
+if (!valid) {
+  label = this.isOnPath(x, y) ? 'ON THE ROAD' : this.isInUBZ(x, y) ? 'UNSTABLE GROUND' : this.isOccupied(x, y) ? 'TOO CLOSE' : 'CAN’T BUILD';
+  col = UI.T.red;
 } else {
-  this.previewCircle.setPosition(x, y).setFillStyle(colour, 0.25);
-  this.previewRing.setPosition(x, y).setStrokeStyle(1, colour, 0.4);
-  this.previewRing.setRadius(data.range);
+  const r = this.coverageRating(x, y, range);
+  label = ['NO ROAD IN RANGE', 'WEAK SPOT', 'OK SPOT', 'GOOD SPOT', 'GREAT SPOT'][r] + '  ' + '▮'.repeat(r) + '▯'.repeat(4 - r);
+  col = [UI.T.red, UI.T.amber, UI.T.dim, UI.T.green, UI.T.green][r];
+  if (Math.abs(mult - 1) > 0.04) label += '   ' + (mult > 1 ? '+' : '') + Math.round((mult - 1) * 100) + '% POWER';
 }
-
-// Power multiplier hint in preview
-if (this.previewMultText) { this.previewMultText.destroy(); this.previewMultText = null; }
-if (valid && Math.abs(mult - 1) > 0.04) {
-  const sign = mult > 1 ? '+' : '';
-  const pct  = sign + Math.round((mult - 1) * 100) + '%';
-  const col  = mult > 1 ? '#e8a020' : '#4a8aba';
-  this.previewMultText = this.add.text(x + 18, y - 18, pct, {
-    fontFamily: 'monospace', fontSize: '11px', color: col, fontStyle: 'bold'
-  }).setDepth(16);
-}
-
+const ly = y - 34 < this.PLAY_TOP + 10 ? y + 48 : y - 24;
+this.previewMultText.setText(label).setColor(col).setPosition(Phaser.Math.Clamp(x, 110, this.scale.width - 110), ly);
 }
 
 hidePreview() {
@@ -360,19 +403,18 @@ if (Math.abs(mult - 1) > 0.04) {
 }
 
 this.loadout[type]--;
-this.towerButtons[type].countText.setText('x' + this.loadout[type]);
-if (this.loadout[type] === 0) this.towerButtons[type].setFillStyle(0x161b22);
+if (this.loadout[type] === 0) this.selectedTowerType = null;
+this.refreshTowerButtons();
 this.towersUsed[type] = (this.towersUsed[type] || 0) + 1;
 
-const tower = { type, x, y, data: towerData, lastFired: 0, upgradeTier: 0, towerCircle, towerLabel, tierBadge: null, hitZone, powerMult: mult };
+const tower = { type, x, y, data: towerData, lastFired: -1e9, upgradeTier: 0, towerCircle, towerLabel, tierBadge: null, hitZone, powerMult: mult };
 this.placedTowers.push(tower);
 
 hitZone.on('pointerup', () => {
   this.towerTapped = true;
+  if (this.coach && this.coach.blocks(x, y)) return;
   this.selectedTowerType = null;
-  Object.keys(this.towerButtons).forEach(t => {
-    this.towerButtons[t].setFillStyle(this.loadout[t] > 0 ? 0x1e2530 : 0x161b22);
-  });
+  this.refreshTowerButtons();
   this.hidePreview();
   this.showUpgradePanel(tower);
 });
@@ -385,119 +427,56 @@ if (type !== 'barricade') {
 // REQ 8: clear preview after placing — hidePreview not updatePreview
 this.hidePreview();
 
-// L1 tutorial: advance phase when tower placed near optimal spot (REQ 9)
-if (this.tutorialPhase === 'showPlacement' && this.levelId === 1 && this.storylineId === 1) {
-  const opt = this.levelData.tutorialOptimalSpot;
-  if (opt) {
-    const optY = this.CT + opt.oy * (this._pathScaleY || 1);
-    const dist = Math.sqrt((x - opt.x) ** 2 + (y - optY) ** 2);
-    if (dist < 80) this.advanceTutorialPhase('highlightStart');
-  }
+this.tutorialTowerPlaced();
 }
 
-}
-
-// ── Upgrade panel (REQ 4, 5) ──────────────────────────────────────────
+// ── Upgrade panel ─────────────────────────────────────────────────────
 showUpgradePanel(tower) {
 this.dismissUpgradePanel();
 this.activeTower = tower;
-
 const width = this.scale.width;
-const height = this.H;
-const panelH   = 158;
-const panelY   = height - 165 - panelH / 2 - 4;
-const panelTop = panelY - panelH / 2;
-const colour   = tower.data.colour;
-const hex      = '#' + colour.toString(16).padStart(6, '0');
-const path     = TOWER_DATA[tower.type].upgrades.pathA;
-const tier     = tower.upgradeTier;
-const maxTier  = path.tiers.length;
-const items    = [];
+const colour = tower.data.colour;
+const path = TOWER_DATA[tower.type].upgrades.pathA;
+const tier = tower.upgradeTier, maxTier = path.tiers.length;
+const items = [];
+const D = 18;
 
-const bg     = this.add.rectangle(width / 2, panelY, width - 24, panelH, 0x060c06).setDepth(18);
-const border = this.add.rectangle(width / 2, panelY, width - 24, panelH).setStrokeStyle(2, colour).setDepth(18);
-items.push(bg, border);
+items.push(this.add.circle(tower.x, tower.y, tower.data.range, colour, 0.10).setDepth(3));
+items.push(this.add.circle(tower.x, tower.y, tower.data.range).setStrokeStyle(2, colour, 0.6).setDepth(3));
 
-// REQ 5: persistent range ring while panel open
-const ring  = this.add.circle(tower.x, tower.y, tower.data.range, colour, 0.10).setDepth(3);
-const ringB = this.add.circle(tower.x, tower.y, tower.data.range).setStrokeStyle(2, colour, 0.6).setDepth(3);
-items.push(ring, ringB);
+const h = 150, cy = this.HP_STRIP_Y - 28 - h / 2, lx = 12 + 20;
+items.push(UI.panel(this, width / 2, cy, width - 24, h, { fill: UI.C.surface, stroke: colour, strokeAlpha: 0.7, radius: 16, depth: D }));
+const top = cy - h / 2;
+items.push(UI.text(this, lx, top + 22, this.titleCase(tower.data.name), 'heading', { size: 18, origin: [0, 0.5], depth: D + 1, color: UI.hex(colour) }));
+items.push(UI.text(this, width - 12 - 20, top + 22, tier === 0 ? 'BASE' : 'TIER ' + tier + ' / ' + maxTier, 'tag',
+  { size: 11, origin: [1, 0.5], depth: D + 1, color: tier > 0 ? UI.T.amber : UI.T.mute }));
+let info = 'Path: ' + this.titleCase(path.name);
+if (tower.powerMult && Math.abs(tower.powerMult - 1) > 0.04) info += '   ·   power zone ' + (tower.powerMult > 1 ? '+' : '') + Math.round((tower.powerMult - 1) * 100) + '%';
+items.push(UI.text(this, lx, top + 44, info, 'small', { size: 12, origin: [0, 0.5], depth: D + 1 }));
 
-// Tower name + tier + power multiplier
-const tierStr = tier === 0 ? 'BASE' : 'TIER ' + tier;
-items.push(
-  this.add.text(28, panelTop + 10, tower.data.name, {
-    fontFamily: 'monospace', fontSize: '14px', color: hex, fontStyle: 'bold'
-  }).setDepth(19),
-  this.add.text(width - 28, panelTop + 10, tierStr, {
-    fontFamily: 'monospace', fontSize: '12px', color: tier > 0 ? '#e8a020' : '#445566', fontStyle: 'bold'
-  }).setOrigin(1, 0).setDepth(19),
-  this.add.text(28, panelTop + 28, 'PATH A: ' + path.name, {
-    fontFamily: 'monospace', fontSize: '10px', color: '#556677', letterSpacing: 2
-  }).setDepth(19)
-);
-
-// Power mult indicator
-if (tower.powerMult && Math.abs(tower.powerMult - 1) > 0.04) {
-  const sign = tower.powerMult > 1 ? '+' : '';
-  const pct  = sign + Math.round((tower.powerMult - 1) * 100) + '%';
-  const col  = tower.powerMult > 1 ? '#e8a020' : '#4a8aba';
-  items.push(this.add.text(28, panelTop + 44, 'POWER ZONE ' + pct, {
-    fontFamily: 'monospace', fontSize: '10px', color: col
-  }).setDepth(19));
-}
-
-// REQ 4: check if upgrades are unlocked
-const completed       = (this.saveData && this.saveData.completedLevels && this.saveData.completedLevels.storyline1) ? this.saveData.completedLevels.storyline1 : [];
-const upgradesUnlocked = completed.includes(3) || this.isEndless || this.storylineId !== 1;
-
-if (!upgradesUnlocked) {
-  items.push(
-    this.add.text(width / 2, panelTop + 88, 'UPGRADES LOCKED', {
-      fontFamily: 'monospace', fontSize: '14px', color: '#556677', fontStyle: 'bold', letterSpacing: 2
-    }).setOrigin(0.5).setDepth(19),
-    this.add.text(width / 2, panelTop + 112, 'Complete Level 3 to unlock', {
-      fontFamily: 'monospace', fontSize: '11px', color: '#334455'
-    }).setOrigin(0.5).setDepth(19)
-  );
+const completed = (this.saveData && this.saveData.completedLevels && this.saveData.completedLevels.storyline1) || [];
+const unlocked  = completed.includes(3) || this.isEndless || this.storylineId !== 1;
+const by = top + h - 34;
+if (!unlocked) {
+  items.push(UI.text(this, lx, top + 76, 'Upgrades unlock after Level 3. Then you can spend PARTS — earned from every kill — to power up towers mid-battle.', 'small',
+    { size: 12, wrap: width - 64, depth: D + 1 }));
 } else if (tier < maxTier) {
-  const nextTier  = path.tiers[tier];
-  const canAfford = this.parts >= nextTier.cost;
-
-  items.push(
-    this.add.text(28, panelTop + 55, nextTier.label, {
-      fontFamily: 'monospace', fontSize: '13px', color: '#eef2f8', wordWrap: { width: width - 180 }
-    }).setDepth(19),
-    this.add.text(28, panelTop + panelH - 42, nextTier.cost + ' PARTS', {
-      fontFamily: 'monospace', fontSize: '15px', color: canAfford ? '#e8a020' : '#c43a3a', fontStyle: 'bold'
-    }).setDepth(19)
-  );
-  if (!canAfford) {
-    items.push(this.add.text(28, panelTop + panelH - 22, 'not enough parts', {
-      fontFamily: 'monospace', fontSize: '10px', color: '#445566'
-    }).setDepth(19));
-  }
-
-  const btnBg = canAfford ? 0x162616 : 0x161b22;
-  const btn   = this.add.rectangle(width - 72, panelTop + panelH - 32, 108, 52, btnBg).setInteractive().setDepth(19);
-  const btnB  = this.add.rectangle(width - 72, panelTop + panelH - 32, 108, 52).setStrokeStyle(1, canAfford ? 0x5eba7d : 0x334455).setDepth(19);
-  const btnL  = this.add.text(width - 72, panelTop + panelH - 32, 'UPGRADE', {
-    fontFamily: 'monospace', fontSize: '13px', color: canAfford ? '#5eba7d' : '#445566', fontStyle: 'bold'
-  }).setOrigin(0.5).setDepth(20);
-  items.push(btn, btnB, btnL);
-  if (canAfford) {
-    btn.on('pointerdown', () => this.applyUpgrade(tower));
-    btn.on('pointerover', () => btn.setFillStyle(0x1e3a1e));
-    btn.on('pointerout',  () => btn.setFillStyle(btnBg));
-  }
+  const next = path.tiers[tier];
+  const afford = this.parts >= next.cost;
+  items.push(UI.text(this, lx, top + 72, 'Next: ' + next.label, 'bodyB', { size: 14, origin: [0, 0.5], depth: D + 1, wrap: width - 64 }));
+  items.push(UI.button(this, width / 2, by, width - 64, 46, {
+    label: afford ? 'UPGRADE · ' + next.cost + ' PARTS' : 'NEED ' + next.cost + ' PARTS (HAVE ' + this.parts + ')',
+    variant: 'primary', colour: UI.C.amber, disabled: !afford, depth: D + 2, size: afford ? 15 : 13,
+    onTap: () => this.applyUpgrade(tower)
+  }));
 } else {
-  items.push(this.add.text(width / 2, panelTop + 90, 'FULLY UPGRADED', {
-    fontFamily: 'monospace', fontSize: '15px', color: hex, fontStyle: 'bold', letterSpacing: 3
-  }).setOrigin(0.5).setDepth(19));
+  items.push(UI.text(this, width / 2, top + 84, 'Fully upgraded', 'heading', { size: 16, origin: 0.5, depth: D + 1, color: UI.hex(colour) }));
 }
-
+// Panel swallows taps so they don't fall through to the map
+const shield = this.add.zone(width / 2, cy, width - 24, h).setInteractive().setDepth(D);
+shield.on('pointerup', () => { this.towerTapped = true; });
+items.push(shield);
 this.upgradePanel = items;
-
 }
 
 dismissUpgradePanel() {
@@ -556,266 +535,261 @@ this.showUpgradePanel(tower);
 }
 
 // ── Level 1 tutorial system (REQ 9) ──────────────────────────────────
-showTutorialHint() {
-const width = this.scale.width;
-const height = this.H;
 
-const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.6).setDepth(30);
-const card    = this.add.rectangle(width / 2, height / 2, width - 48, 192, 0x0a160a).setDepth(31);
-const border  = this.add.rectangle(width / 2, height / 2, width - 48, 192).setStrokeStyle(1, 0x5eba7d).setDepth(31);
-const label   = this.add.text(width / 2, height / 2 - 74, 'LEVEL ' + this.levelId + ' — ' + (this.levelData.name || ''), {
-  fontFamily: 'monospace', fontSize: '10px', color: '#5eba7d', letterSpacing: 2
-}).setOrigin(0.5).setDepth(32);
-const hint = this.add.text(width / 2, height / 2 - 16, this.levelData.tutorialText, {
-  fontFamily: 'monospace', fontSize: '12px', color: '#eef2f8',
-  align: 'center', wordWrap: { width: width - 96 }, lineSpacing: 5
-}).setOrigin(0.5).setDepth(32);
-const btn    = this.add.rectangle(width / 2, height / 2 + 68, 220, 44, 0x162216).setInteractive().setDepth(32);
-const btnBdr = this.add.rectangle(width / 2, height / 2 + 68, 220, 44).setStrokeStyle(1, 0x5eba7d).setDepth(32);
-const btnTxt = this.add.text(width / 2, height / 2 + 68, 'PLACE YOUR TOWERS', {
-  fontFamily: 'monospace', fontSize: '13px', color: '#5eba7d', fontStyle: 'bold'
-}).setOrigin(0.5).setDepth(33);
+// ── Level 1 tutorial ──────────────────────────────────────────────────
+// Spotlight-guided first battle (see Coach.js). Explains the road, the
+// base, range rings and why placement matters, then hands over control.
+startTutorial() {
+  this.tutorial = { step: 'intro', placed: 0 };
+  this.coach = this.coach || new Coach(this, { depth: 300 });
+  this.events.once('shutdown', () => this.coach && this.coach.destroy());
+}
 
-this.tutorialElements = [overlay, card, border, label, hint, btn, btnBdr, btnTxt];
-btn.on('pointerdown', () => {
-  this.tutorialElements.forEach(e => e.destroy());
-  this.tutorialElements = null;
-  // Start guided tutorial for L1 storyline 1
-  if (this.levelId === 1 && this.storylineId === 1) {
-    this.advanceTutorialPhase('highlightGunner');
+tutorialSpot(i) {
+  const spots = this.levelData.tutorialSpots || [];
+  const s = spots[i];
+  return s ? { x: s.x, y: this.CT + s.oy * this._pathScaleY } : null;
+}
+
+updateTutorial() {
+  const t = this.tutorial;
+  if (!t || !this.coach) return;
+  if (this.upgradePanel || this._modalOpen) { this.coach.hide(); return; }
+  const width = this.scale.width;
+  const gun = this.towerButtons.gunner;
+  const need = Math.min(this.levelData.recommendedTowers || 2, this.startingLoadout.gunner);
+
+  if (t.step === 'intro') {
+    this.coach.show({ key: 'intro', tag: 'FIRST BATTLE', title: 'Defend the island',
+      body: 'Raiders walk the road from the top of the map down to your BASE. Each one that gets through costs 2 base HP — you have ' + this.baseHpMax + '. Lose it all and the island falls.\n\nYour towers fire automatically at anything inside their range ring.',
+      button: { label: 'GOT IT', onTap: () => { t.step = 'place'; this.coach.hide(); } } });
+    return;
   }
-});
-btn.on('pointerover', () => btn.setFillStyle(0x1e3a1e));
-btn.on('pointerout',  () => btn.setFillStyle(0x162216));
-
+  if (t.step === 'place') {
+    if (t.placed >= need || this.loadout.gunner <= 0) { t.step = 'start'; return; }
+    const n = t.placed + 1;
+    if (this.selectedTowerType !== 'gunner') {
+      this.coach.show({ key: 'select' + n, step: n, total: need + 1, target: { x: gun.x, y: gun.y, w: gun.w, h: gun.h },
+        title: n === 1 ? 'Pick up a Gunner' : 'Now the second Gunner',
+        body: n === 1 ? 'Tap GUNNER. These are the towers you built in the Factory.' : 'One tower can’t cover the whole road. Tap GUNNER again.' });
+      return;
+    }
+    const spot = this.tutorialSpot(t.placed) || { x: width / 2, y: (this.PLAY_TOP + this.PLAY_BOTTOM) / 2 };
+    this.coach.show({ key: 'place' + n, step: n, total: need + 1, target: { x: spot.x, y: spot.y, w: 76, h: 76 }, pad: 6, dim: 0.55,
+      title: n === 1 ? 'Place it where the road bends' : 'Cover the other bend',
+      body: n === 1 ? 'The road doubles back here, so raiders stay in range for longer. Tap the highlighted spot. The coverage meter shows how much road a spot can reach.'
+                    : 'Spread your towers out so raiders are under fire for as much of the road as possible.' });
+    return;
+  }
+  if (t.step === 'start') {
+    const b = this.startWaveBtn;
+    this.coach.show({ key: 'start', step: need + 1, total: need + 1, target: { x: b.x, y: b.y, w: b.bw, h: b.bh },
+      title: 'Start the wave', body: 'Towers can’t be moved once placed. When you’re ready, send the raiders in. Use 1× / 2× at the top to change speed.' });
+  }
 }
 
-advanceTutorialPhase(phase) {
-// Clear existing tutorial overlays
-this.tutorialOverlays.forEach(e => { if (e && e.destroy) e.destroy(); });
-this.tutorialOverlays = [];
-this.tutorialPhase = phase;
-
-const width = this.scale.width;
-const height = this.H;
-
-if (phase === 'highlightGunner') {
-  // Pulsing ring around GUNNER button + instruction text
-  const gunnerBtn = this.towerButtons['gunner'];
-  if (!gunnerBtn) return;
-  const gx = gunnerBtn.x, gy = gunnerBtn.y;
-  const ring = this.add.circle(gx, gy, 50).setStrokeStyle(3, 0x5eba7d, 1).setDepth(25);
-  const txt  = this.add.text(width / 2, this.HP_STRIP_Y - 32, 'TAP GUNNER TO SELECT', {
-    fontFamily: 'monospace', fontSize: '13px', color: '#5eba7d', fontStyle: 'bold'
-  }).setOrigin(0.5).setDepth(25);
-  const sub  = this.add.text(width / 2, this.HP_STRIP_Y - 16, 'OR HOLD & DRAG TO PLACE DIRECTLY', {
-    fontFamily: 'monospace', fontSize: '10px', color: '#8899aa', letterSpacing: 1
-  }).setOrigin(0.5).setDepth(25);
-  this.tweens.add({ targets: ring, scaleX: 1.2, scaleY: 1.2, alpha: 0.5, duration: 700, yoyo: true, repeat: -1 });
-  this.tutorialOverlays = [ring, txt, sub];
-
-} else if (phase === 'showPlacement') {
-  // Pulsing marker at optimal position + drag instruction
-  const opt  = this.levelData.tutorialOptimalSpot;
-  if (!opt) return;
-  const optX = opt.x, optY = this.CT + opt.oy * (this._pathScaleY || 1);
-  const dot  = this.add.circle(optX, optY, 28).setStrokeStyle(3, 0x5eba7d, 1).setDepth(25);
-  const dot2 = this.add.circle(optX, optY, 8, 0x5eba7d, 0.9).setDepth(25);
-  const txt  = this.add.text(width / 2, this.PLAY_TOP + 14, 'DRAG TOWER TO THIS SPOT', {
-    fontFamily: 'monospace', fontSize: '13px', color: '#5eba7d', fontStyle: 'bold'
-  }).setOrigin(0.5).setDepth(25);
-  const sub  = this.add.text(width / 2, this.PLAY_TOP + 32, 'HOLD THE BUTTON AND DRAG', {
-    fontFamily: 'monospace', fontSize: '10px', color: '#8899aa', letterSpacing: 1
-  }).setOrigin(0.5).setDepth(25);
-  // Animated arrow suggesting drag direction from button to target
-  const arrowY = this.PLAY_TOP + 50;
-  const arrow  = this.add.text(width / 2, arrowY, '\u2193 DRAG UP \u2193', {
-    fontFamily: 'monospace', fontSize: '10px', color: '#5eba7d', alpha: 0.7
-  }).setOrigin(0.5).setDepth(25);
-  this.tweens.add({ targets: [dot, dot2], scaleX: 1.3, scaleY: 1.3, alpha: 0.6, duration: 600, yoyo: true, repeat: -1 });
-  this.tweens.add({ targets: arrow, y: arrowY - 8, alpha: 0.4, duration: 700, yoyo: true, repeat: -1 });
-  this.tutorialOverlays = [dot, dot2, txt, sub, arrow];
-
-} else if (phase === 'highlightStart') {
-  // Pulsing ring around START WAVE button
-  const sx = this.startWaveBtn.x, sy = this.startWaveBtn.y;
-  const ring = this.add.circle(sx, sy, 55).setStrokeStyle(3, 0x5eba7d, 1).setDepth(25);
-  const txt  = this.add.text(width / 2, this.HP_STRIP_Y - 32, 'NOW START THE WAVE', {
-    fontFamily: 'monospace', fontSize: '13px', color: '#5eba7d', fontStyle: 'bold'
-  }).setOrigin(0.5).setDepth(25);
-  this.tweens.add({ targets: ring, scaleX: 1.2, scaleY: 1.2, alpha: 0.5, duration: 700, yoyo: true, repeat: -1 });
-  this.tutorialOverlays = [ring, txt];
-
-} else if (phase === 'complete') {
-  this.tutorialOverlays = [];
+tutorialTowerPlaced() {
+  if (!this.tutorial || this.tutorial.step !== 'place') return;
+  this.tutorial.placed++;
 }
 
+tutorialWaveStarted() {
+  if (!this.tutorial) return;
+  this.tutorial = null;
+  if (this.coach) this.coach.hide();
+  SaveManager.update(s => { if (!s.tutorials) s.tutorials = {}; s.tutorials.combat1 = true; });
 }
+
 
 // ── Scene drawing ─────────────────────────────────────────────────────
+
+// ── Road ──────────────────────────────────────────────────────────────
 drawPath() {
-const graphics = this.add.graphics();
-graphics.lineStyle(40, 0x161b22, 1);
-graphics.beginPath();
-graphics.moveTo(this.pathPoints[0].x, this.pathPoints[0].y);
-this.pathPoints.forEach(p => graphics.lineTo(p.x, p.y));
-graphics.strokePath();
+const g = this.add.graphics().setDepth(1);
+const stroke = (w, col, a) => {
+  g.lineStyle(w, col, a);
+  g.beginPath();
+  g.moveTo(this.pathPoints[0].x, this.pathPoints[0].y);
+  this.pathPoints.forEach(p => g.lineTo(p.x, p.y));
+  g.strokePath();
+};
+// Rounded joints: a disc at every corner so bends don't look notched
+const joints = (r, col) => { g.fillStyle(col, 1); this.pathPoints.forEach(p => g.fillCircle(p.x, p.y, r)); };
+joints(23, 0x26303d); stroke(46, 0x26303d, 1);     // kerb
+joints(20, 0x161d27); stroke(40, 0x161d27, 1);     // road surface
+stroke(2, 0x2c3746, 1);                            // centre line
 
-graphics.lineStyle(40, 0x1e2530, 0.5);
-graphics.beginPath();
-graphics.moveTo(this.pathPoints[0].x, this.pathPoints[0].y);
-this.pathPoints.forEach(p => graphics.lineTo(p.x, p.y));
-graphics.strokePath();
+// Direction chevrons along the road
+const cg = this.add.graphics().setDepth(1);
+cg.lineStyle(2, 0x3a4658, 1);
+for (let i = 0; i < this.pathPoints.length - 1; i++) {
+  const a = this.pathPoints[i], b = this.pathPoints[i + 1];
+  const L = Math.hypot(b.x - a.x, b.y - a.y), ang = Math.atan2(b.y - a.y, b.x - a.x);
+  for (let d = 30; d < L - 16; d += 56) {
+    const x = a.x + Math.cos(ang) * d, y = a.y + Math.sin(ang) * d;
+    const bx = Math.cos(ang), by = Math.sin(ang), px = -by, py = bx;
+    cg.beginPath(); cg.moveTo(x - bx * 5 + px * 6, y - by * 5 + py * 6); cg.lineTo(x + bx * 3, y + by * 3); cg.lineTo(x - bx * 5 - px * 6, y - by * 5 - py * 6); cg.strokePath();
+  }
+}
 
-this.add.text(this.pathPoints[0].x, this.CT + 4, 'v ENTRY', {
-  fontFamily: 'monospace', fontSize: '10px', color: '#c43a3a', letterSpacing: 2
-}).setOrigin(0.5);
-// Anchor BASE label to the actual path exit, not a hardcoded x
+const start = this.pathPoints[0];
+UI.text(this, start.x + 28, this.CT + 10, 'RAIDERS ENTER', 'tag', { size: 10, origin: [0, 0.5], color: UI.T.red, depth: 2 });
 const exitPt = this.pathPoints[this.pathPoints.length - 1];
-this.add.text(exitPt.x, this.CB - 6, '^ BASE', {
-  fontFamily: 'monospace', fontSize: '10px', color: '#3a8fc4', letterSpacing: 2
-}).setOrigin(0.5);
-
+UI.text(this, exitPt.x + 28, this.CB - 10, 'YOUR BASE', 'tag', { size: 10, origin: [0, 0.5], color: UI.T.blue, depth: 2 });
 }
 
 // ── Header redesign (REQ 7) ───────────────────────────────────────────
 // Row 1: BACK | level name | wave X/Y
 // Row 2: ◈ parts counter  (prominent, left)
 // HP bar near BASE at the bottom (drawn in drawBottomPanel)
+
+// ── HUD header ────────────────────────────────────────────────────────
+// Back (abort) · level name + wave · speed toggle · parts
 drawHeader() {
 const width = this.scale.width;
-const HY = this.HY;
+const H = this.PLAY_TOP - 6;
+const g = this.add.graphics().setDepth(12);
+g.fillStyle(UI.C.bg, 0.94); g.fillRect(0, 0, width, H);
+g.fillStyle(UI.C.line, 1);  g.fillRect(0, H - 1, width, 1);
 
-this.add.rectangle(width / 2, HY, width, 92, 0x161b22);
-this.add.rectangle(width / 2, HY + 46, width, 1, 0x334455);
+// Back → abort confirm
+const back = UI.button(this, 36, 40, 44, 44, { variant: 'secondary', radius: 22, depth: 13, onTap: () => this.showAbortConfirm() });
+back.add(UI.icon(this, -1, 0, 'back', 14, 0xeef2f7));
 
-// ← BACK
-const backBtn = this.add.rectangle(34, HY - 18, 52, 26, 0x1e2530).setInteractive();
-this.add.text(34, HY - 18, '<- BACK', { fontFamily: 'monospace', fontSize: '10px', color: '#8899aa' }).setOrigin(0.5);
-backBtn.on('pointerdown', () => {
-  this.showAbortConfirm();
+UI.text(this, 70, 30, this.levelData ? this.titleCase(this.levelData.name) : 'Level', 'heading', { size: 17, origin: [0, 0.5], depth: 13 });
+this.waveIndicator = UI.text(this, 70, 52, 'WAVE 0 / ' + this.levelData.waves.length, 'label', { size: 11, origin: [0, 0.5], depth: 13 });
+
+// Parts chip (spend on upgrades mid-battle)
+this.partsText = UI.chip(this, 0, 40, 'parts', 0, { depth: 13 });
+this.partsText.x = width - 16 - this.partsText.cw / 2;
+
+// Speed toggle
+this.speedBtn = UI.button(this, this.partsText.x - this.partsText.cw / 2 - 30, 40, 48, 34, {
+  label: '1×', variant: 'secondary', size: 14, radius: 17, depth: 13, onTap: () => this.toggleSpeed()
 });
 
-// Level name (top centre)
-this.add.text(width / 2, HY - 22, this.levelData ? this.levelData.name : 'LEVEL', {
-  fontFamily: 'monospace', fontSize: '10px', color: '#8899aa', letterSpacing: 3
-}).setOrigin(0.5);
-
-// Wave indicator (top right)
-this.waveIndicator = this.add.text(width - 14, HY - 22, 'WAVE -/-', {
-  fontFamily: 'monospace', fontSize: '10px', color: '#445566', letterSpacing: 1
-}).setOrigin(1, 0.5);
-
-// Row 2: ◈ Parts (amber, prominent)
-// Small amber diamond drawn before text
-const gfx = this.add.graphics();
-gfx.fillStyle(0xe8a020, 1);
-gfx.fillRect(20, HY + 3, 10, 10);
-this.partsText = this.add.text(36, HY + 8, '0', {
-  fontFamily: 'monospace', fontSize: '18px', color: '#e8a020', fontStyle: 'bold'
-}).setOrigin(0, 0.5);
-this.add.text(36, HY + 24, 'PARTS', {
-  fontFamily: 'monospace', fontSize: '9px', color: '#556677', letterSpacing: 2
-}).setOrigin(0, 0.5);
-
-// Wave status text (centre row 2)
-this.waveText = this.add.text(width / 2, HY + 16, 'PLACE TOWERS — THEN START WAVE', {
-  fontFamily: 'monospace', fontSize: '10px', color: '#eef2f8', fontStyle: 'bold'
-}).setOrigin(0.5);
-
+// Status line
+this.waveText = UI.text(this, width / 2, 84, 'Place your towers, then start the wave', 'small',
+  { size: 12, origin: 0.5, color: UI.T.dim, depth: 13 });
 }
 
 // ── Bottom panel (REQ 7 — HP near base) ──────────────────────────────
+
+// ── Bottom panel: base HP + tower picker + start ───────────────────────
 drawBottomPanel() {
 const width = this.scale.width;
 const height = this.H;
 
-// BASE HP strip — sits just above tower buttons, near the BASE exit at viewport bottom
-const hpStripY = this.HP_STRIP_Y;
-this.add.rectangle(width / 2, hpStripY, width, 38, 0x10180f);
-this.add.rectangle(width / 2, hpStripY - 19, width, 1, 0x334455);
+// Base HP strip
+const hy = this.HP_STRIP_Y;
+const strip = this.add.graphics().setDepth(9);
+strip.fillStyle(UI.C.bg, 0.94); strip.fillRect(0, hy - 20, width, height - hy + 20);
+strip.fillStyle(UI.C.line, 1);  strip.fillRect(0, hy - 20, width, 1);
+UI.icon(this, 28, hy, 'shield', 15, UI.C.blue).setDepth(10);
+UI.text(this, 44, hy, 'BASE', 'label', { size: 11, origin: [0, 0.5], depth: 10 });
+this.hpText = UI.text(this, width - 16, hy, this.baseHp + ' / ' + this.baseHpMax, 'number', { size: 15, origin: [1, 0.5], depth: 10, color: UI.T.green });
+this.hpBarX = 92; this.hpBarW = width - 16 - 64 - this.hpBarX;
+this.hpBarBg = this.add.graphics().setDepth(10);
+this.hpBarBg.fillStyle(UI.C.surface2, 1); this.hpBarBg.fillRoundedRect(this.hpBarX, hy - 5, this.hpBarW, 10, 5);
+this.hpBarFill = this.add.graphics().setDepth(10);
+this.updateHpBar();
 
-// Small base icon
-this.add.circle(28, hpStripY, 8, 0x3a8fc4).setDepth(9);
-this.add.text(28, hpStripY, 'B', { fontFamily: 'monospace', fontSize: '8px', color: '#0d1117', fontStyle: 'bold' }).setOrigin(0.5).setDepth(9);
-this.add.text(44, hpStripY - 6, 'BASE HP', { fontFamily: 'monospace', fontSize: '9px', color: '#8899aa', letterSpacing: 1 }).setDepth(9);
-this.hpText = this.add.text(44, hpStripY + 7, '' + this.baseHp + ' / ' + this.baseHpMax, {
-  fontFamily: 'monospace', fontSize: '13px', color: '#5eba7d', fontStyle: 'bold'
-}).setDepth(9);
-
-// HP bar
-const barX = 118, barW = width - 132;
-this.add.rectangle(barX + barW / 2, hpStripY, barW, 10, 0x1e2530).setDepth(9);
-this.hpBarFill = this.add.rectangle(barX, hpStripY, barW, 10, 0x5eba7d).setOrigin(0, 0.5).setDepth(9);
-
-// Tower button panel
-const panelY = this.PANEL_TOP;
-this.add.rectangle(width / 2, height - 62, width, 124, 0x161b22).setDepth(8);
-this.add.rectangle(width / 2, panelY, width, 1, 0x334455).setDepth(8);
-
-const towerTypes = ['gunner', 'bomber', 'barricade'];
+// Tower buttons
+const types = ['gunner', 'bomber', 'barricade'];
+const gap = 8, startW = 96;
+const bw = (width - 32 - startW - gap * types.length) / types.length;
+const by = this.PANEL_TOP + 58, bh = 92;
 this.towerButtons = {};
-
-towerTypes.forEach((type, i) => {
-  const data      = TOWER_DATA[type];
-  const x         = 50 + i * 94;
-  const y         = panelY + 52;
-  const colourHex = '#' + data.colour.toString(16).padStart(6, '0');
-  const count     = this.loadout[type];
-  const active    = count > 0;
-
-  const btn = this.add.rectangle(x, y, 82, 80, active ? 0x1e2530 : 0x161b22).setInteractive().setDepth(9);
-  btn.towerType = type;
-  this.add.rectangle(x, y, 82, 80).setStrokeStyle(1, active ? data.colour : 0x334455).setDepth(9);
-  this.add.circle(x, y - 23, 8, active ? data.colour : 0x334455).setDepth(9);
-  this.add.text(x, y + 2, data.name, {
-    fontFamily: 'monospace', fontSize: '11px', color: active ? '#eef2f8' : '#556677', fontStyle: 'bold'
-  }).setOrigin(0.5).setDepth(9);
-  const countText = this.add.text(x, y + 20, 'x' + count, {
-    fontFamily: 'monospace', fontSize: '13px', color: active ? colourHex : '#445566'
-  }).setOrigin(0.5).setDepth(9);
-  btn.countText = countText;
+types.forEach((type, i) => {
+  const d = TOWER_DATA[type];
+  const x = 16 + bw / 2 + i * (bw + gap);
+  const c = this.add.container(x, by).setDepth(10);
+  const bg = this.add.graphics();
+  const disc = this.add.graphics();
+  const name = UI.text(this, 0, 10, this.titleCase(d.name), 'tag', { size: 12.5, origin: 0.5, color: UI.T.text });
+  const countText = UI.text(this, 0, 30, 'x' + this.loadout[type], 'number', { size: 15, origin: 0.5 });
+  const zone = this.add.zone(0, 0, bw, bh).setInteractive();
+  c.add([bg, disc, name, countText, zone]);
+  const btn = { container: c, countText, x, y: by, w: bw, h: bh, type };
+  btn.draw = () => {
+    const has = this.loadout[type] > 0, sel = this.selectedTowerType === type;
+    UI.drawPanel(bg, 0, 0, bw, bh, { fill: sel ? 0x1d2734 : (has ? UI.C.surface : 0x10151c),
+      stroke: sel ? d.colour : (has ? UI.C.line : UI.C.lineSoft), strokeWidth: sel ? 2 : 1, radius: 14 });
+    disc.clear();
+    disc.fillStyle(has ? d.colour : UI.C.line, has ? 1 : 0.6); disc.fillCircle(0, -20, 11);
+    disc.lineStyle(2, 0x0a0d12, 1); disc.strokeCircle(0, -20, 11);
+    name.setColor(has ? UI.T.text : UI.T.faint);
+    countText.setText('x' + this.loadout[type]).setColor(has ? UI.hex(d.colour) : UI.T.faint);
+  };
+  // Legacy callers set fills / count text directly; route them to draw()
+  btn.setFillStyle = () => btn.draw();
+  btn.draw();
+  zone.on('pointerdown', () => this.selectTower(type));
   this.towerButtons[type] = btn;
-
-  btn.on('pointerdown', () => this.selectTower(type));
-  btn.on('pointerover', () => { if (this.selectedTowerType !== type) btn.setFillStyle(0x252c38); });
-  btn.on('pointerout',  () => { if (this.selectedTowerType !== type) btn.setFillStyle(active ? 0x1e2530 : 0x161b22); });
 });
 
-// START WAVE button
-this.startWaveBtn = this.add.rectangle(width - 56, panelY + 52, 84, 80, 0x0d1a0d).setInteractive().setDepth(9);
-this.add.rectangle(width - 56, panelY + 52, 84, 80).setStrokeStyle(1, 0x5eba7d).setDepth(9);
-this.startWaveBtnLabel = this.add.text(width - 56, panelY + 40, 'START', {
-  fontFamily: 'monospace', fontSize: '14px', color: '#5eba7d', fontStyle: 'bold'
-}).setOrigin(0.5).setDepth(9);
-this.startWaveBtnSub = this.add.text(width - 56, panelY + 60, 'WAVE 1', {
-  fontFamily: 'monospace', fontSize: '10px', color: '#5eba7d'
-}).setOrigin(0.5).setDepth(9);
-this.startWaveBtn.on('pointerdown', () => this.startNextWave());
-this.startWaveBtn.on('pointerover', () => this.startWaveBtn.setFillStyle(0x162616));
-this.startWaveBtn.on('pointerout',  () => this.startWaveBtn.setFillStyle(0x0d1a0d));
+// Start wave
+const sx = width - 16 - startW / 2;
+this.startWaveBtn = UI.button(this, sx, by, startW, bh, {
+  label: 'START', sub: 'WAVE 1', variant: 'success', size: 17, depth: 10, onTap: () => this.startNextWave()
+});
+this.startWaveBtn.y = by;
+}
 
+refreshTowerButtons() {
+  Object.values(this.towerButtons).forEach(b => b.draw());
+}
+
+titleCase(str) { return String(str).toLowerCase().replace(/\b\w/g, c => c.toUpperCase()); }
+
+toggleSpeed() {
+  this.speed = this.speed === 2 ? 1 : 2;
+  this.applyTimeScale();
+  this.speedBtn.setLabel(this.speed + '×');
+  this.speedBtn.setVariant(this.speed === 2 ? 'primary' : 'secondary');
+}
+
+// Game speed and pause both act on Phaser's clock + tweens, plus our own
+// simNow (tower fire-rate clock — Phaser's time.now ignores timeScale).
+applyTimeScale() {
+  const scale = this.speed || 1;
+  this.time.timeScale = scale;
+  this.tweens.timeScale = scale;
+}
+
+// Pauses the tweens that exist right now (enemy movement, shots, effects)
+// rather than the whole tween manager, so the pause dialog itself can still
+// animate in and its buttons still respond.
+setPaused(paused) {
+  this.paused = paused;
+  this.time.paused = paused;
+  if (paused) {
+    this._pausedTweens = this.tweens.getTweens().filter(t => t.isPlaying());
+    this._pausedTweens.forEach(t => t.pause());
+  } else {
+    (this._pausedTweens || []).forEach(t => { if (t.isPaused()) t.resume(); });
+    this._pausedTweens = null;
+  }
 }
 
 updateHpBar() {
 if (!this.hpBarFill) return;
-const pct = this.baseHp / this.baseHpMax;
-this.hpBarFill.setSize((this.scale.width - 132) * pct, 10);
-this.hpBarFill.setFillStyle(pct > 0.5 ? 0x5eba7d : pct > 0.25 ? 0xe8a020 : 0xc43a3a);
+const pct = Math.max(0, this.baseHp / this.baseHpMax);
+const col = pct > 0.5 ? UI.C.green : pct > 0.25 ? UI.C.amber : UI.C.red;
+this.hpBarFill.clear();
+if (pct > 0) { this.hpBarFill.fillStyle(col, 1); this.hpBarFill.fillRoundedRect(this.hpBarX, this.HP_STRIP_Y - 5, Math.max(10, this.hpBarW * pct), 10, 5); }
+if (this.hpText) this.hpText.setText(this.baseHp + ' / ' + this.baseHpMax).setColor(UI.hex(col));
 }
 
 selectTower(type) {
-if (this.loadout[type] <= 0) return;
+if (this.loadout[type] <= 0) {
+  if (!this.gameOver) UI.toast(this, 'No ' + this.titleCase(TOWER_DATA[type].name) + 's left — build more in the Factory', 'warn');
+  return;
+}
 if (this.gameOver) return;
 this.dismissUpgradePanel();
 this.selectedTowerType = type;
-Object.keys(this.towerButtons).forEach(t => {
-this.towerButtons[t].setFillStyle(t === type ? 0x2a3a4a : (this.loadout[t] > 0 ? 0x1e2530 : 0x161b22));
-});
-// Advance tutorial: gunner selected → show placement
-if (this.tutorialPhase === 'highlightGunner' && type === 'gunner') {
-this.advanceTutorialPhase('showPlacement');
-}
+this.refreshTowerButtons();
 }
 
 // ── Combat ────────────────────────────────────────────────────────────
@@ -833,7 +807,7 @@ return modifier;
 towerShoot(tower) {
 if (!this.waveActive || this.gameOver) return;
 if (tower.type === 'barricade') return;
-if (this.time.now - tower.lastFired < tower.data.fireRate) return;
+if (this.simNow - tower.lastFired < tower.data.fireRate) return;
 
 const inRange = this.activeEnemies.filter(e => {
   if (!e.alive || !e.sprite || !e.sprite.active) return false;
@@ -842,7 +816,7 @@ const inRange = this.activeEnemies.filter(e => {
 if (inRange.length === 0) return;
 
 const target = inRange.reduce((best, e) => e.pathProgress > best.pathProgress ? e : best, inRange[0]);
-tower.lastFired = this.time.now;
+tower.lastFired = this.simNow;
 
 const bullet = this.add.circle(tower.x, tower.y, tower.type === 'bomber' ? 7 : 5, tower.data.colour).setDepth(7);
 this.tweens.add({
@@ -902,54 +876,47 @@ this.checkWaveComplete();
 }
 
 // ── Wave management ───────────────────────────────────────────────────
+
 startNextWave() {
 if (this.waveActive || this.gameOver) return;
 if (this.currentWave >= this.levelData.waves.length) return;
+if (this.placedTowers.length === 0 && this.currentWave === 0 && !this._confirmedNoTowers) {
+  UI.modal(this, {
+    title: 'Start with no towers?', icon: 'shield', accent: UI.C.amber,
+    body: 'Nothing is defending the road yet. Pick a tower below and tap the map to place it first.',
+    buttons: [{ label: 'PLACE TOWERS', variant: 'primary' },
+              { label: 'START ANYWAY', variant: 'secondary', onTap: () => { this._confirmedNoTowers = true; this.startNextWave(); } }]
+  });
+  return;
+}
 
-if (this.tutorialElements) {
-  this.tutorialElements.forEach(e => e.destroy());
-  this.tutorialElements = null;
-}
-// Advance tutorial when wave starts
-if (this.tutorialPhase === 'highlightStart') {
-  this.advanceTutorialPhase('complete');
-}
+if (this.tutorial) this.tutorialWaveStarted();
 
 this.hidePreview();
 this.dismissUpgradePanel();
 this.selectedTowerType = null;
-Object.keys(this.towerButtons).forEach(t => {
-  this.towerButtons[t].setFillStyle(this.loadout[t] > 0 ? 0x1e2530 : 0x161b22);
-});
+this.refreshTowerButtons();
 
 const waveData = this.levelData.waves[this.currentWave];
+const total = this.levelData.waves.length;
 this.waveActive = true;
 
-this.startWaveBtn.setAlpha(0.5).disableInteractive();
-this.startWaveBtnLabel.setText('WAVE ' + (this.currentWave + 1));
-this.startWaveBtnSub.setText('ACTIVE');
-this.waveText.setText('WAVE ' + (this.currentWave + 1) + ' of ' + this.levelData.waves.length);
-this.waveText.setStyle({ color: '#e8a020' });
-if (this.waveIndicator) this.waveIndicator.setText('WAVE ' + (this.currentWave + 1) + '/' + this.levelData.waves.length);
+this.startWaveBtn.setEnabled(false).setLabel('WAVE ' + (this.currentWave + 1), 'IN PROGRESS');
+this.waveIndicator.setText('WAVE ' + (this.currentWave + 1) + ' / ' + total);
+this.waveText.setText('Raiders incoming…').setColor(UI.T.amber);
 
 const width = this.scale.width;
-const height = this.H;
-const incoming = this.add.text(width / 2, height / 2 - 50, 'WAVE ' + (this.currentWave + 1) + '\nINCOMING', {
-  fontFamily: 'monospace', fontSize: '38px', color: '#c43a3a', fontStyle: 'bold', align: 'center'
-}).setOrigin(0.5).setAlpha(0).setDepth(25);
-this.tweens.add({
-  targets: incoming, alpha: 1, duration: 250,
-  onComplete: () => {
-    this.tweens.add({ targets: incoming, alpha: 0, duration: 500, delay: 600, onComplete: () => incoming.destroy() });
-  }
-});
+const banner = UI.text(this, width / 2, this.H / 2 - 60, 'WAVE ' + (this.currentWave + 1), 'hero', { size: 48, origin: 0.5, color: UI.T.red, depth: 25 });
+const sub = UI.text(this, width / 2, this.H / 2 - 18, 'INCOMING', 'label', { size: 14, origin: 0.5, color: UI.T.red, depth: 25, ls: 6 });
+[banner, sub].forEach(t => t.setAlpha(0));
+this.tweens.add({ targets: [banner, sub], alpha: 1, duration: 220,
+  onComplete: () => this.tweens.add({ targets: [banner, sub], alpha: 0, duration: 450, delay: 650, onComplete: () => { banner.destroy(); sub.destroy(); } }) });
 
 this.time.delayedCall(waveData.preWaveDelay || 2000, () => {
-  this.waveText.setText('WAVE ' + (this.currentWave + 1) + ' of ' + this.levelData.waves.length);
-  this.waveText.setStyle({ color: '#eef2f8' });
+  if (this.gameOver) return;
+  this.waveText.setText('Wave ' + (this.currentWave + 1) + ' of ' + total + ' — hold the line').setColor(UI.T.dim);
   this.spawnWave(waveData);
 });
-
 }
 
 // REQ 10: Irregular rhythm — burst spawning with variable gaps
@@ -1038,8 +1005,6 @@ if (enemy.sprite) enemy.sprite.destroy();
 
 this.baseHp -= enemy.data.baseDamage;
 if (this.baseHp < 0) this.baseHp = 0;
-this.hpText.setText('' + this.baseHp + ' / ' + this.baseHpMax);
-if (this.baseHp <= 3) this.hpText.setStyle({ color: '#c43a3a' });
 this.updateHpBar();
 this.cameras.main.shake(140, 0.007);
 
@@ -1057,209 +1022,119 @@ this.time.delayedCall(1200, () => {
   if (!this.waveActive) return;
   this.waveActive = false;
   this.currentWave++;
-
   if (this.currentWave >= this.levelData.waves.length) {
     this.time.delayedCall(400, () => this.triggerGameOver(true));
     return;
   }
-
   this._showWaveFlavour(this.currentWave);
-
-  this.waveText.setText('WAVE ' + this.currentWave + ' COMPLETE — PLACE MORE TOWERS');
-  this.waveText.setStyle({ color: '#eef2f8' });
-  this.startWaveBtn.setAlpha(1).setInteractive();
-  this.startWaveBtnLabel.setText('START');
-  this.startWaveBtnSub.setText('WAVE ' + (this.currentWave + 1));
+  const left = Object.values(this.loadout).reduce((a, b) => a + b, 0);
+  this.waveText.setText('Wave ' + this.currentWave + ' cleared' + (left > 0 ? ' — place more towers if you have them' : ''))
+    .setColor(UI.T.green);
+  this.startWaveBtn.setEnabled(true).setLabel('START', 'WAVE ' + (this.currentWave + 1));
 });
-
 }
 
 _showWaveFlavour(wavesDone) {
 const { width } = this.scale;
 const lines = [
-'THEY PULLED BACK. MORE ARE COMING.',
-'SALVAGE WHAT YOU CAN. THEY WON\'T STOP.',
-'YOUR LINE HELD — THIS TIME.',
-'THE OCEAN GIVES THEM MORE EVERY TIDE.',
-'RELOAD. REINFORCE. SURVIVE.',
-'INTEL SAYS FOUR MORE WAVES. INTEL IS OPTIMISTIC.',
-'WHOEVER SENT THEM IS WATCHING.',
-'THE PLASTIC HOLDS. FOR NOW.',
+'They pulled back. More are coming.',
+'Salvage what you can. They won’t stop.',
+'Your line held — this time.',
+'The ocean gives them more every tide.',
+'Reload. Reinforce. Survive.',
+'Intel says four more waves. Intel is optimistic.',
+'Whoever sent them is watching.',
+'The plastic holds. For now.'
 ];
-const flavour = lines[(wavesDone - 1) % lines.length];
-
-const cardY = this.CT + 30;
-const card  = this.add.rectangle(width / 2, cardY, width - 32, 44, 0x0a0e14, 0.95).setDepth(18);
-const bdr   = this.add.rectangle(width / 2, cardY, width - 32, 44).setStrokeStyle(1, 0xe8a020, 0.6).setDepth(18);
-const txt   = this.add.text(width / 2, cardY, flavour, {
-  fontFamily: 'monospace', fontSize: '11px', color: '#e8a020', letterSpacing: 1, align: 'center',
-  wordWrap: { width: width - 56 }
-}).setOrigin(0.5).setDepth(19).setAlpha(0);
-
-this.tweens.add({ targets: txt, alpha: 1, duration: 200 });
-this.time.delayedCall(2400, () => {
-  this.tweens.add({
-    targets: [card, bdr, txt], alpha: 0, duration: 300,
-    onComplete: () => { card.destroy(); bdr.destroy(); txt.destroy(); }
-  });
-});
-
+UI.toast(this, lines[(wavesDone - 1) % lines.length], 'warn', { y: this.PLAY_TOP + 26, duration: 2600 });
 }
 
 // ── Game over ─────────────────────────────────────────────────────────
+
+// ── Game over / results ───────────────────────────────────────────────
 triggerGameOver(victory) {
 this.gameOver   = true;
 this.waveActive = false;
 this.hidePreview();
 this.dismissUpgradePanel();
-this.tutorialOverlays.forEach(e => { if (e && e.destroy) e.destroy(); });
+if (this.coach) this.coach.hide();
 this.towerTimerEvents.forEach(e => e.remove(false));
 this.towerTimerEvents = [];
+this.speed = 1; this.applyTimeScale();
 
 if (victory) this.saveProgress();
 
-const width = this.scale.width;
-const height = this.H;
-this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.88).setDepth(20);
+const width = this.scale.width, height = this.H;
+const D = 40;
+this.add.rectangle(width / 2, height / 2, width, height, 0x05070a, 0.9).setInteractive().setDepth(D);
+const accent = victory ? UI.C.green : UI.C.red;
 
-const tc = victory ? '#5eba7d' : '#c43a3a';
-// Titles anchored to top of viewport
-this.add.text(width / 2, 60, victory ? 'VICTORY' : 'BASE LOST', {
-  fontFamily: 'monospace', fontSize: '44px', color: tc, fontStyle: 'bold'
-}).setOrigin(0.5).setDepth(21);
-this.add.text(width / 2, 108, victory ? 'YOUR SOVEREIGNTY HOLDS' : 'YOUR BASE WAS OVERWHELMED', {
-  fontFamily: 'monospace', fontSize: '13px', color: '#8899aa', letterSpacing: 2
-}).setOrigin(0.5).setDepth(21);
+UI.text(this, width / 2, 74, victory ? 'VICTORY' : 'BASE LOST', 'hero', { size: 44, origin: 0.5, color: UI.hex(accent), depth: D + 1 });
+UI.text(this, width / 2, 112, victory ? 'The island holds.' : 'The raiders broke through.', 'body', { size: 14, origin: 0.5, depth: D + 1 });
 
-let y = 136;
-
-const hpCol = this.baseHp > 5 ? '#5eba7d' : this.baseHp > 2 ? '#e8a020' : '#c43a3a';
-this.add.text(28, y, 'BASE HP REMAINING', { fontFamily: 'monospace', fontSize: '10px', color: '#8899aa', letterSpacing: 2 }).setDepth(21);
-this.add.text(28, y + 18, this.baseHp + ' / ' + this.baseHpMax, { fontFamily: 'monospace', fontSize: '22px', color: hpCol, fontStyle: 'bold' }).setDepth(21);
-const bw = width - 56;
-this.add.rectangle(width / 2, y + 56, bw, 8, 0x2a3a4a).setDepth(21);
-this.add.rectangle(28, y + 56, bw * (this.baseHp / this.baseHpMax), 8, Phaser.Display.Color.HexStringToColor(hpCol).color).setOrigin(0, 0.5).setDepth(21);
-y += 76;
-
-this.add.rectangle(width / 2, y, width - 48, 1, 0x334455).setDepth(21);
-y += 12;
-this.add.text(28, y, 'ESCAPED', { fontFamily: 'monospace', fontSize: '10px', color: '#8899aa', letterSpacing: 2 }).setDepth(21);
-this.add.text(28, y + 16, '' + this.enemiesEscaped, { fontFamily: 'monospace', fontSize: '20px', color: this.enemiesEscaped > 0 ? '#c43a3a' : '#5eba7d', fontStyle: 'bold' }).setDepth(21);
-this.add.text(width / 2 + 10, y, 'PARTS EARNED', { fontFamily: 'monospace', fontSize: '10px', color: '#8899aa', letterSpacing: 2 }).setDepth(21);
-this.add.text(width / 2 + 10, y + 16, '' + this.parts, { fontFamily: 'monospace', fontSize: '20px', color: '#e8a020', fontStyle: 'bold' }).setDepth(21);
-y += 50;
-
-this.add.rectangle(width / 2, y, width - 48, 1, 0x334455).setDepth(21);
-y += 12;
-this.add.text(28, y, 'TOWER PERFORMANCE', { fontFamily: 'monospace', fontSize: '10px', color: '#8899aa', letterSpacing: 2 }).setDepth(21);
-y += 18;
-['gunner', 'bomber', 'barricade'].forEach(type => {
-  if (!this.towersUsed[type]) return;
-  const d   = TOWER_DATA[type];
-  const ch  = '#' + d.colour.toString(16).padStart(6, '0');
-  this.add.text(28, y, d.name, { fontFamily: 'monospace', fontSize: '13px', color: ch, fontStyle: 'bold' }).setDepth(21);
-  if (type === 'barricade') {
-    this.add.text(width - 28, y, 'x' + this.towersUsed[type] + ' placed', { fontFamily: 'monospace', fontSize: '12px', color: '#556677' }).setOrigin(1, 0).setDepth(21);
-  } else {
-    const st = this.towerStats[type];
-    this.add.text(width / 2 - 8, y, '' + Math.round(st.damageDealt || 0) + ' dmg', { fontFamily: 'monospace', fontSize: '12px', color: '#eef2f8' }).setOrigin(1, 0).setDepth(21);
-    this.add.text(width - 28, y, (st.kills || 0) + ' kills', { fontFamily: 'monospace', fontSize: '12px', color: '#8899aa' }).setOrigin(1, 0).setDepth(21);
-  }
-  y += 20;
+// Stat tiles
+const kills = Object.values(this.killStats).reduce((s, v) => s + v, 0);
+const tiles = [['BASE HP', this.baseHp + '/' + this.baseHpMax], ['RAIDERS DOWN', String(kills)], ['ESCAPED', String(this.enemiesEscaped)]];
+const tw = (width - 32 - 16) / 3;
+tiles.forEach(([k, v], i) => {
+  const x = 16 + tw / 2 + i * (tw + 8);
+  UI.panel(this, x, 168, tw, 70, { fill: UI.C.surface, stroke: UI.C.line, radius: 12, depth: D + 1 });
+  UI.text(this, x, 156, v, 'number', { size: 22, origin: 0.5, depth: D + 2 });
+  UI.text(this, x, 182, k, 'label', { size: 10, origin: 0.5, depth: D + 2 });
 });
 
-this.add.rectangle(width / 2, y + 4, width - 48, 1, 0x334455).setDepth(21);
-y += 16;
-const totalKills = Object.values(this.killStats).reduce((s, v) => s + v, 0);
-this.add.text(28, y, 'ENEMIES ELIMINATED', { fontFamily: 'monospace', fontSize: '10px', color: '#8899aa', letterSpacing: 2 }).setDepth(21);
-this.add.text(width - 28, y, totalKills + ' TOTAL', { fontFamily: 'monospace', fontSize: '13px', color: '#eef2f8', fontStyle: 'bold' }).setOrigin(1, 0).setDepth(21);
-y += 18;
-Object.entries(this.killStats).forEach(function(entry) {
-  const type  = entry[0]; const count = entry[1];
-  const name  = ENEMY_DATA[type] ? ENEMY_DATA[type].name : type.toUpperCase();
-  this.add.text(28, y, name, { fontFamily: 'monospace', fontSize: '11px', color: '#556677' }).setDepth(21);
-  this.add.text(width - 28, y, 'x' + count, { fontFamily: 'monospace', fontSize: '11px', color: '#eef2f8' }).setOrigin(1, 0).setDepth(21);
-  y += 18;
-}.bind(this));
+let y = 222;
+const card = (title, lines, colour) => {
+  const body = UI.text(this, 32, 0, lines, 'body', { size: 13, wrap: width - 64, depth: D + 2 });
+  const h = 40 + body.height + 14;
+  UI.panel(this, width / 2, y + h / 2, width - 32, h, { fill: UI.C.surface, stroke: colour, strokeAlpha: 0.6, accent: colour, radius: 14, depth: D + 1 });
+  UI.text(this, 32, y + 20, title, 'tag', { size: 11, origin: [0, 0.5], color: UI.hex(colour), depth: D + 2 });
+  body.setY(y + 36);
+  y += h + 10;
+};
 
-// ── Material reward card ──────────────────────────────────────────────────
-if (victory && this.materialEarned && (this.materialEarned.plasticScrap > 0 || this.materialEarned.salvagedMetal > 0)) {
-  y += 8;
-  this.add.rectangle(width / 2, y + 36, width - 48, 72, 0x0a1208).setDepth(21);
-  this.add.rectangle(width / 2, y + 36, width - 48, 72).setStrokeStyle(1, 0x5eba7d).setDepth(21);
-  this.add.text(28, y + 10, 'MATERIALS RECOVERED', {
-    fontFamily: 'monospace', fontSize: '11px', color: '#5eba7d', fontStyle: 'bold', letterSpacing: 2
-  }).setDepth(22);
-  let mx = 28;
-  if (this.materialEarned.plasticScrap > 0) {
-    this.add.text(mx, y + 30, '+' + this.materialEarned.plasticScrap, {
-      fontFamily: 'monospace', fontSize: '20px', color: '#3a8fc4', fontStyle: 'bold'
-    }).setDepth(22);
-    this.add.text(mx, y + 54, 'PLASTIC SCRAP', {
-      fontFamily: 'monospace', fontSize: '9px', color: '#556677', letterSpacing: 2
-    }).setDepth(22);
-    mx += 120;
-  }
-  if (this.materialEarned.salvagedMetal > 0) {
-    this.add.text(mx, y + 30, '+' + this.materialEarned.salvagedMetal, {
-      fontFamily: 'monospace', fontSize: '20px', color: '#5eba7d', fontStyle: 'bold'
-    }).setDepth(22);
-    this.add.text(mx, y + 54, 'SALVAGED METAL', {
-      fontFamily: 'monospace', fontSize: '9px', color: '#556677', letterSpacing: 2
-    }).setDepth(22);
-  }
-  y += 80;
-}
-
-// Reward cards
-if (victory && this.levelId === 1 && this.storylineId === 1) {
-  y += 8;
-  this.add.rectangle(width / 2, y + 28, width - 48, 56, 0x0d1e2e).setDepth(21);
-  this.add.rectangle(width / 2, y + 28, width - 48, 56).setStrokeStyle(1, 0x3a8fc4).setDepth(21);
-  this.add.circle(48, y + 28, 14, 0x3a8fc4).setDepth(21);
-  this.add.text(48, y + 28, 'W2', { fontFamily: 'monospace', fontSize: '10px', color: '#0d1117', fontStyle: 'bold' }).setOrigin(0.5).setDepth(22);
-  this.add.text(72, y + 16, 'NEW RECRUIT', { fontFamily: 'monospace', fontSize: '13px', color: '#3a8fc4', fontStyle: 'bold' }).setDepth(22);
-  this.add.text(72, y + 34, 'A second worker awaits at the factory.', { fontFamily: 'monospace', fontSize: '11px', color: '#8899aa' }).setDepth(22);
-  y += 64;
-}
-if (victory && this.levelId === 3 && this.storylineId === 1) {
-  y += 8;
-  this.add.rectangle(width / 2, y + 32, width - 48, 64, 0x0a1a08).setDepth(21);
-  this.add.rectangle(width / 2, y + 32, width - 48, 64).setStrokeStyle(1, 0x5eba7d).setDepth(21);
-  this.add.text(28, y + 12, 'UPGRADES UNLOCKED', { fontFamily: 'monospace', fontSize: '13px', color: '#5eba7d', fontStyle: 'bold' }).setDepth(22);
-  this.add.text(28, y + 32, 'Tap any placed tower during combat', { fontFamily: 'monospace', fontSize: '11px', color: '#8899aa' }).setDepth(22);
-  this.add.text(28, y + 48, 'to spend PARTS and increase its power.', { fontFamily: 'monospace', fontSize: '11px', color: '#8899aa' }).setDepth(22);
-  y += 72;
-}
-if (victory && this.levelId === 2 && this.storylineId === 1) {
-  y += 8;
-  this.add.rectangle(width / 2, y + 28, width - 48, 56, 0x1a1200).setDepth(21);
-  this.add.rectangle(width / 2, y + 28, width - 48, 56).setStrokeStyle(1, 0xe8a020).setDepth(21);
-  this.add.text(28, y + 16, 'FACTORY UNLOCK', { fontFamily: 'monospace', fontSize: '13px', color: '#e8a020', fontStyle: 'bold' }).setDepth(22);
-  this.add.text(28, y + 34, 'Bomber and Barricade assembly now available.', { fontFamily: 'monospace', fontSize: '11px', color: '#8899aa' }).setDepth(22);
-  y += 64;
-}
-if (victory && this.levelId === 8) {
-  y += 8;
-  this.add.rectangle(width / 2, y + 28, width - 48, 56, 0x1a0a0a).setDepth(21);
-  this.add.rectangle(width / 2, y + 28, width - 48, 56).setStrokeStyle(1, 0xc43a3a).setDepth(21);
-  this.add.text(28, y + 16, 'NEW THREAT INCOMING', { fontFamily: 'monospace', fontSize: '13px', color: '#c43a3a', fontStyle: 'bold' }).setDepth(22);
-  this.add.text(28, y + 34, 'The Limbic Cartel has taken notice.', { fontFamily: 'monospace', fontSize: '11px', color: '#8899aa' }).setDepth(22);
-}
-
-// RETURN TO BASE button — anchored to visible viewport bottom
-const btnY = height - 50;
-const btn  = this.add.rectangle(width / 2, btnY, 260, 56, 0x161b22).setInteractive().setDepth(22);
-this.add.rectangle(width / 2, btnY, 260, 56).setStrokeStyle(1, 0xe8a020).setDepth(22);
-this.add.text(width / 2, btnY, 'RETURN TO BASE', { fontFamily: 'monospace', fontSize: '16px', color: '#e8a020', fontStyle: 'bold' }).setOrigin(0.5).setDepth(23);
-btn.on('pointerdown', () => {
-  this.setFactoryActive(true);
-  this.cameras.main.fade(300, 0, 0, 0);
-  this.time.delayedCall(300, () => this.scene.start('BaseScene'));
+// Tower performance
+const perf = ['gunner', 'bomber', 'barricade'].filter(t => this.towersUsed[t]).map(t => {
+  const st = this.towerStats[t];
+  return this.titleCase(TOWER_DATA[t].name) + ' ×' + this.towersUsed[t] + (t === 'barricade' ? ' — slowed raiders' : ' — ' + Math.round(st.damageDealt || 0) + ' dmg, ' + (st.kills || 0) + ' kills');
 });
-btn.on('pointerover', () => btn.setFillStyle(0x252c38));
-btn.on('pointerout',  () => btn.setFillStyle(0x161b22));
+card('YOUR TOWERS', perf.length ? perf.join('\n') : 'No towers were placed.', UI.C.blue);
 
+if (victory) {
+  const m = this.materialEarned || {};
+  const got = [];
+  if (m.plasticScrap)  got.push('+' + m.plasticScrap + ' Plastic Scrap');
+  if (m.salvagedMetal) got.push('+' + m.salvagedMetal + ' Salvaged Metal');
+  got.push('+' + this.parts + ' Parts');
+  card('REWARDS', got.join('\n') + '\nTowers placed this battle are used up.', UI.C.green);
+
+  const unlocks = [];
+  if (this.storylineId === 1 && this.levelId === 1) unlocks.push('New recruit — W2 joins the Factory.', 'The Market and Uplink are open.');
+  if (this.storylineId === 1 && this.levelId === 2) unlocks.push('Bomber and Barricade benches are available in the Factory.');
+  if (this.storylineId === 1 && this.levelId === 3) unlocks.push('Tower upgrades — tap a placed tower mid-battle to spend Parts.');
+  if (this.levelId === 8) unlocks.push('A new threat stirs: the Limbic Cartel has taken notice.');
+  if (unlocks.length) card('UNLOCKED', unlocks.join('\n'), UI.C.amber);
+} else {
+  card('TRY THIS', 'Place towers beside bends where the road doubles back — the coverage meter shows good spots.\nYour towers go back to the Armoury when you lose, so you can retry straight away.', UI.C.amber);
+}
+
+// Actions
+const by = height - 46;
+const leave = (key, data) => { this.setFactoryActive(true); UI.go(this, key, data); };
+if (victory) {
+  UI.button(this, 16 + 80, by, 160, 54, { label: 'BASE', variant: 'secondary', depth: D + 3, onTap: () => leave('BaseScene') });
+  const next = !this.isEndless && LEVEL_DATA.storylines[0].levels.find(l => l.id === this.levelId + 1);
+  UI.button(this, width - 16 - (width - 32 - 172) / 2, by, width - 32 - 172, 54, {
+    label: next ? 'NEXT MISSION' : 'TO THE DOCK', variant: 'primary', colour: UI.C.green, depth: D + 3,
+    onTap: () => leave('DockScene')
+  });
+} else {
+  UI.button(this, 16 + 80, by, 160, 54, { label: 'BASE', variant: 'secondary', depth: D + 3, onTap: () => leave('BaseScene') });
+  UI.button(this, width - 16 - (width - 32 - 172) / 2, by, width - 32 - 172, 54, {
+    label: 'RETRY', variant: 'primary', colour: UI.C.amber, depth: D + 3,
+    onTap: () => leave('CombatScene', { storylineId: this.storylineId, levelId: this.levelId, levelData: this.levelData, isEndless: this.isEndless })
+  });
+}
 }
 
 // ── Automation foundation (Milestone 0) ────────────────────────────
@@ -1274,39 +1149,26 @@ setFactoryActive(active) {
 // Replaces the silent BACK exit with a confirm dialog. Cancel returns
 // to combat with no state change. Confirm clears factoryActive and
 // fades to DockScene.
+
+// ── Abort-mission confirmation ─────────────────────────────────────
+// The battle pauses while the dialog is open.
 showAbortConfirm() {
-  const width  = this.scale.width;
-  const height = this.H;
-  const all    = [];
-
-  const overlay  = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.85).setDepth(40);
-  const box      = this.add.rectangle(width / 2, height / 2, width - 60, 200, 0x161b22).setDepth(41);
-  const boxBdr   = this.add.rectangle(width / 2, height / 2, width - 60, 200).setStrokeStyle(1, 0xc43a3a).setDepth(41);
-  const title    = this.add.text(width / 2, height / 2 - 56, 'ABORT MISSION?', { fontFamily: 'monospace', fontSize: '18px', color: '#c43a3a', fontStyle: 'bold', letterSpacing: 2 }).setOrigin(0.5).setDepth(42);
-  const sub      = this.add.text(width / 2, height / 2 - 22, 'You will lose any progress\nmade in this mission.', { fontFamily: 'monospace', fontSize: '12px', color: '#8899aa', align: 'center', lineSpacing: 4 }).setOrigin(0.5).setDepth(42);
-
-  const abortBtn = this.add.rectangle(width / 2 - 80, height / 2 + 48, 130, 48, 0x3a1010).setInteractive().setDepth(42);
-  const abortBdr = this.add.rectangle(width / 2 - 80, height / 2 + 48, 130, 48).setStrokeStyle(1, 0xc43a3a).setDepth(42);
-  const abortLbl = this.add.text(width / 2 - 80, height / 2 + 48, 'ABORT', { fontFamily: 'monospace', fontSize: '15px', color: '#c43a3a', fontStyle: 'bold' }).setOrigin(0.5).setDepth(43);
-  const cancelBtn = this.add.rectangle(width / 2 + 80, height / 2 + 48, 130, 48, 0x1e2530).setInteractive().setDepth(42);
-  const cancelBdr = this.add.rectangle(width / 2 + 80, height / 2 + 48, 130, 48).setStrokeStyle(1, 0x334455).setDepth(42);
-  const cancelLbl = this.add.text(width / 2 + 80, height / 2 + 48, 'CANCEL', { fontFamily: 'monospace', fontSize: '15px', color: '#8899aa', fontStyle: 'bold' }).setOrigin(0.5).setDepth(43);
-
-  all.push(overlay, box, boxBdr, title, sub, abortBtn, abortBdr, abortLbl, cancelBtn, cancelBdr, cancelLbl);
-  const dismiss = () => all.forEach(e => e?.destroy?.());
-
-  abortBtn.on('pointerdown', () => {
-    dismiss();
-    this.hidePreview(); this.dismissUpgradePanel();
-    this.setFactoryActive(true);
-    this.cameras.main.fade(200, 0, 0, 0);
-    this.time.delayedCall(200, () => this.scene.start('DockScene'));
+  if (this.gameOver || this._modalOpen) return;
+  this._modalOpen = true;
+  this.setPaused(true);
+  UI.modal(this, {
+    title: 'Abandon the mission?', icon: 'back', accent: UI.C.red,
+    body: 'Nothing from this attempt is saved. All your towers go back to the Armoury, so you can try again later.',
+    buttons: [
+      { label: 'KEEP FIGHTING', variant: 'secondary', onTap: () => { this._modalOpen = false; this.setPaused(false); } },
+      { label: 'ABANDON', variant: 'danger', onTap: () => {
+        this.hidePreview(); this.dismissUpgradePanel();
+        this.setPaused(false);
+        this.setFactoryActive(true);
+        UI.go(this, 'DockScene');
+      } }
+    ]
   });
-  abortBtn.on('pointerover', () => abortBtn.setFillStyle(0x4a1818));
-  abortBtn.on('pointerout',  () => abortBtn.setFillStyle(0x3a1010));
-  cancelBtn.on('pointerdown', dismiss);
-  cancelBtn.on('pointerover', () => cancelBtn.setFillStyle(0x252c38));
-  cancelBtn.on('pointerout',  () => cancelBtn.setFillStyle(0x1e2530));
 }
 
 saveProgress() {
@@ -1370,15 +1232,13 @@ SaveManager.write(save);
 
 }
 
-update() {
+update(time, delta) {
+if (!this.paused && !this.gameOver) this.simNow += delta * (this.speed || 1);
 this._slowTick = ((this._slowTick || 0) + 1);
 
 this.activeEnemies.forEach(enemy => {
   if (!enemy.alive || !enemy.sprite || !enemy.sprite.active) return;
-
-  // HP bar tracking
-  const x    = enemy.sprite.x;
-  const y    = enemy.sprite.y;
+  const x = enemy.sprite.x, y = enemy.sprite.y;
   const barW = Math.max(enemy.data.size * 2.5, 22);
   const barY = y - enemy.data.size - 7;
   if (enemy.hpBg) enemy.hpBg.setPosition(x, barY);
@@ -1386,17 +1246,16 @@ this.activeEnemies.forEach(enemy => {
     const pct = Math.max(0, enemy.hp / enemy.maxHp);
     enemy.hpFill.setPosition(x - barW / 2, barY);
     enemy.hpFill.setSize(barW * pct, 4);
-    enemy.hpFill.setFillStyle(pct > 0.5 ? 0x5eba7d : pct > 0.25 ? 0xe8a020 : 0xc43a3a);
+    enemy.hpFill.setFillStyle(pct > 0.5 ? UI.C.green : pct > 0.25 ? UI.C.amber : UI.C.red);
   }
-
-  // Barricade slow — re-evaluate every 8 frames (~133ms at 60fps)
+  // Barricade slow — re-evaluate every 8 frames
   if (this._slowTick % 8 === 0 && enemy.moveTween && enemy.moveTargetIdx !== undefined) {
     const mod = this.getSpeedModifier(enemy);
-    if (Math.abs(mod - (enemy.lastSpeedMod || 1)) > 0.02) {
-      this.moveToWaypoint(enemy, enemy.moveTargetIdx);
-    }
+    if (Math.abs(mod - (enemy.lastSpeedMod || 1)) > 0.02) this.moveToWaypoint(enemy, enemy.moveTargetIdx);
   }
 });
 
+this.updateTutorial();
 }
+
 }

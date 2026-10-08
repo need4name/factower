@@ -25,12 +25,24 @@ class Coach {
     this.key   = null;   // id of the step on screen; show() with the same key is a no-op
   }
 
+  // True if a tap at (x, y) should be ignored because the dimmer covers it.
+  // Scenes that handle taps with scene-wide input listeners (rather than
+  // per-object ones the dimmer already intercepts) must check this.
+  blocks(x, y) {
+    if (!this.items.length || this._mode !== 'block') return false;
+    const t = this._target;
+    if (!t) return true;
+    const pad = this._pad;
+    return Math.abs(x - t.x) > t.w / 2 + pad || Math.abs(y - t.y) > t.h / 2 + pad;
+  }
+
   isShowing(key) { return this.items.length > 0 && (key === undefined || this.key === key); }
 
   hide() {
     this.items.forEach(e => { if (e && e.destroy) e.destroy(); });
     this.items = [];
     this.key = null;
+    this._mode = null;
     if (this._pulse) { this._pulse.stop(); this._pulse = null; }
   }
 
@@ -47,6 +59,7 @@ class Coach {
     const mode = o.mode || 'block';
     const t = o.target;
     const pad = o.pad !== undefined ? o.pad : 8;
+    this._mode = mode; this._target = t || null; this._pad = pad;
 
     // ── Dimmer with a hole ──────────────────────────────────────────────
     if (mode === 'block') {

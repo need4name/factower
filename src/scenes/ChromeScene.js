@@ -54,11 +54,10 @@ class ChromeScene extends Phaser.Scene {
     this.boltsText = this.hdr.chips.bolts;
 
     // ── Cabinet ───────────────────────────────────────────────────────────
-    const cabY = 445, cabH = 300;
-    this.add.rectangle(width / 2, cabY, width - 24, cabH, 0x0f1318);
-    this.add.rectangle(width / 2, cabY, width - 24, cabH).setStrokeStyle(2, 0xe8a020, 0.7);
-    this.add.rectangle(width / 2, 252, 160, 28, 0xe8a020);
-    this.add.text(width / 2, 252, 'C H R O M E', { fontFamily: 'monospace', fontSize: '12px', color: '#0d1117', fontStyle: 'bold', letterSpacing: 4 }).setOrigin(0.5);
+    const cabY = 395, cabH = 300;   // cabinet sits just under the shared header
+    UI.panel(this, width / 2, cabY, width - 24, cabH, { fill: 0x0f1318, stroke: UI.C.amber, strokeAlpha: 0.7, strokeWidth: 2, radius: 18 });
+    UI.panel(this, width / 2, cabY - cabH / 2, 160, 30, { fill: UI.C.amber, stroke: UI.C.amber, radius: 15 });
+    this.add.text(width / 2, cabY - cabH / 2, 'C H R O M E', { fontFamily: 'monospace', fontSize: '12px', color: '#0d1117', fontStyle: 'bold', letterSpacing: 4 }).setOrigin(0.5);
     this.add.rectangle(width / 2, cabY - 2, width - 48, 2, 0xe8a020, 0.5);
 
     // ── Reels ─────────────────────────────────────────────────────────────
@@ -102,13 +101,9 @@ class ChromeScene extends Phaser.Scene {
 
     // ── SPIN button ───────────────────────────────────────────────────────
     const spinY = height - 90;
-    this.spinBg  = this.add.rectangle(width / 2, spinY, width - 48, 68, 0x1a1200).setInteractive();
-    this.spinBdr = this.add.rectangle(width / 2, spinY, width - 48, 68).setStrokeStyle(2, 0xe8a020);
-    this.spinTxt = this.add.text(width / 2, spinY - 10, 'SPIN', { fontFamily: 'monospace', fontSize: '26px', color: '#e8a020', fontStyle: 'bold' }).setOrigin(0.5);
-    this.spinSub = this.add.text(width / 2, spinY + 18, `COSTS ${this._rollCost()} NUTS`, { fontFamily: 'monospace', fontSize: '11px', color: '#556677', letterSpacing: 1 }).setOrigin(0.5);
-    this.spinBg.on('pointerdown', () => this._startSpin());
-    this.spinBg.on('pointerover', () => this.spinBg.setFillStyle(0x261a00));
-    this.spinBg.on('pointerout',  () => this.spinBg.setFillStyle(0x1a1200));
+    this.spinBtn = UI.button(this, width / 2, spinY, width - 32, 68, {
+      label: 'SPIN', sub: `COSTS ${this._rollCost()} NUTS`, variant: 'primary', size: 22, onTap: () => this._startSpin()
+    });
     this._refreshSpinButton();
 
     if (!this.saveData.tutorials.chrome) {
@@ -139,12 +134,9 @@ class ChromeScene extends Phaser.Scene {
 
   _refreshSpinButton() {
     const cost = this._rollCost(), ok = this.saveData.nuts >= cost;
-    this.spinTxt.setStyle({ color: ok ? '#e8a020' : '#445566' });
-    this.spinBg.setFillStyle(ok ? 0x1a1200 : 0x161b22);
-    this.spinBdr.setStrokeStyle(2, ok ? 0xe8a020 : 0x334455);
-    this.spinSub.setText(`COSTS ${cost} NUTS`).setStyle({ color: ok ? '#8899aa' : '#334455' });
+    this.spinBtn.setLabel('SPIN', ok ? `COSTS ${cost} NUTS` : `NEED ${cost} NUTS`);
+    this.spinBtn.setEnabled(ok && !this.spinning);
     this.costText.setText(`${cost} NUTS`);
-    if (ok && !this.spinning) this.spinBg.setInteractive(); else this.spinBg.disableInteractive();
   }
 
   _startSpin() {
@@ -172,9 +164,7 @@ class ChromeScene extends Phaser.Scene {
       this.autoStopTimers[i] = this.time.delayedCall(REEL_AUTO_STOP_MS[i], () => this._tapReel(i));
     });
 
-    this.spinBg.disableInteractive();
-    this.spinTxt.setText('SPINNING');
-    this.spinSub.setText('TAP REELS TO STOP EARLY').setStyle({ color: '#8899aa' });
+    this.spinBtn.setEnabled(false).setLabel('SPINNING', 'TAP REELS TO STOP EARLY');
   }
 
   _spinReel(i) {
@@ -248,7 +238,6 @@ class ChromeScene extends Phaser.Scene {
     this.fatigueLabel.setText(this._fatigueText());
     this.spinning = false;
     this.reelStopped = [false, false, false];
-    this.spinTxt.setText('SPIN');
     this._refreshSpinButton();
   }
 
@@ -260,7 +249,7 @@ class ChromeScene extends Phaser.Scene {
 
   _showTutorial() {
     const { width, height } = this.scale;
-    const cabY = 445, cabH = 300, reelY = 445, reelW = 82, reelH = 110, gap = 96;
+    const cabY = 395, cabH = 300, reelY = 395, reelW = 82, reelH = 110, gap = 96;
     const steps = [
       {
         tx: width / 2, ty: cabY, tw: width - 24, th: cabH,

@@ -523,7 +523,7 @@ const UI = {
     const o = opts || {};
     const { width } = scene.scale;
     const col = { info: UI.C.blue, good: UI.C.green, bad: UI.C.red, warn: UI.C.amber }[kind || 'info'];
-    if (scene._uiToast) scene._uiToast.destroy();
+    if (scene._uiToast && scene._uiToast.scene) scene._uiToast.destroy();
     const c = scene.add.container(width / 2, o.y || UI.HEADER_H + 26).setDepth(o.depth || 150);
     const t = UI.text(scene, 0, 0, text, 'bodyB', { size: 13, origin: 0.5, wrap: width - 80, align: 'center' });
     const w = Math.min(width - 32, t.width + 40), h = t.height + 18;

@@ -122,7 +122,12 @@ class Factory {
       progress:      0,
       inventory:     [],
       targetStation: null,   // station the worker is walking to (claims it)
-      _producedTowerType: null
+      _producedTowerType: null,
+      // ── Posted workers (Milestone 5) ──────────────────────────────
+      route:      [],        // station keys of the cycle being learned / run
+      looping:    false,     // true once the worker repeats the route alone
+      routePos:   0,         // index in route of the station last worked
+      waitingFor: null       // next route station, while it's blocked
     };
   }
 
@@ -176,6 +181,9 @@ class Factory {
         if (!w || !saved) return;
         if (Array.isArray(saved.inventory)) w.inventory = saved.inventory.slice();
         w._producedTowerType = saved.producedTowerType || null;
+        if (Array.isArray(saved.route)) w.route = saved.route.slice();
+        w.looping  = !!saved.looping && w.route.length >= 2;
+        w.routePos = saved.routePos || 0;
       });
     }
     if (typeof f.tutorialStep    === 'number')  this.tutorialStep     = f.tutorialStep;
@@ -210,7 +218,10 @@ class Factory {
       tileItems:        this.tileItems,
       workers:          this.workers.map(w => ({
         inventory:         w.inventory.slice(),
-        producedTowerType: w._producedTowerType
+        producedTowerType: w._producedTowerType,
+        route:             w.route.slice(),
+        looping:           w.looping,
+        routePos:          w.routePos
       })),
       factoryVersion:   2,
       tutorialStep:     this.tutorialStep,
@@ -262,6 +273,8 @@ class Factory {
   deleteMachine(row, col) {
     if (!this.grid[row] || !this.grid[row][col]) return false;
     const key = row + ',' + col;
+    // A route through a removed machine can't be run any more
+    this.workers.forEach(w => { if (w.route.includes(key)) this.stopLoop(w.id); });
     this.workers.forEach(w => {
       if (w.station === key && w.state !== 'walking') {
         w.state = 'idle';
@@ -419,6 +432,75 @@ class Factory {
     w.progress      = 0;
     w.stationAction = action;
     return true;
+  }
+
+  // ── Posted workers / routes (Milestone 5) ──────────────────────────────────
+  // Workers learn a route by watching the player. A cycle starts whenever the
+  // player sends a worker to collect from a store; every further job is
+  // appended. Sending them back to the same store with the cycle complete
+  // (2+ stops) means "do that again" — the worker starts looping on their own.
+  // While looping, a job that can't be done yet (store empty, bench busy, belt
+  // not delivered) makes them wait in place until it can.
+
+  isSourceAction(action) {
+    return action === 'collect_scrap' || action === 'collect_metal';
+  }
+
+  stationExists(key) {
+    if (key === 'store_scrap' || key === 'store_metal' || key === 'depository') return true;
+    const [r, c] = key.split(',').map(Number);
+    return !!this.getMachineAt(r, c);
+  }
+
+  // Call when the player assigns a job. Returns 'learned' when this
+  // assignment completes a route, 'stopped' when it overrides a running one.
+  recordAssignment(stationKey, workerId) {
+    const w = this.workers[workerId];
+    if (!w) return null;
+    const action = this.getWorkerAction(stationKey, workerId);
+    let result = null;
+    if (w.looping) { this.stopLoop(workerId); result = 'stopped'; }
+    if (this.isSourceAction(action)) {
+      if (!result && w.route.length >= 2 && w.route[0] === stationKey) {
+        w.looping = true;
+        w.routePos = 0;
+        w.waitingFor = null;
+        return 'learned';
+      }
+      w.route = [stationKey];
+    } else if (w.route.length > 0) {
+      w.route.push(stationKey);
+      if (w.route.length > 8) w.route = [];   // too long to be a deliberate cycle
+    }
+    return result;
+  }
+
+  stopLoop(workerId) {
+    const w = this.workers[workerId];
+    if (!w) return;
+    w.looping = false;
+    w.route = [];
+    w.routePos = 0;
+    w.waitingFor = null;
+  }
+
+  // For a looping worker who is free, the next station to go to — or null if
+  // it can't be done yet (sets waitingFor). Returns { stopped: true } if the
+  // route is broken (a machine on it was removed).
+  nextLoopStation(workerId) {
+    const w = this.workers[workerId];
+    if (!w || !w.unlocked || !w.looping || w.route.length < 2) return null;
+    if (w.state === 'walking' || w.state === 'working') return null;
+    const next = w.route[(w.routePos + 1) % w.route.length];
+    if (!this.stationExists(next)) { this.stopLoop(workerId); return { stopped: true }; }
+    if (this.canWorkerStartAt(next, workerId)) { w.waitingFor = null; return next; }
+    w.waitingFor = next;
+    return null;
+  }
+
+  advanceLoop(workerId) {
+    const w = this.workers[workerId];
+    if (w && w.route.length) w.routePos = (w.routePos + 1) % w.route.length;
   }
 
   // ── Update loop ────────────────────────────────────────────────────────────

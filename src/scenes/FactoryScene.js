@@ -90,6 +90,9 @@ create() {
   // must be reset here or it leaks in from the previous visit.
   this.tutorialActive     = false;
   this._introDone         = false;
+  this.routeGfx           = null;
+  this._routeSig          = null;
+  this._statusSig         = null;
 
   this.unlockedAssemblyTypes = this.getUnlockedAssemblyTypes();
 
@@ -457,7 +460,77 @@ openWorkerMenu(stationKey) {
 }
 
 workerStateLabel(w) {
+  if (w.looping) {
+    if (w.waitingFor && w.state !== 'walking' && w.state !== 'working') return 'Waiting: ' + this.stationName(w.waitingFor);
+    return 'On route';
+  }
   return { working: 'Busy', walking: 'On the way', waiting: 'Idle', idle: 'Idle' }[w.state] || 'Idle';
+}
+
+stationName(key) {
+  if (key === 'store_scrap') return this.factory.getMaterialCount('plasticScrap') > 0 ? 'scrap store' : 'out of scrap';
+  if (key === 'store_metal') return this.factory.getMaterialCount('salvagedMetal') > 0 ? 'metal store' : 'out of metal';
+  if (key === 'depository')  return 'depository';
+  const [r, c] = key.split(',').map(Number);
+  const m = this.factory.getMachineAt(r, c);
+  return m ? this.machineLabel(m.type).toLowerCase() + (this.factory.isAssemblyType(m.type) ? ' bench' : '') : 'missing machine';
+}
+
+// ── Posted workers (M5) ────────────────────────────────────────────────────
+// A looping worker who is free walks to the next stop on their route.
+runRoutes() {
+  this.factory.getUnlockedWorkers().forEach(w => {
+    if (!w.looping) return;
+    const next = this.factory.nextLoopStation(w.id);
+    if (!next) return;
+    if (next.stopped) {
+      this.showMessage(WORKER_LABELS[w.id] + ': route broken — a machine on it was removed', 'warn');
+      this.factory.save();
+      return;
+    }
+    this.factory.advanceLoop(w.id);
+    this.walkWorkerTo(w.id, next, () => {
+      this.factory.startWorkAt(next, w.id);
+      this.updateStatus();
+    });
+  });
+}
+
+// Faint dotted line through each looping worker's stops, in their colour
+drawRoutes() {
+  const sig = this.factory.workers.map(w => w.looping ? w.route.join('>') : '').join('|');
+  if (sig === this._routeSig) return;
+  this._routeSig = sig;
+  if (!this.routeGfx) this.routeGfx = this.add.graphics().setDepth(6);
+  const g = this.routeGfx;
+  g.clear();
+  this.factory.workers.forEach(w => {
+    if (!w.looping || w.route.length < 2) return;
+    const pts = w.route.map(k => this.getStationPos(k));
+    const col = WORKER_COLOURS[w.id];
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      const L = Math.hypot(b.x - a.x, b.y - a.y);
+      for (let d = 0; d < L; d += 10) {
+        const t = d / (L || 1);
+        g.fillStyle(col, 0.45);
+        g.fillCircle(a.x + (b.x - a.x) * t + w.id * 3, a.y + (b.y - a.y) * t + w.id * 3, 1.6);
+      }
+    }
+    pts.forEach(pt => { g.fillStyle(col, 0.9); g.fillCircle(pt.x + w.id * 3, pt.y + w.id * 3, 3.5); });
+  });
+}
+
+confirmStopRoute(workerId) {
+  const w = this.factory.workers[workerId];
+  if (!w || !w.looping) return;
+  UI.modal(this, {
+    title: 'Stop ' + WORKER_LABELS[workerId] + '\u2019s route?', icon: 'pause', accent: UI.C.amber,
+    body: WORKER_LABELS[workerId] + ' is repeating a ' + w.route.length + '-stop route on their own. Stopping it lets you give them jobs by hand again.',
+    buttons: [{ label: 'KEEP GOING' }, { label: 'STOP ROUTE', variant: 'primary', onTap: () => {
+      this.factory.stopLoop(workerId); this.factory.save(); this.updateStatus();
+    } }]
+  });
 }
 
 tryAssignWorker(workerId, stationKey) {
@@ -492,6 +565,15 @@ tryAssignWorker(workerId, stationKey) {
       }
     }
     return;
+  }
+
+  // Posted workers: repeating the start of a finished cycle teaches the route
+  const learned = this.factory.recordAssignment(stationKey, workerId);
+  const L = WORKER_LABELS[workerId];
+  if (learned === 'learned') {
+    this.showMessage(L + ' learned the route — they\u2019ll repeat it on their own', 'good');
+  } else if (learned === 'stopped') {
+    this.showMessage(L + ' stopped their route to do this job', 'info');
   }
 
   this.walkWorkerTo(workerId, stationKey, () => {
@@ -761,11 +843,20 @@ updateStatus() {
   const w = (width - 32 - (workers.length - 1) * 8) / workers.length;
   workers.forEach((wk, i) => {
     const x = 16 + w / 2 + i * (w + 8), y = this.STATUS_Y;
-    const p = UI.panel(this, x, y, w, 36, { fill: UI.C.surface, stroke: UI.C.lineSoft, radius: 10 });
+    const loop = wk.looping;
+    const p = UI.panel(this, x, y, w, 36, { fill: UI.C.surface, stroke: loop ? WORKER_COLOURS[wk.id] : UI.C.lineSoft, strokeAlpha: loop ? 0.6 : 1, radius: 10 });
     const dot = this.add.circle(x - w / 2 + 18, y, 8, WORKER_COLOURS[wk.id]);
-    const t = UI.text(this, x - w / 2 + 32, y, WORKER_LABELS[wk.id] + '  ' + this.workerStateLabel(wk) + '  ·  ' + this.factory.getInventoryDisplay(wk.id).toLowerCase(),
-      'small', { size: 12, origin: [0, 0.5], color: UI.T.dim });
+    const info = loop ? this.workerStateLabel(wk) : this.workerStateLabel(wk) + '  ·  ' + this.factory.getInventoryDisplay(wk.id).toLowerCase();
+    const t = UI.text(this, x - w / 2 + 32, y, WORKER_LABELS[wk.id] + '  ' + info,
+      'small', { size: 12, origin: [0, 0.5], color: loop ? UI.T.text : UI.T.dim, wrap: w - 70 });
     this.statusItems.push(p, dot, t);
+    if (loop) {
+      // Tap a looping worker's status to stop their route
+      this.statusItems.push(UI.text(this, x + w / 2 - 12, y, 'STOP', 'tag', { size: 10, origin: [1, 0.5], color: UI.T.amber }));
+      const z = this.add.zone(x, y, w, 36).setInteractive();
+      z.on('pointerup', () => this.confirmStopRoute(wk.id));
+      this.statusItems.push(z);
+    }
   });
   this.updateMaterialDisplay();
 }
@@ -880,6 +971,13 @@ updateTutorial() {
     return;
   }
 
+  // Posted workers (M5): once W1 runs the route alone, just explain it
+  if (!guided && w.looping) {
+    this.coach.show({ key: 'looping', mode: 'hint', tag, cardBottom: hintBottom, title: 'W1 learned the route',
+      body: 'They\u2019ll repeat it on their own. Tap W1\u2019s status bar to stop them.' });
+    return;
+  }
+
   if (holding && !busy) {
     this.coach.show(Object.assign({ key: 'deliver', mode, target: { x: this.scale.width / 2, y: this.DEPOT_Y, w: this.scale.width - 32, h: this.DEPOT_H },
       title: 'Deliver the tower',
@@ -899,7 +997,8 @@ updateTutorial() {
   if (!busy && !w.inventory.length && !bench.heldMaterial) {
     this.coach.show(Object.assign({ key: 'collect', mode, target: { x: this.SCRAP_X, y: this.STORE_Y, w: this.STORE_W, h: this.STORE_H },
       title: 'Collect Plastic Scrap',
-      body: 'Every tower is made from materials. Tap the scrap store and W1 will walk over and pick one up.' }, step(3)));
+      body: guided ? 'Every tower is made from materials. Tap the scrap store and W1 will walk over and pick one up.'
+                   : 'Tap the scrap store again — repeating a job teaches W1 the whole route.' }, step(3)));
     return;
   }
 
@@ -909,7 +1008,7 @@ updateTutorial() {
   }[w.station] || (w.stationAction === 'deposit' ? 'W1 is loading the bench…' : w.stationAction === 'assemble' ? 'W1 is assembling the Gunner…' : 'W1 is on the way…');
   const label = w.state === 'walking' ? 'W1 is on the way…' : doing;
   this.coach.show({ key: 'wait:' + label, mode: 'hint', tag: tag || 'WORKING', title: label,
-    body: 'Watch the progress bar fill. You can tap other stations while you wait.', cardBottom: hintBottom });
+    body: 'Watch the progress bar fill.', cardBottom: hintBottom });
 }
 
 skipTutorial() {
@@ -928,7 +1027,7 @@ finishTutorial() {
   const need = this.towersNeeded();
   UI.modal(this, {
     title: 'Ready for the first raid', icon: 'check', accent: UI.C.green,
-    body: 'You built ' + need + ' Gunners — that’s the whole loop: collect, load, assemble, deliver.\n\nThey’re waiting in the Armoury. Head to the Dock to defend the island.',
+    body: 'You have ' + need + ' Gunners in the Armoury. W1 keeps building more on their route while you\u2019re in the Factory — tap their status bar to stop them.\n\nHead to the Dock to defend the island.',
     buttons: [
       { label: 'STAY HERE', variant: 'secondary' },
       { label: 'TO THE DOCK', variant: 'primary', colour: UI.C.red, onTap: () => this.leave('DockScene') }
@@ -959,6 +1058,10 @@ update(time, delta) {
     }
   });
   if (completedWorkers.length > 0) { this.factory.save(); this.updateStatus(); }
+  if (running) this.runRoutes();
+  const statusSig = this.factory.workers.map(w => w.state + (w.looping ? 'L' : '') + (w.waitingFor || '')).join('|');
+  if (statusSig !== this._statusSig) { this._statusSig = statusSig; this.updateStatus(); }
+  this.drawRoutes();
 
   this.factory.getUnlockedWorkers().forEach(w => {
     const sprite = this.workerSprites[w.id], label = this.workerLabels[w.id];

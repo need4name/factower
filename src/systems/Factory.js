@@ -99,6 +99,16 @@ class Factory {
     // Conveyors don't tick every frame. Items advance one tile per BELT_TICK_MS
     // so movement is readable on a small grid. Accumulator handles variable delta.
     this.BELT_TICK_MS    = 600;
+
+    // ── Auto-output (Milestone 6) ─────────────────────────────────────
+    // Stores drop one item onto the belt below them every STORE_FEED_MS:
+    // the scrap store feeds the top-left tile, the metal store the top-right.
+    this.STORE_FEED_MS   = 3000;
+    this.STORE_FEEDS     = { store_scrap: { row: 0, col: 0, item: 'plasticScrap',  mat: 'plasticScrap'  },
+                             store_metal: { row: 0, col: 2, item: 'salvagedMetal', mat: 'salvagedMetal' } };
+    this._feedAccumulator = 0;
+    // Towers that reached the depository by belt since the scene last asked
+    this.deliveries      = [];
     this._beltAccumulator = 0;
 
     this.workers = [
@@ -264,7 +274,8 @@ class Factory {
     } else {
       this.grid[row][col] = {
         type,
-        heldMaterial: this.isAssemblyType(type) ? null : undefined
+        // Benches and smelters both hold one input item (smelters via belts, M6)
+        heldMaterial: (this.isAssemblyType(type) || type === 'smelter') ? null : undefined
       };
     }
     return true;
@@ -511,11 +522,20 @@ class Factory {
   // worker is working at / walking to it (a worker deposit in flight would
   // otherwise land on top of the belt's item). Anything else waits on the belt.
   // Smelters don't take belt input yet (planned with smelter output, M6).
+  // Input a machine takes from a belt (benches since M4, smelters since M6)
+  machineInput(m) {
+    if (!m) return null;
+    if (this.isAssemblyType(m.type)) return MACHINE_TYPES[m.type].primaryInput;
+    if (m.type === 'smelter') return 'plasticScrap';
+    return null;
+  }
+
   canBenchAcceptFromBelt(row, col, item) {
     const m = this.getMachineAt(row, col);
-    if (!m || !this.isAssemblyType(m.type)) return false;
-    if (item !== MACHINE_TYPES[m.type].primaryInput) return false;
-    if (m.heldMaterial !== null) return false;
+    const input = this.machineInput(m);
+    if (!input || item !== input) return false;
+    if (m.heldMaterial) return false;          // null, or undefined on old smelters
+    if (m.autoOutput) return false;            // finished item still waiting to leave
     if (this.getWorkerAtStation(row + ',' + col)) return false;
     return true;
   }
@@ -524,8 +544,8 @@ class Factory {
   // or null. Used by the scene to label the bench "WRONG ITEM".
   getBenchJam(row, col) {
     const m = this.getMachineAt(row, col);
-    if (!m || !this.isAssemblyType(m.type)) return null;
-    const pri = MACHINE_TYPES[m.type].primaryInput;
+    const pri = this.machineInput(m);
+    if (!pri) return null;
     const neighbours = [[row - 1, col], [row + 1, col], [row, col - 1], [row, col + 1]];
     for (const [r, c] of neighbours) {
       const t = this.getConveyorTarget(r, c);
@@ -551,6 +571,11 @@ class Factory {
         if (!item) continue;
         const target = this.getConveyorTarget(r, c);
         if (!target) continue;
+        // Bottom-row belt pointing down delivers finished towers to the depository (M6)
+        if (target.row === this.ROWS && this.isTowerItem(item)) {
+          moves.push({ fromR: r, fromC: c, toR: -1, toC: c, item, toDepot: true });
+          continue;
+        }
         if (target.row < 0 || target.row >= this.ROWS) continue;
         if (target.col < 0 || target.col >= this.COLS) continue;
         const destMachine = this.grid[target.row][target.col];
@@ -575,6 +600,11 @@ class Factory {
       // Verify source still has the item and dest is still empty
       // (could have been claimed by an earlier move in this same phase)
       if (this.tileItems[mv.fromR][mv.fromC] !== mv.item) return;
+      if (mv.toDepot) {
+        this.tileItems[mv.fromR][mv.fromC] = null;
+        this.deliveries.push(this.towerTypeOf(mv.item));
+        return;
+      }
       if (!mv.intoBench && this.tileItems[mv.toR][mv.toC] !== null) return;
       this.tileItems[mv.fromR][mv.fromC] = null;
       if (mv.intoBench) this.grid[mv.toR][mv.toC].heldMaterial = mv.item;
@@ -583,8 +613,88 @@ class Factory {
     });
   }
 
+  // ── Auto-output (Milestone 6) ──────────────────────────────────────────
+  // Finished towers travel on belts as 'tower:<type>' items.
+  isTowerItem(item) { return typeof item === 'string' && item.startsWith('tower:'); }
+  towerTypeOf(item) { return item.slice(6) || 'gunner'; }
+
+  // An adjacent belt the machine can push its output onto: one that doesn't
+  // point back into the machine and whose tile is empty. Order: E, S, W, N.
+  getOutputBelt(row, col) {
+    for (const [dr, dc] of [[0, 1], [1, 0], [0, -1], [-1, 0]]) {
+      const r = row + dr, c = col + dc;
+      const m = this.getMachineAt(r, c);
+      if (!m || m.type !== 'conveyor') continue;
+      const t = this.getConveyorTarget(r, c);
+      if (t && t.row === row && t.col === col) continue;   // that one feeds us
+      if (this.tileItems[r][c] !== null) continue;
+      return { row: r, col: c };
+    }
+    return null;
+  }
+
+  hasOutputBelt(row, col) {
+    for (const [dr, dc] of [[0, 1], [1, 0], [0, -1], [-1, 0]]) {
+      const m = this.getMachineAt(row + dr, col + dc);
+      if (!m || m.type !== 'conveyor') continue;
+      const t = this.getConveyorTarget(row + dr, col + dc);
+      if (!(t && t.row === row && t.col === col)) return true;
+    }
+    return false;
+  }
+
+  _feedStores() {
+    Object.values(this.STORE_FEEDS).forEach(f => {
+      const m = this.getMachineAt(f.row, f.col);
+      if (!m || m.type !== 'conveyor') return;
+      if (this.tileItems[f.row][f.col] !== null) return;
+      if ((this.materials[f.mat] || 0) <= 0) return;
+      this.materials[f.mat]--;
+      this.tileItems[f.row][f.col] = f.item;
+    });
+  }
+
+  // Loaded benches/smelters with an outgoing belt process on their own and
+  // push the result onto that belt. A worker at the machine takes priority.
+  _tickMachines(delta) {
+    for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) {
+      const m = this.grid[r][c];
+      if (!m || !this.machineInput(m)) continue;
+      const busy = this.workers.some(w => w.unlocked && w.state === 'working' && w.station === r + ',' + c);
+      if (busy) { m.autoProgress = 0; continue; }
+      if (m.autoOutput) {                     // finished; waiting for room on a belt
+        const out = this.getOutputBelt(r, c);
+        if (out) { this.tileItems[out.row][out.col] = m.autoOutput; m.autoOutput = null; }
+        continue;
+      }
+      if (!m.heldMaterial || !this.hasOutputBelt(r, c)) { m.autoProgress = 0; continue; }
+      const duration = m.type === 'smelter' ? MACHINE_TYPES.smelter.duration : MACHINE_TYPES[m.type].duration;
+      m.autoProgress = (m.autoProgress || 0) + delta / duration;
+      if (m.autoProgress < 1) continue;
+      m.autoProgress = 0;
+      m.heldMaterial = null;
+      m.autoOutput = m.type === 'smelter' ? 'refinedPlastic' : 'tower:' + MACHINE_TYPES[m.type].produces;
+      const out = this.getOutputBelt(r, c);
+      if (out) { this.tileItems[out.row][out.col] = m.autoOutput; m.autoOutput = null; }
+    }
+  }
+
+  // Towers delivered by belt since the last call (scene adds them to the stockpile)
+  takeDeliveries() {
+    const d = this.deliveries;
+    this.deliveries = [];
+    return d;
+  }
+
   update(delta) {
     const completed = [];
+
+    this._feedAccumulator += delta;
+    while (this._feedAccumulator >= this.STORE_FEED_MS) {
+      this._feedAccumulator -= this.STORE_FEED_MS;
+      this._feedStores();
+    }
+    this._tickMachines(delta);
 
     // ── Belt tick (Milestone 3) ──────────────────────────────────────────
     // Conveyors advance their items every BELT_TICK_MS. Accumulator handles
@@ -673,7 +783,9 @@ class Factory {
     // Conveyor drop: take first item from worker, place on tile.
     if (machine.type === 'conveyor') {
       if (w.inventory.length > 0 && this.tileItems[r][c] === null) {
-        const item = w.inventory.shift();
+        let item = w.inventory.shift();
+        // A finished tower dropped on a belt travels as 'tower:<type>' (M6)
+        if (item === 'towerComponent') { item = 'tower:' + (w._producedTowerType || 'gunner'); w._producedTowerType = null; }
         this.tileItems[r][c] = item;
       }
       return;

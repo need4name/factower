@@ -93,6 +93,8 @@ create() {
   this.routeGfx           = null;
   this._routeSig          = null;
   this._statusSig         = null;
+  this._matSig            = null;
+  this._autosaveAcc       = 0;
 
   this.unlockedAssemblyTypes = this.getUnlockedAssemblyTypes();
 
@@ -296,6 +298,41 @@ drawGrid() {
     zone.on('pointerover', () => { if (this.placingMachine && !this.factory.getMachineAt(row, col)) this.drawTile(row, col, true); });
     zone.on('pointerout',  () => this.drawTile(row, col, false));
   }
+  this.drawAutoMarkers();
+}
+
+// M6: show where the stores feed belts and where belts deliver. Small
+// chevrons in the gaps above / below the grid, so the rules are visible.
+drawAutoMarkers() {
+  const g = this.add.graphics().setDepth(1);
+  const chevron = (x, y, col, a) => {
+    g.lineStyle(2, col, a);
+    g.beginPath(); g.moveTo(x - 6, y - 3); g.lineTo(x, y + 3); g.lineTo(x + 6, y - 3); g.strokePath();
+  };
+  const top = this.GY - 8, bottom = this.GY + this.ROWS * this.TILE + 7;
+  Object.entries(this.factory.STORE_FEEDS).forEach(([key, f]) => {
+    const x = this.tileCentre(f.row, f.col).x;
+    chevron(x, top, key === 'store_scrap' ? UI.C.blue : UI.C.green, 0.9);
+  });
+  for (let c = 0; c < this.COLS; c++) chevron(this.tileCentre(this.ROWS - 1, c).x, bottom, UI.C.red, 0.55);
+}
+
+// One-time explanation of what belts do, shown when the first belt is placed
+showBeltGuide() {
+  if (this.saveData.flags && this.saveData.flags.beltGuideSeen) return;
+  if (!this.saveData.flags) this.saveData.flags = {};
+  this.saveData.flags.beltGuideSeen = true;
+  SaveManager.update(s => { if (!s.flags) s.flags = {}; s.flags.beltGuideSeen = true; });
+  UI.modal(this, {
+    title: 'How belts work', icon: 'chevron', accent: UI.C.steel,
+    body: 'Items move along the arrows. Hold a belt to turn it.\n\n' +
+          '• A belt on the top-left tile is fed scrap by the store above it; top-right is fed metal.\n' +
+          '• A belt pointing into a bench or smelter loads it.\n' +
+          '• A loaded machine with a belt leading away works by itself and puts its output on that belt.\n' +
+          '• A bottom-row belt pointing down delivers towers to the Depository.\n\n' +
+          'Chain them and the factory runs with no workers at all.',
+    buttons: [{ label: 'GOT IT', variant: 'primary' }]
+  });
 }
 
 drawTile(row, col, hot) {
@@ -337,6 +374,7 @@ tileTapped(row, col) {
       this.drawMachineAt(row, col, type);
       this.factory.save();
       this.setPlacing(null);
+      if (type === 'conveyor' && !this.tutorialActive) this.showBeltGuide();
     }
     return;
   }
@@ -809,7 +847,12 @@ executeDelete(row, col, machine) {
     else if (item === 'salvagedMetal') contents.salvagedMetal++;
   };
   if (machine.heldMaterial) refundItem(machine.heldMaterial);
-  refundItem(this.factory.getTileItem(row, col));
+  // Finished towers sitting on the tile (or waiting to leave a bench) aren't
+  // lost — they go straight to the Armoury
+  [this.factory.getTileItem(row, col), machine.autoOutput].forEach(item => {
+    if (this.factory.isTowerItem(item)) this.addTowerToStockpile(this.factory.towerTypeOf(item));
+    else refundItem(item);
+  });
 
   this.factory.deleteMachine(row, col);
   this.factory.save();
@@ -1058,6 +1101,14 @@ update(time, delta) {
     }
   });
   if (completedWorkers.length > 0) { this.factory.save(); this.updateStatus(); }
+  // M6: towers delivered by belt; stores feeding belts change material counts
+  const delivered = running ? this.factory.takeDeliveries() : [];
+  delivered.forEach(t => this.addTowerToStockpile(t));
+  const matSig = this.factory.materials.plasticScrap + '/' + this.factory.materials.salvagedMetal;
+  if (matSig !== this._matSig) { this._matSig = matSig; this.updateMaterialDisplay(); }
+  // Automated lines change state without worker events, so save every few seconds
+  this._autosaveAcc = (this._autosaveAcc || 0) + delta;
+  if (this._autosaveAcc > 4000) { this._autosaveAcc = 0; if (running) this.factory.save(); }
   if (running) this.runRoutes();
   const statusSig = this.factory.workers.map(w => w.state + (w.looping ? 'L' : '') + (w.waitingFor || '')).join('|');
   if (statusSig !== this._statusSig) { this._statusSig = statusSig; this.updateStatus(); }
@@ -1072,7 +1123,13 @@ update(time, delta) {
     const bar = this.progressBars[key];
     if (!bar) return;
     const ww = this.factory.workers.find(w => w.unlocked && w.station === key && w.state === 'working');
-    if (ww && ww.progress > 0) bar.setSize(Math.max(1, bar._maxW * ww.progress), 4).setAlpha(1);
+    let prog = ww ? ww.progress : 0;
+    if (!prog && key.includes(',')) {          // M6: machine working by itself
+      const [r, c] = key.split(',').map(Number);
+      const m = this.factory.getMachineAt(r, c);
+      prog = (m && m.autoProgress) || 0;
+    }
+    if (prog > 0) bar.setSize(Math.max(1, bar._maxW * Math.min(1, prog)), 4).setAlpha(1);
     else bar.setAlpha(0);
   };
   updateBar('store_scrap');
@@ -1084,11 +1141,14 @@ update(time, delta) {
     updateBar(key);
     const machine = this.factory.getMachineAt(r, c);
     const statusTxt = this.machineStatusTexts[key];
-    if (statusTxt && machine && this.factory.isAssemblyType(machine.type)) {
-      // A belt pointing in with the wrong material jams the feed (M4)
+    if (statusTxt && machine && this.factory.machineInput(machine)) {
+      // A belt pointing in with the wrong material jams the feed (M4);
+      // AUTO = loaded with a belt to output onto (M6); FULL = output belt blocked
       const jam  = this.factory.getBenchJam(r, c);
-      const text = jam ? 'WRONG ITEM' : machine.heldMaterial ? 'LOADED' : '';
-      if (statusTxt.text !== text) statusTxt.setText(text).setColor(jam ? UI.T.red : UI.T.green);
+      const auto = this.factory.hasOutputBelt(r, c);
+      const text = jam ? 'WRONG ITEM' : machine.autoOutput ? 'OUTPUT FULL'
+                 : machine.heldMaterial ? (auto ? 'AUTO' : 'LOADED') : '';
+      if (statusTxt.text !== text) statusTxt.setText(text).setColor(jam || machine.autoOutput ? UI.T.red : UI.T.green);
     }
   }
 
@@ -1105,9 +1165,11 @@ _renderTileItems() {
     const existing = this._itemSprites[key];
     if (item) {
       const { x, y } = this.tileCentre(r, c);
-      const colour = colours[item] || 0xffffff;
-      if (!existing) this._itemSprites[key] = this.add.circle(x, y, 9, colour).setDepth(8).setStrokeStyle(2, 0x0a0d12);
-      else existing.setPosition(x, y).setFillStyle(colour);
+      const isTower = this.factory.isTowerItem(item);
+      const colour = isTower ? (TOWER_DATA[this.factory.towerTypeOf(item)] || {}).colour || 0xffffff : (colours[item] || 0xffffff);
+      if (!existing) this._itemSprites[key] = this.add.circle(x, y, 9, colour).setDepth(8);
+      this._itemSprites[key].setPosition(x, y).setFillStyle(colour).setRadius(isTower ? 12 : 9)
+        .setStrokeStyle(isTower ? 3 : 2, isTower ? 0xffffff : 0x0a0d12);
     } else if (existing) {
       existing.destroy();
       delete this._itemSprites[key];

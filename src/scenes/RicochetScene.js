@@ -5,7 +5,6 @@
 // play field — top third is a clear entry zone so all angles are viable.
 // Ball clamped strictly within play bounds every frame to prevent escape.
 
-const RICOCHET_BASE_COST = 3;
 const BALL_SPEED         = 300;
 const GRAVITY            = 480;
 const PEG_R              = 7;
@@ -60,12 +59,18 @@ class RicochetScene extends Phaser.Scene {
   create() {
     const { width, height } = this.scale;
     this.saveData = SaveManager.load() || {};
-    if (!this.saveData.nuts)            this.saveData.nuts = 0;
-    if (!this.saveData.bolts)           this.saveData.bolts = 0;
-    if (!this.saveData.merchantFatigue) this.saveData.merchantFatigue = { chrome:0, ricochet:0, doubleDown:0 };
-    if (!this.saveData.tutorials)       this.saveData.tutorials = {};
+    if (!Merchants.isRecruited(this.saveData, 'ricochet')) { this.scene.start('MarketplaceScene'); return; }
+    this.saveData = SaveManager.update(s => {
+      if (!s.flags) s.flags = {};
+      if (!s.flags.merchantsMet) s.flags.merchantsMet = {};
+      s.flags.merchantsMet.ricochet = true;
+      if (!s.merchantFatigue) s.merchantFatigue = { chrome: 0, ricochet: 0, doubleDown: 0 };
+      if (!s.tutorials) s.tutorials = {};
+      s.nuts = s.nuts || 0; s.bolts = s.bolts || 0;
+    }) || this.saveData;
 
-    this.fatigue         = this.saveData.merchantFatigue.ricochet || 0;
+    this.fx              = Merchants.effects(this.saveData);
+    this.fatigue         = Merchants.fatigue(this.saveData, 'ricochet');
     this.ballActive      = false;
     this._isAiming       = false;
     this.pegHitCount     = 0;
@@ -193,37 +198,24 @@ class RicochetScene extends Phaser.Scene {
     }).setOrigin(1,0.5).setDepth(16).setAlpha(0);
 
     // Result text
-    this.resultText = this.add.text(width/2, this.PLAY_TOP+58, '', {
-      fontFamily:'monospace', fontSize:'15px', color:'#5eba7d', fontStyle:'bold', letterSpacing:2
-    }).setOrigin(0.5).setAlpha(0).setDepth(10);
+    this.resultText = UI.text(this, width/2, this.PLAY_TOP+58, '', 'title', { size: 20, origin: 0.5, color: UI.T.green, depth: 10 }).setAlpha(0);
 
     // ── Fatigue strip ─────────────────────────────────────────────────────────
-    const fatY = 692;
-    this.add.text(width/2, fatY, 'FATIGUE', { fontFamily:'monospace', fontSize:'9px', color:'#445566', letterSpacing:3 }).setOrigin(0.5);
-    const bW = width-80, bY = fatY+14;
-    this.add.rectangle(width/2, bY, bW, 6, 0x1a2230);
-    this.fatigueFill  = this.add.rectangle(width/2-bW/2, bY, 2, 6, 0x5eba7d).setOrigin(0,0.5);
-    this.fatigueLabel = this.add.text(width/2, bY+13, this._fatigueText(), { fontFamily:'monospace', fontSize:'9px', color:'#556677' }).setOrigin(0.5);
-    this._updateFatigueBar(bW);
+    this.strip = Merchants.drawStrip(this, 716, 'ricochet', this.fx).refresh(this.fatigue);
 
     // ── Bottom strip ──────────────────────────────────────────────────────────
-    this.add.rectangle(width/2, height-76, width-48, 60, 0x0a0e14);
-    this.add.rectangle(width/2, height-76, width-48, 60).setStrokeStyle(1,0x1e3028);
-    this.hintTxt = this.add.text(width/2, height-76-10, 'HOLD & DRAG TO AIM', {
-      fontFamily:'monospace', fontSize:'13px', color:'#2a5538', fontStyle:'bold', letterSpacing:2
-    }).setOrigin(0.5);
-    this.costTxt = this.add.text(width/2, height-76+12,
-      'RELEASE TO FIRE  \xb7  COSTS '+this._rollCost()+' NUTS',
-      { fontFamily:'monospace', fontSize:'10px', color:'#334455', letterSpacing:1 }
-    ).setOrigin(0.5);
+    this.hintPanel = UI.panel(this, width/2, height-46, width-32, 60, { fill: UI.C.surface, stroke: UI.C.green, strokeAlpha: 0.35, radius: 14 });
+    this.hintTxt = UI.text(this, width/2, height-46-10, 'HOLD & DRAG ON THE BOARD TO AIM', 'heading', { size: 15, origin: 0.5, color: UI.T.green });
+    this.costTxt = UI.text(this, width/2, height-46+13, '', 'small', { size: 12, origin: 0.5 });
 
     // ── Input: hold = aim, release = fire ─────────────────────────────────────
     this._onDown = (p) => {
-      if (this.ballActive || p.y < 200) return;
+      if (this.ballActive || p.y < this.PLAY_TOP - 40 || p.y > this.PLAY_BOTTOM + 44) return;
+      if (this.coach && this.coach.isShowing()) return;
       if (this.saveData.nuts < this._rollCost()) { this._flashMsg('NOT ENOUGH NUTS'); return; }
       this._isAiming = true;
       this._updateAim(p);
-      this.hintTxt.setStyle({ color:'#5eba7d' });
+      this.hintTxt.setText('RELEASE TO FIRE');
     };
     this._onMove = (p) => { if (!this._isAiming||this.ballActive) return; this._updateAim(p); };
     this._onUp   = () => {
@@ -231,7 +223,7 @@ class RicochetScene extends Phaser.Scene {
       this._isAiming = false;
       this.previewGfx.clear();
       this._drawLauncher(false);
-      this.hintTxt.setStyle({ color:'#2a5538' });
+      this._refreshCostText();
       if (!this.ballActive && this.saveData.nuts >= this._rollCost()) this._fire();
     };
 
@@ -294,10 +286,10 @@ class RicochetScene extends Phaser.Scene {
       this.tierGfxArr.push(g);
       this.tierLblArr.push(this.add.text(cx, this.PLAY_BOTTOM+13, tier.label, {
         fontFamily:'monospace', fontSize:'11px',
-        color: tier.bolts===0?'#442222':'#445566', fontStyle:'bold'
+        color: tier.bolts===0?'#7a3a36':'#8090a4', fontStyle:'bold'
       }).setOrigin(0.5).setDepth(4));
       this.tierRngArr.push(this.add.text(cx, this.PLAY_BOTTOM+29, tier.range, {
-        fontFamily:'monospace', fontSize:'8px', color:'#222d38', letterSpacing:1
+        fontFamily:'monospace', fontSize:'10px', color:'#56637a', letterSpacing:1
       }).setOrigin(0.5).setDepth(4));
     });
   }
@@ -315,8 +307,8 @@ class RicochetScene extends Phaser.Scene {
     HIT_TIERS.forEach((tier,i) => {
       const on = i===activeIdx;
       this._drawTierBox(this.tierGfxArr[i], this.PLAY_LEFT+i*boxW, this.PLAY_BOTTOM, boxW, 44, on, tier);
-      this.tierLblArr[i].setStyle({ color: on?(tier.bolts===0?'#c43a3a':'#5eba7d'):(tier.bolts===0?'#442222':'#445566') });
-      this.tierRngArr[i].setStyle({ color: on?'#8899aa':'#222d38' });
+      this.tierLblArr[i].setStyle({ color: on?(tier.bolts===0?'#c43a3a':'#5eba7d'):(tier.bolts===0?'#7a3a36':'#8090a4') });
+      this.tierRngArr[i].setStyle({ color: on?'#a7b2c1':'#56637a' });
     });
   }
 
@@ -402,6 +394,7 @@ class RicochetScene extends Phaser.Scene {
     this.saveData.nuts-=cost;
     this._save();   // persist the stake now — reloading mid-shot must not refund it
     this.nutsText.setText(this.saveData.nuts+' NUTS');
+    this._refreshCostText();
     this.ballActive=true;
     this.pegHitCount=0;
     this.pegsHitThisShot=new Set();
@@ -558,7 +551,13 @@ class RicochetScene extends Phaser.Scene {
       this._safetyTimer = null;
     }
 
-    const inBucket  = Math.abs(this.ball.x-this.bucketX)<this.bucketW/2+BALL_R;
+    let inBucket = Math.abs(this.ball.x-this.bucketX)<this.bucketW/2+BALL_R;
+    // Luck (Uplink): a ball that just missed can be pulled into the bucket
+    let note = '';
+    if (!inBucket && Math.random() < Merchants.luck('ricochet', this.fx)) {
+      inBucket = true; note = 'LUCKY BOUNCE';
+      this.ball.x = Phaser.Math.Clamp(this.bucketX, this.BOUND_L, this.BOUND_R);
+    }
     const totalHits = this.pegHitCount+(inBucket?BUCKET_HIT_BONUS:0);
 
     if (inBucket) {
@@ -567,9 +566,13 @@ class RicochetScene extends Phaser.Scene {
     }
     this._updateHitCounter(totalHits);
 
-    const tier   = this._getTier(totalHits);
-    const mult   = Math.max(0.2, 1/(1+0.08*this.fatigue));
-    const payout = tier.bolts>0 ? Math.max(1,Math.round(tier.bolts*mult)) : 0;
+    let tier = this._getTier(totalHits);
+    // Lucky Bounce (Uplink): some busts are bounced up into the first paying tier
+    if (tier.bolts === 0 && Math.random() < this.fx.getMerchantRedirectChance()) {
+      tier = HIT_TIERS[1]; note = 'REDIRECTED';
+      this._highlightTier(1);
+    }
+    const payout = Merchants.payout(tier.bolts, 'ricochet', this.fatigue, this.fx);
 
     this.saveData.bolts+=payout;
     this.fatigue++;
@@ -580,7 +583,7 @@ class RicochetScene extends Phaser.Scene {
     this.tweens.add({ targets:this.boltsText, scaleX:1.3, scaleY:1.3, duration:150, yoyo:true });
 
     const col=payout>0?(payout>=4?'#5eba7d':'#e8a020'):'#c43a3a';
-    const msg=payout>0?'+'+payout+' BOLT'+(payout===1?'':'S'):'BUST \u2014 0 BOLTS';
+    const msg=(note?note+'  ':'')+(payout>0?'+'+payout+' BOLT'+(payout===1?'':'S'):'BUST \u2014 0 BOLTS');
     this.resultText.setText(msg).setStyle({color:col}).setAlpha(0);
     this.tweens.add({ targets:this.resultText, alpha:1, duration:250 });
 
@@ -592,9 +595,7 @@ class RicochetScene extends Phaser.Scene {
     this.time.delayedCall(1400,()=>{
       this.tweens.add({ targets:[this.hitStripBg,this.hitCountTxt,this.hitTierTxt], alpha:0, duration:400 });
       this._highlightTier(-1);
-      const bW=this.scale.width-80;
-      this._updateFatigueBar(bW);
-      this.fatigueLabel.setText(this._fatigueText());
+      this.strip.refresh(this.fatigue);
       this._refreshCostText();
     });
   }
@@ -616,58 +617,33 @@ class RicochetScene extends Phaser.Scene {
     const t=this.add.text(width/2,this.LAUNCHER_Y-24,msg,{fontFamily:'monospace',fontSize:'12px',color:'#c43a3a',fontStyle:'bold',letterSpacing:2}).setOrigin(0.5).setDepth(20).setAlpha(0);
     this.tweens.add({targets:t,alpha:1,duration:150,yoyo:true,hold:700,onComplete:()=>t.destroy()});
   }
-  _rollCost() { return Math.min(Math.round(RICOCHET_BASE_COST*(1+Math.pow(this.fatigue,3)/500)),60); }
-  _fatigueText() {
-    if(this.fatigue===0) return 'FRESH \u2014 FULL PAYOUTS';
-    if(this.fatigue<6)   return 'WARM ('+this.fatigue+' SHOTS)';
-    if(this.fatigue<14)  return 'TIRED ('+this.fatigue+' SHOTS) \u2014 REDUCED';
-    return 'BURNT ('+this.fatigue+' SHOTS) \u2014 HEAVY REDUCTION';
-  }
-  _updateFatigueBar(bW) {
-    const col=this.fatigue<6?0x5eba7d:this.fatigue<14?0xe8a020:0xc43a3a;
-    this.fatigueFill.setSize(Math.max(2,bW*Math.min(this.fatigue/20,1)),6).setFillStyle(col);
-  }
+  _rollCost() { return Merchants.cost('ricochet', this.fatigue, this.fx); }
   _refreshCostText() {
-    const ok=this.saveData.nuts>=this._rollCost();
-    this.hintTxt.setStyle({color:ok?'#2a5538':'#553333'});
-    this.costTxt.setText('RELEASE TO FIRE  \xb7  COSTS '+this._rollCost()+' NUTS').setStyle({color:ok?'#334455':'#553333'});
+    const cost=this._rollCost(), ok=this.saveData.nuts>=cost;
+    if (!this._isAiming) this.hintTxt.setText(ok?'HOLD & DRAG ON THE BOARD TO AIM':'NOT ENOUGH NUTS').setColor(ok?UI.T.green:UI.T.red);
+    this.costTxt.setText(ok?'Each shot costs '+cost+' nuts':'Each shot costs '+cost+' — sell towers at the Market').setColor(ok?UI.T.mute:UI.T.red);
   }
   _save() {
-    this.saveData.merchantFatigue.ricochet=this.fatigue;
-    SaveManager.write(this.saveData);
+    const nuts=this.saveData.nuts, bolts=this.saveData.bolts, fat=this.fatigue;
+    this.saveData = SaveManager.update(s => {
+      s.nuts=nuts; s.bolts=bolts;
+      if (!s.merchantFatigue) s.merchantFatigue={};
+      s.merchantFatigue.ricochet=fat;
+    }) || this.saveData;
   }
 
   // ── Tutorial ─────────────────────────────────────────────────────────────
 
   _showTutorial() {
     const {width,height}=this.scale;
-    const steps=[
-      { tx:this.LAUNCHER_X, ty:this.LAUNCHER_Y, tw:48, th:48,
-        title:'THE LAUNCHER',
-        body:'HOLD ANYWHERE TO AIM.\nPREVIEW APPEARS WHILE HOLDING.\nRELEASE YOUR FINGER TO FIRE.' },
-      { tx:this.PLAY_LEFT+this.PLAY_W/2, ty:this.PLAY_TOP+this.PLAY_H*0.6, tw:this.PLAY_W, th:this.PLAY_H*0.7,
-        title:'TIANXIA GATE',
-        body:'PEGS FORM THE TIANXIA LOGO.\nTHE TOP IS CLEAR — USE THE\nFULL WIDTH TO AIM ANYWHERE.' },
-      { tx:this.PLAY_LEFT+this.PLAY_W/2, ty:this.PLAY_TOP+18, tw:this.PLAY_W, th:34,
-        title:'HIT COUNTER',
-        body:'EACH UNIQUE PEG COUNTS ONCE.\nMORE HITS = HIGHER TIER.\nBUCKET ADDS +'+BUCKET_HIT_BONUS+' BONUS HITS.' },
-      { tx:this.PLAY_LEFT+this.PLAY_W/2, ty:this.PLAY_BOTTOM+22, tw:this.PLAY_W, th:44,
-        title:'TIERS',
-        body:'0-3 HITS = BUST\n4-7 = 1 BOLT   8-10 = 2 BOLTS\n14-16 = 4 BOLTS   17+ = 6 BOLTS' },
-    ];
-    let step=0;
-    const ov  =this.add.rectangle(width/2,height/2,width,height,0x000000,0.72).setDepth(50);
-    const pl  =this.add.rectangle(0,0,0,0).setStrokeStyle(2,0xe8a020).setDepth(51);
-    this.tweens.add({targets:pl,alpha:0.4,duration:600,yoyo:true,repeat:-1});
-    const cy=height-160;
-    const c =this.add.rectangle(width/2,cy,width-32,100,0x0a0e14,0.98).setDepth(52);
-    const cBdr=this.add.rectangle(width/2,cy,width-32,100).setStrokeStyle(1,0xe8a020,0.6).setDepth(52);
-    const tT=this.add.text(width/2,cy-30,'',{fontFamily:'monospace',fontSize:'13px',color:'#e8a020',fontStyle:'bold',letterSpacing:3}).setOrigin(0.5).setDepth(53);
-    const tB=this.add.text(width/2,cy+2, '',{fontFamily:'monospace',fontSize:'11px',color:'#8899aa',align:'center',wordWrap:{width:width-60}}).setOrigin(0.5).setDepth(53);
-    const tapTxt=this.add.text(width/2,cy+38,'TAP TO CONTINUE',{fontFamily:'monospace',fontSize:'9px',color:'#334455',letterSpacing:3}).setOrigin(0.5).setDepth(53);
-    const show=(i)=>{const s=steps[i];pl.setPosition(s.tx,s.ty).setSize(s.tw+12,s.th+12);tT.setText(s.title);tB.setText(s.body);};
-    show(0);
-    const adv=()=>{step++;if(step>=steps.length){[ov,pl,c,cBdr,tT,tB,tapTxt].forEach(e=>e.destroy());this.saveData.tutorials.ricochet=true;this._save();return;}show(step);};
-    ov.setInteractive();ov.on('pointerdown',adv);
+    this.coach = Merchants.tour(this, 'ricochet', [
+      { title:'Meet Ricochet', body: Merchants.get('ricochet').bio+'\n\nEach shot costs nuts. Hit enough pegs and you win bolts.' },
+      { target:{ x:this.PLAY_LEFT+this.PLAY_W/2, y:this.PLAY_TOP+this.PLAY_H/2, w:this.PLAY_W, h:this.PLAY_H }, title:'Aim and fire',
+        body:'Hold and drag on the board to aim — a dotted line shows the path. Let go to fire.' },
+      { target:{ x:this.PLAY_LEFT+this.PLAY_W/2, y:this.PLAY_BOTTOM+22, w:this.PLAY_W, h:44 }, title:'Hits pay bolts',
+        body:'Each peg counts once. 4+ hits pays 1 bolt, 17+ pays 6. Landing in the moving bucket adds '+BUCKET_HIT_BONUS+' bonus hits.' },
+      { target:{ x:width/2, y:716, w:width-32, h:58 }, title:'Fatigue',
+        body:'Your first few shots are full price. After that each shot costs more and pays less, until you win another battle.' }
+    ], () => { this.coach = null; });
   }
 }

@@ -1,9 +1,13 @@
 // ── DoubleDownScene.js ────────────────────────────────────────────────────────
-// Farkle dice game. Roll 6 dice. Scoring dice glow green — tap to hold them.
-// Roll remaining dice or bank your points. Farkle (no scoring dice) = lose all.
-// Minimum 300 pts to bank. 100 pts = 1 Bolt.
+// Farkle-style dice. Pay once to start a round, then roll six dice. Dice that
+// score are set aside automatically and the rest can be rolled again for more
+// points — but a roll with nothing scoring (a Farkle) ends the round and loses
+// everything. Bank at 300+ points; every 200 points is about 1 bolt.
 
-const DD_BASE_COST = 4;
+const DD_MIN_BANK    = 300;
+const DD_PTS_PER_BOLT = 200;   // keeps bolts-per-nut in line with the other merchants
+const DD_ALL_IN_MULT = 5;     // All-In (Uplink) pays 5× bolts
+const DD_ALL_IN_MIN  = 5;     // …and needs at least 5 rounds' worth of nuts
 
 class DoubleDownScene extends Phaser.Scene {
   constructor() { super({ key: 'DoubleDownScene' }); }
@@ -11,357 +15,315 @@ class DoubleDownScene extends Phaser.Scene {
   create() {
     const { width, height } = this.scale;
     this.saveData = SaveManager.load() || {};
-    if (!this.saveData.nuts)            this.saveData.nuts = 0;
-    if (!this.saveData.bolts)           this.saveData.bolts = 0;
-    if (!this.saveData.merchantFatigue) this.saveData.merchantFatigue = { chrome:0, ricochet:0, doubleDown:0 };
-    if (!this.saveData.tutorials)       this.saveData.tutorials = {};
+    if (!Merchants.isRecruited(this.saveData, 'doubleDown')) { this.scene.start('MarketplaceScene'); return; }
+    this.saveData = SaveManager.update(s => {
+      if (!s.flags) s.flags = {};
+      if (!s.flags.merchantsMet) s.flags.merchantsMet = {};
+      s.flags.merchantsMet.doubleDown = true;
+      if (!s.merchantFatigue) s.merchantFatigue = { chrome: 0, ricochet: 0, doubleDown: 0 };
+      if (!s.tutorials) s.tutorials = {};
+      s.nuts = s.nuts || 0; s.bolts = s.bolts || 0;
+    }) || this.saveData;
 
-    this.fatigue   = this.saveData.merchantFatigue.doubleDown || 0;
-    this.inRound   = false;
-    this.accScore  = 0;
+    this.fx       = Merchants.effects(this.saveData);
+    this.fatigue  = Merchants.fatigue(this.saveData, 'doubleDown');
+    this.inRound  = false;
+    this.allIn    = false;
+    this.accScore = 0;
     this.rollScore = 0;
-    this.rolling   = false;
-    this.farkled   = false;
-    this.dice      = [];
-    this.minBank   = 300;
+    this.rolling  = false;
+    this.lastEvent = null;     // 'farkle' | 'bank' | null — drives the banner between rounds
+    this.dice     = this._freshDice();
 
-    // ── Background & header ───────────────────────────────────────────────
     UI.backdrop(this);
     UI.fadeIn(this);
-    // Shared header — nuts/bolts live in its chips (they accept setText for legacy calls)
     this.hdr = UI.header(this, {
       title: 'DOUBLE-DOWN', sub: 'PRESS YOUR LUCK', accent: UI.C.red,
-      onBack: () => { this._save(); UI.go(this, 'MarketplaceScene'); },
+      onBack: () => { if (this.rolling) return; this._leave(); },
       chips: [{ kind: 'nuts', value: this.saveData.nuts }, { kind: 'bolts', value: this.saveData.bolts }]
     });
-    this.nutsText  = this.hdr.chips.nuts;
-    this.boltsText = this.hdr.chips.bolts;
 
-    // ── Instruction banner ─────────────────────────────────────────────────
-    // Always tells the player what to do right now.
-    const bannerY  = 244;
-    this.bannerBg  = this.add.rectangle(width/2, bannerY, width-32, 44, 0x0f1318);
-    this.bannerBdr = this.add.rectangle(width/2, bannerY, width-32, 44).setStrokeStyle(1, 0x334455);
-    this.bannerTxt = this.add.text(width/2, bannerY, '', {
-      fontFamily:'monospace', fontSize:'11px', color:'#e8a020',
-      fontStyle:'bold', align:'center', letterSpacing:1,
-      wordWrap:{ width:width-56 }
-    }).setOrigin(0.5);
+    // ── Instruction banner ────────────────────────────────────────────────
+    this.bannerY = UI.HEADER_H + 36;
+    this.bannerG = this.add.graphics();
+    this.bannerTxt = UI.text(this, width / 2, this.bannerY, '', 'bodyB', { size: 13, origin: 0.5, align: 'center', wrap: width - 64 });
 
-    // ── Scoring guide — permanent, always visible ──────────────────────────
-    // This answers "what am I trying to score?"
-    const guideY = 278;
-    this.add.text(width/2, guideY, '1s = 100 pts  \xb7  5s = 50 pts  \xb7  3\xd7 = face \xd7 100', {
-      fontFamily:'monospace', fontSize:'9px', color:'#334455', letterSpacing:1
-    }).setOrigin(0.5);
+    // ── Score panel ───────────────────────────────────────────────────────
+    const scoreY = this.bannerY + 74;
+    this.scoreY = scoreY;
+    UI.panel(this, width / 2, scoreY, width - 32, 70, { fill: UI.C.surface, stroke: UI.C.line, radius: 14 });
+    UI.text(this, 34, scoreY - 18, 'ROUND', 'label', { size: 10, origin: [0, 0.5] });
+    this.accText  = UI.text(this, 34, scoreY + 8, '0', 'number', { size: 26, origin: [0, 0.5] });
+    this.rollText = UI.text(this, 34 + 90, scoreY + 10, '', 'small', { size: 12, origin: [0, 0.5], color: UI.T.green });
+    UI.text(this, width - 34, scoreY - 18, 'BANK FOR', 'label', { size: 10, origin: [1, 0.5] });
+    this.boltPreview = UI.text(this, width - 34, scoreY + 8, '—', 'number', { size: 20, origin: [1, 0.5], color: UI.T.faint });
 
-    // ── Score panel ────────────────────────────────────────────────────────
-    const scoreY = 312;
-    this.add.rectangle(width/2, scoreY, width-32, 52, 0x0f1318);
-    this.add.rectangle(width/2, scoreY, width-32, 52).setStrokeStyle(1, 0x334455);
-    this.accText     = this.add.text(60, scoreY-12, 'ROUND  0 pts',   { fontFamily:'monospace', fontSize:'11px', color:'#8899aa' });
-    this.rollText    = this.add.text(60, scoreY+6,  'LAST ROLL  \u2014', { fontFamily:'monospace', fontSize:'11px', color:'#eef2f8' });
-    this.boltPreview = this.add.text(width-24, scoreY, '', { fontFamily:'monospace', fontSize:'13px', color:'#8ab4cc', fontStyle:'bold' }).setOrigin(1, 0.5);
+    // ── Dice ──────────────────────────────────────────────────────────────
+    this._buildDice(scoreY + 62);
 
-    // ── Dice grid (2 rows × 3) ─────────────────────────────────────────────
-    this._buildDiceArea(width);
+    // ── Breakdown + scoring guide ─────────────────────────────────────────
+    this.breakdownText = UI.text(this, width / 2, this.diceBottom + 22, '', 'small', { size: 12, origin: 0.5, color: UI.T.green, align: 'center', wrap: width - 40 });
+    const guideY = this.diceBottom + 66;
+    this.guideY = guideY;
+    UI.panel(this, width / 2, guideY, width - 32, 50, { fill: UI.C.surface, stroke: UI.C.line, radius: 12 });
+    UI.text(this, width / 2, guideY - 9, 'Each 1 = 100   ·   each 5 = 50   ·   three pairs = 750', 'small', { size: 12, origin: 0.5, color: UI.T.dim });
+    UI.text(this, width / 2, guideY + 10, 'Three of a kind = face × 100 (three 1s = 1000)', 'small', { size: 12, origin: 0.5, color: UI.T.dim });
 
-    // ── Score breakdown ────────────────────────────────────────────────────
-    this.breakdownText = this.add.text(width/2, 540, '', {
-      fontFamily:'monospace', fontSize:'10px', color:'#5eba7d', align:'center', letterSpacing:1
-    }).setOrigin(0.5);
+    // ── Fatigue + buttons ─────────────────────────────────────────────────
+    this.strip = Merchants.drawStrip(this, guideY + 64, 'doubleDown', this.fx).refresh(this.fatigue);
 
-    // ── Action buttons ─────────────────────────────────────────────────────
-    this._buildButtons(width, height);
-
-    // ── Fatigue ────────────────────────────────────────────────────────────
-    const fatY = 614;
-    this.add.text(width/2, fatY, 'FATIGUE', { fontFamily:'monospace', fontSize:'9px', color:'#445566', letterSpacing:3 }).setOrigin(0.5);
-    const bW = width-80, bY = fatY+14;
-    this.add.rectangle(width/2, bY, bW, 6, 0x1a2230);
-    this.fatigueFill  = this.add.rectangle(width/2-bW/2, bY, 2, 6, 0xc43a3a).setOrigin(0,0.5);
-    this.fatigueLabel = this.add.text(width/2, bY+13, this._fatigueText(), { fontFamily:'monospace', fontSize:'9px', color:'#556677' }).setOrigin(0.5);
-    this._updateFatigueBar(bW);
-
-    this._refreshUI();
-
-    if (!this.saveData.tutorials.doubleDown) {
-      this.time.delayedCall(200, () => this._showTutorial());
+    const bY = height - 72, half = (width - 44) / 2;
+    this.rollBtn = UI.button(this, 16 + half / 2, bY, half, 64, {
+      label: 'PLAY', sub: '', variant: 'primary', colour: UI.C.red, size: 20,
+      onTap: () => { if (this.rolling) return; if (!this.inRound) this._startRound(false); else this._doRoll(); }
+    });
+    this.bankBtn = UI.button(this, width - 16 - half / 2, bY, half, 64, {
+      label: 'BANK', sub: 'NEED ' + DD_MIN_BANK + ' PTS', variant: 'success', size: 20, onTap: () => this._doBank()
+    });
+    this.allInBtn = null;
+    if (this.fx.isMerchantAllInUnlocked()) {
+      this.allInBtn = UI.button(this, width / 2, bY - 62, width - 32, 44, {
+        label: 'ALL IN', sub: '', variant: 'outline', colour: UI.C.red, size: 15, onTap: () => this._confirmAllIn()
+      });
     }
+
+    this._render();
+    if (!this.saveData.tutorials.doubleDown) this.time.delayedCall(250, () => this._showTutorial());
   }
 
-  // ── Dice area ─────────────────────────────────────────────────────────────
+  _freshDice() { return Array(6).fill(null).map(() => ({ value: 1, locked: false, scored: false })); }
+  _cost() { return Merchants.cost('doubleDown', this.fatigue, this.fx); }
 
-  _buildDiceArea(width) {
-    const dY = [400, 480];
-    const dX = [84, 195, 306];
+  _leave() {
+    if (this.inRound && this.accScore > 0) {
+      UI.modal(this, {
+        title: 'Walk away?', icon: 'back', accent: UI.C.red,
+        body: 'You have ' + this.accScore + ' points on the table. Leaving now forfeits them' + (this.accScore >= DD_MIN_BANK ? ' — bank first to keep them.' : '.'),
+        buttons: [{ label: 'STAY' }, { label: 'LEAVE', variant: 'danger', onTap: () => UI.go(this, 'MarketplaceScene') }]
+      });
+      return;
+    }
+    UI.go(this, 'MarketplaceScene');
+  }
+
+  // ── Dice area ─────────────────────────────────────────────────────────
+  _buildDice(top) {
+    const { width } = this.scale;
+    const dw = 96, dh = 80, gx = 108, gy = 92;
     this.diceObjects = [];
     for (let i = 0; i < 6; i++) {
-      const row=Math.floor(i/3), col=i%3;
-      const x=dX[col], y=dY[row];
-      const bg  = this.add.rectangle(x, y, 78, 68, 0x161b22);
-      const bdr = this.add.rectangle(x, y, 78, 68).setStrokeStyle(2, 0x334455);
-      const pip = this.add.text(x, y-6, '\u2014', { fontFamily:'monospace', fontSize:'28px', color:'#445566', fontStyle:'bold' }).setOrigin(0.5);
-      const lbl = this.add.text(x, y+24, '', { fontFamily:'monospace', fontSize:'9px', color:'#e8a020', letterSpacing:2 }).setOrigin(0.5);
-      this.diceObjects.push({ bg, bdr, pip, lbl });
-      bg.setInteractive();
-      bg.on('pointerdown', () => this._toggleHold(i));
+      const x = width / 2 + ((i % 3) - 1) * gx;
+      const y = top + dh / 2 + Math.floor(i / 3) * gy;
+      const g = this.add.graphics();
+      const pip = UI.text(this, x, y - 6, '–', 'hero', { size: 34, origin: 0.5, color: UI.T.faint });
+      const lbl = UI.text(this, x, y + 26, '', 'tag', { size: 9, origin: 0.5 });
+      this.diceObjects.push({ g, pip, lbl, x, y, w: dw, h: dh });
     }
+    this.diceTop = top;
+    this.diceBottom = top + dh + gy;
   }
 
-  // ── Buttons ───────────────────────────────────────────────────────────────
-
-  _buildButtons(width, height) {
-    const bY   = height-72;
-    const half = (width-60)/2;
-
-    // Single unified ROLL/PLAY button — no listener accumulation
-    this.rollBtn = UI.button(this, 24+half/2, bY, half, 64, {
-      label: 'PLAY', sub: '', variant: 'primary', colour: UI.C.red, size: 20,
-      onTap: () => { if (this.rolling) return; if (!this.inRound) this._startRound(); else this._doRoll(); }
-    });
-    this.bankBtn = UI.button(this, width-24-half/2, bY, half, 64, {
-      label: 'BANK', sub: 'MIN 300 pts', variant: 'success', size: 20, onTap: () => this._doBank()
-    });
-  }
-
-  // ── Round logic ───────────────────────────────────────────────────────────
-
-  _startRound() {
-    const cost = this._rollCost();
-    if (this.saveData.nuts < cost) return;
-    this.saveData.nuts -= cost;
-    this.nutsText.setText(this.saveData.nuts+' NUTS');
-    this._save();
-    this.inRound  = true;
+  // ── Round logic ───────────────────────────────────────────────────────
+  _startRound(allIn) {
+    const stake = allIn ? this.saveData.nuts : this._cost();
+    if (this.saveData.nuts < stake || stake <= 0) return;
+    this.saveData.nuts -= stake;
+    this.fatigue++;          // every round played tires the merchant, win or lose
+    this._save();            // persist the stake now — reloading mid-round must not refund it
+    this.hdr.chips.nuts.setValue(this.saveData.nuts);
+    this.inRound = true;
+    this.allIn = !!allIn;
     this.accScore = 0;
-    this.rollScore= 0;
-    this.farkled  = false;
-    this.dice = Array(6).fill(null).map(() => ({ value:1, held:false, scored:false }));
+    this.rollScore = 0;
+    this.lastEvent = null;
+    this.dice = this._freshDice();
+    this.strip.refresh(this.fatigue);
     this._doRoll();
   }
 
-  _doRoll() {
-    if (this.rolling) return;
-    this.farkled = false;
-    this.dice.forEach(d => { d.scored = false; });
-    if (this.dice.every(d => d.held)) this.dice.forEach(d => { d.held=false; });
-    this.rolling = true;
-    this._refreshUI();
-    this._animateRoll(() => {
-      this.dice.forEach(d => { if (!d.held) d.value = Math.floor(Math.random()*6)+1; });
-      const result = this._scoreDice();
-      this.rolling = false;
-      if (result.score === 0) {
-        this._farkle();
-      } else {
-        this.rollScore  = result.score;
-        this.accScore  += this.rollScore;
-        this.breakdownText.setText(result.breakdown);
-        result.scoringIndices.forEach(i => { this.dice[i].scored=true; });
-        this._updateDiceDisplay();
-        this._updateScoreDisplay();
-        this._refreshUI();
-      }
+  _confirmAllIn() {
+    if (this.inRound || this.rolling) return;
+    const n = this.saveData.nuts;
+    UI.modal(this, {
+      title: 'Go all in?', icon: 'nut', accent: UI.C.red,
+      body: 'Stake all ' + n + ' nuts on one round. Bank it and you win ' + DD_ALL_IN_MULT + '× the bolts. Farkle and every nut is gone.',
+      buttons: [{ label: 'NOT NOW' }, { label: 'ALL IN', variant: 'danger', onTap: () => this._startRound(true) }]
     });
   }
 
+  _doRoll() {
+    if (this.rolling || !this.inRound) return;
+    // Scoring dice from the last roll are set aside; with all six set aside
+    // you get "hot dice" and roll all six again.
+    this.dice.forEach(d => { if (d.scored) d.locked = true; d.scored = false; });
+    if (this.dice.every(d => d.locked)) this.dice.forEach(d => { d.locked = false; });
+    this.rolling = true;
+    this.breakdownText.setText('');
+    this._render();
+    this._animateRoll(() => {
+      this._rollFree();
+      let result = this._scoreDice();
+      let lucky = false;
+      if (result.score === 0 && Math.random() < Merchants.luck('doubleDown', this.fx)) {
+        this._rollFree();
+        result = this._scoreDice();
+        lucky = result.score > 0;
+      }
+      this.rolling = false;
+      if (result.score === 0) return this._farkle();
+      this.rollScore = result.score;
+      this.accScore += result.score;
+      result.scoringIndices.forEach(i => { this.dice[i].scored = true; });
+      this.breakdownText.setText((lucky ? 'SECOND WIND!  ' : '') + result.breakdown).setColor(lucky ? UI.T.amber : UI.T.green);
+      this._render();
+    });
+  }
+
+  _rollFree() { this.dice.forEach(d => { if (!d.locked) d.value = Math.floor(Math.random() * 6) + 1; }); }
+
   _animateRoll(onComplete) {
-    let ticks=0;
-    const tick=()=>{
-      this.dice.forEach(d=>{ if(!d.held) d.value=Math.floor(Math.random()*6)+1; });
-      this._updateDiceDisplay(true);
+    let ticks = 0;
+    const tick = () => {
+      this.dice.forEach(d => { if (!d.locked) d.value = Math.floor(Math.random() * 6) + 1; });
+      this._renderDice(true);
       ticks++;
-      if(ticks<8) this.time.delayedCall(60,tick); else this.time.delayedCall(60,onComplete);
+      if (ticks < 8) this.time.delayedCall(60, tick); else this.time.delayedCall(60, onComplete);
     };
     tick();
   }
 
-  // ── Scoring ───────────────────────────────────────────────────────────────
-  // 1s=100, 5s=50, three-of-a-kind=face*100 (1s=1000).
-  // 4× = 2× the 3× value. 5× = 4×. 6× = 8×. Three pairs = 750.
-
+  // ── Scoring ───────────────────────────────────────────────────────────
+  // 1s=100, 5s=50, three of a kind = face×100 (1s=1000).
+  // 4× = 2× the 3× value, 5× = 4×, 6× = 8×. Three pairs = 750.
   _scoreDice() {
-    const vals   = this.dice.map((d,i)=>({v:d.value,i})).filter(d=>!this.dice[d.i].held);
-    const counts = [0,0,0,0,0,0,0];
-    vals.forEach(d=>counts[d.v]++);
+    const vals   = this.dice.map((d, i) => ({ v: d.value, i })).filter(d => !this.dice[d.i].locked);
+    const counts = [0, 0, 0, 0, 0, 0, 0];
+    vals.forEach(d => counts[d.v]++);
+    let score = 0;
+    const scoringIndices = [], parts = [];
 
-    let score=0;
-    const scoringIndices=[], parts=[];
-
-    // Three pairs (only on full free roll of 6)
-    if (vals.length===6 && counts.slice(1).filter(c=>c===2).length===3) {
-      return { score:750, breakdown:'THREE PAIRS  750 pts', scoringIndices:vals.map(d=>d.i) };
+    if (vals.length === 6 && counts.slice(1).filter(c => c === 2).length === 3) {
+      return { score: 750, breakdown: 'Three pairs  +750', scoringIndices: vals.map(d => d.i) };
     }
-    // Multi-of-a-kind
-    for (let face=1; face<=6; face++) {
-      const c=counts[face];
-      if (c>=3) {
-        const base=face===1?1000:face*100;
-        const extra=c===4?2:c===5?4:c===6?8:1;
-        const pts=base*extra;
-        score+=pts; parts.push(c+'\xd7'+face+'  '+pts+' pts');
-        let m=0; vals.forEach(d=>{ if(d.v===face&&m<c){scoringIndices.push(d.i);m++;} });
-        counts[face]=0;
+    for (let face = 1; face <= 6; face++) {
+      const c = counts[face];
+      if (c >= 3) {
+        const base = face === 1 ? 1000 : face * 100;
+        const pts = base * (c === 4 ? 2 : c === 5 ? 4 : c === 6 ? 8 : 1);
+        score += pts; parts.push(c + '× ' + face + '  +' + pts);
+        vals.filter(d => d.v === face).forEach(d => scoringIndices.push(d.i));
+        counts[face] = 0;
       }
     }
-    // Singles
-    if(counts[1]>0){ const pts=counts[1]*100; score+=pts; parts.push(counts[1]+'\xd71  '+pts+' pts'); let m=0; vals.forEach(d=>{if(d.v===1&&m<counts[1]){scoringIndices.push(d.i);m++;}}); }
-    if(counts[5]>0){ const pts=counts[5]*50;  score+=pts; parts.push(counts[5]+'\xd75  '+pts+' pts'); let m=0; vals.forEach(d=>{if(d.v===5&&m<counts[5]){scoringIndices.push(d.i);m++;}}); }
-
-    return { score, breakdown:parts.join('   '), scoringIndices:Array.from(new Set(scoringIndices)) };
+    if (counts[1] > 0) { score += counts[1] * 100; parts.push(counts[1] + '× 1  +' + counts[1] * 100); vals.filter(d => d.v === 1).forEach(d => scoringIndices.push(d.i)); }
+    if (counts[5] > 0) { score += counts[5] * 50;  parts.push(counts[5] + '× 5  +' + counts[5] * 50);  vals.filter(d => d.v === 5).forEach(d => scoringIndices.push(d.i)); }
+    return { score, breakdown: parts.join('    '), scoringIndices: Array.from(new Set(scoringIndices)) };
   }
 
   _farkle() {
-    this.farkled=true; this.accScore=0; this.rollScore=0;
-    this.dice.forEach(d=>{ d.held=false; d.scored=false; d.value=Math.floor(Math.random()*6)+1; });
-    this._updateDiceDisplay(); this._updateScoreDisplay(); this._refreshUI();
-    this.breakdownText.setText('FARKLE \u2014 NO SCORING DICE  \u2014 ALL POINTS LOST');
+    const lost = this.accScore;
+    this.inRound = false;
+    this.allIn = false;
+    this.accScore = 0; this.rollScore = 0;
+    this.lastEvent = 'farkle';
+    this.dice.forEach(d => { d.scored = false; d.locked = false; });
+    this.breakdownText.setText('FARKLE — nothing scored.' + (lost > 0 ? ' ' + lost + ' points lost.' : '')).setColor(UI.T.red);
     this.cameras.main.shake(200, 0.008);
+    this._save();
+    this._render();
+  }
+
+  _payoutFor(score) {
+    const p = Merchants.payout(score / DD_PTS_PER_BOLT, 'doubleDown', this.fatigue - 1, this.fx);
+    return this.allIn ? p * DD_ALL_IN_MULT : p;
   }
 
   _doBank() {
-    if (!this.inRound || this.accScore<this.minBank || this.rolling) return;
-    const mult  =Math.max(0.2, 1/(1+0.08*this.fatigue));
-    const payout=Math.max(1, Math.floor(this.accScore/100*mult));
-    this.saveData.bolts+=payout; this.fatigue++;
-    this.saveData.merchantFatigue.doubleDown=this.fatigue;
+    if (!this.inRound || this.accScore < DD_MIN_BANK || this.rolling) return;
+    const payout = this._payoutFor(this.accScore);
+    this.saveData.bolts += payout;
+    this.inRound = false;
+    this.allIn = false;
+    this.lastEvent = 'bank';
     this._save();
-    this.boltsText.setText(this.saveData.bolts+' BOLTS');
-    this.tweens.add({ targets:this.boltsText, scaleX:1.3, scaleY:1.3, duration:150, yoyo:true });
-    const { width }=this.scale;
-    const pop=this.add.text(width/2,360,'BANKED  +'+payout+' BOLTS',{
-      fontFamily:'monospace',fontSize:'18px',color:'#5eba7d',fontStyle:'bold'
-    }).setOrigin(0.5).setDepth(20).setAlpha(0);
-    this.tweens.add({ targets:pop, alpha:1, duration:200,
-      onComplete:()=>this.time.delayedCall(1000,()=>this.tweens.add({ targets:pop, alpha:0, duration:400, onComplete:()=>pop.destroy() }))
-    });
-    this._endRound();
+    this.hdr.chips.bolts.setValue(this.saveData.bolts).pulse();
+    Merchants.popBolts(this, this.scale.width / 2, this.diceTop + 80, payout, UI.T.green);
+    this.breakdownText.setText('Banked ' + this.accScore + ' points').setColor(UI.T.green);
+    this.accScore = 0; this.rollScore = 0;
+    this.dice = this._freshDice();
+    this._render();
   }
 
-  _endRound() {
-    this.inRound=false; this.accScore=0; this.rollScore=0; this.farkled=false;
-    this.dice=Array(6).fill(null).map(()=>({value:1,held:false,scored:false}));
-    this._updateDiceDisplay(); this._updateScoreDisplay();
-    this.breakdownText.setText('');
-    const bW=this.scale.width-80; this._updateFatigueBar(bW); this.fatigueLabel.setText(this._fatigueText());
-    this._refreshUI();
-  }
-
-  // ── Dice interaction ──────────────────────────────────────────────────────
-
-  _toggleHold(i) {
-    if (!this.inRound||this.rolling||!this.dice[i].scored) return;
-    this.dice[i].held=!this.dice[i].held;
-    this._updateDiceDisplay();
-  }
-
-  _updateDiceDisplay(animating) {
-    this.diceObjects.forEach((obj,i)=>{
-      const d=this.dice[i]||{value:1,held:false,scored:false};
-      const col   =d.held?0xe8a020:d.scored?0x5eba7d:0x334455;
-      const bgCol =d.held?0x1a1200:d.scored?0x0d1e10:0x161b22;
-      const txtCol=d.held?'#e8a020':d.scored?'#5eba7d':(this.inRound?'#eef2f8':'#445566');
-      obj.bg.setFillStyle(bgCol);
-      obj.bdr.setStrokeStyle(2,col);
-      obj.pip.setText(animating?'?':String(d.value)).setStyle({color:txtCol});
-      obj.lbl.setText(d.held?'HELD \u2605':d.scored?'TAP TO HOLD':'');
+  // ── Rendering ─────────────────────────────────────────────────────────
+  _renderDice(animating) {
+    this.diceObjects.forEach((o, i) => {
+      const d = this.dice[i];
+      const live = this.inRound || animating;
+      const col = d.locked ? UI.C.amber : d.scored ? UI.C.green : UI.C.line;
+      o.g.clear();
+      o.g.fillStyle(d.locked ? 0x1f1808 : d.scored ? 0x0d1e14 : UI.C.surface2, 1);
+      o.g.fillRoundedRect(o.x - o.w / 2, o.y - o.h / 2, o.w, o.h, 14);
+      o.g.lineStyle(2, col, live ? 1 : 0.4);
+      o.g.strokeRoundedRect(o.x - o.w / 2, o.y - o.h / 2, o.w, o.h, 14);
+      const txt = d.locked ? UI.T.amber : d.scored ? UI.T.green : (live ? UI.T.text : UI.T.faint);
+      o.pip.setText(animating && !d.locked ? '?' : (live || this.lastEvent ? String(d.value) : '–')).setColor(txt);
+      o.lbl.setText(d.locked ? 'SET ASIDE' : d.scored ? 'SCORES' : '').setColor(d.locked ? UI.T.amber : UI.T.green);
     });
   }
 
-  _updateScoreDisplay() {
-    const preview=this.accScore>=this.minBank?'\u2192 +'+Math.floor(this.accScore/100)+' B':'';
-    this.accText.setText('ROUND  '+this.accScore+' pts');
-    this.rollText.setText(this.rollScore>0?'LAST ROLL  +'+this.rollScore+' pts':'LAST ROLL  \u2014');
-    this.boltPreview.setText(preview);
-  }
+  _render() {
+    this._renderDice(false);
+    this.accText.setText(String(this.accScore)).setColor(this.accScore >= DD_MIN_BANK ? UI.T.text : UI.T.dim);
+    this.rollText.setText(this.inRound && this.rollScore > 0 ? '+' + this.rollScore + ' last roll' : '');
+    this.boltPreview.setText(this.inRound && this.accScore >= DD_MIN_BANK ? '+' + this._payoutFor(this.accScore) + ' B' : '—')
+      .setColor(this.inRound && this.accScore >= DD_MIN_BANK ? '#7cc4f2' : UI.T.faint);
 
-  // ── Instruction banner ────────────────────────────────────────────────────
-
-  _updateBanner() {
-    const cost=this._rollCost();
-    let msg='', col='#e8a020', bdrCol=0xe8a020;
-    if (this.rolling) {
-      msg='ROLLING...'; col='#8899aa'; bdrCol=0x334455;
-    } else if (!this.inRound) {
-      msg='TAP PLAY TO START  \xb7  COSTS '+cost+' NUTS\nWIN BOLTS BY SCORING 1s, 5s & TRIPLES';
-      col='#e8a020'; bdrCol=0xe8a020;
-    } else if (this.farkled) {
-      msg='FARKLE! \u2014 NO SCORING DICE THIS ROLL\nTAP ROLL TO TRY AGAIN (ROUND RESETS)';
-      col='#c43a3a'; bdrCol=0xc43a3a;
-    } else if (this.rollScore>0) {
-      msg='GREEN DICE SCORE  \xb7  TAP THEM TO HOLD\nTHEN ROLL FOR MORE OR BANK';
-      col='#5eba7d'; bdrCol=0x5eba7d;
+    const cost = this._cost();
+    const canStart = !this.inRound && !this.rolling && this.saveData.nuts >= cost;
+    const free = this.dice.filter(d => !d.locked && !d.scored).length || 6;
+    if (this.inRound) this.rollBtn.setLabel('ROLL ' + free, 'RISK ' + this.accScore + ' PTS').setEnabled(!this.rolling);
+    else this.rollBtn.setLabel('PLAY', this.saveData.nuts >= cost ? 'COSTS ' + cost + ' NUTS' : 'NEED ' + cost + ' NUTS').setEnabled(canStart);
+    this.bankBtn.setLabel('BANK', this.accScore >= DD_MIN_BANK ? 'KEEP IT' : 'NEED ' + DD_MIN_BANK + ' PTS')
+      .setEnabled(this.inRound && this.accScore >= DD_MIN_BANK && !this.rolling);
+    if (this.allInBtn) {
+      const okAllIn = !this.inRound && !this.rolling && this.saveData.nuts >= cost * DD_ALL_IN_MIN;
+      this.allInBtn.setVisible(!this.inRound);
+      this.allInBtn.setLabel('ALL IN — ' + this.saveData.nuts + ' NUTS FOR ' + DD_ALL_IN_MULT + '× BOLTS').setEnabled(okAllIn);
     }
-    this.bannerTxt.setText(msg).setStyle({color:col});
-    this.bannerBdr.setStrokeStyle(1, bdrCol);
+    this._renderBanner(cost);
   }
 
-  // ── UI refresh ────────────────────────────────────────────────────────────
-
-  _refreshUI() {
-    const cost    =this._rollCost();
-    const canStart=!this.inRound&&this.saveData.nuts>=cost&&!this.rolling;
-    const canRoll =this.inRound&&!this.rolling;
-    const canBank =this.inRound&&this.accScore>=this.minBank&&!this.rolling;
-
-    const rollActive=canStart||canRoll;
-    this.rollBtn.setLabel(this.inRound?'ROLL':'PLAY', this.inRound?'PRESS YOUR LUCK':'COSTS '+cost+' NUTS').setEnabled(rollActive);
-    this.bankBtn.setEnabled(canBank);
-
-    this._updateBanner();
+  _renderBanner(cost) {
+    const { width } = this.scale;
+    let msg, col;
+    if (this.rolling)                { msg = 'Rolling…'; col = UI.C.steel; }
+    else if (!this.inRound && this.lastEvent === 'farkle') { msg = 'Farkle! The round is over. Tap PLAY to try again.'; col = UI.C.red; }
+    else if (!this.inRound && this.lastEvent === 'bank')   { msg = 'Banked! Tap PLAY for another round.'; col = UI.C.green; }
+    else if (!this.inRound)          { msg = 'Tap PLAY to start a round (' + cost + ' nuts). Score 1s, 5s and three of a kind.'; col = UI.C.amber; }
+    else if (this.accScore < DD_MIN_BANK) { msg = 'Green dice score and are set aside. Roll the rest — you need ' + DD_MIN_BANK + ' to bank.'; col = UI.C.green; }
+    else                             { msg = (this.allIn ? 'ALL IN. ' : '') + 'Bank your points, or roll again and risk them all.'; col = UI.C.green; }
+    this.bannerTxt.setText(msg);
+    UI.drawPanel(this.bannerG, width / 2, this.bannerY, width - 32, 56, { fill: UI.C.surface, stroke: col, strokeAlpha: 0.8, radius: 12, accent: col });
   }
 
-  // ── Fatigue ───────────────────────────────────────────────────────────────
-
-  _rollCost() { return Math.min(Math.round(DD_BASE_COST*(1+Math.pow(this.fatigue,3)/500)),60); }
-  _fatigueText() {
-    if(this.fatigue===0) return 'FRESH \u2014 FULL PAYOUTS';
-    if(this.fatigue<6)   return 'WARM ('+this.fatigue+' ROUNDS)';
-    if(this.fatigue<14)  return 'TIRED ('+this.fatigue+' ROUNDS) \u2014 REDUCED';
-    return 'BURNT ('+this.fatigue+' ROUNDS) \u2014 HEAVY REDUCTION';
-  }
-  _updateFatigueBar(bW) {
-    const col=this.fatigue<6?0x5eba7d:this.fatigue<14?0xe8a020:0xc43a3a;
-    this.fatigueFill.setSize(Math.max(2,bW*Math.min(this.fatigue/20,1)),6).setFillStyle(col);
-  }
   _save() {
-    this.saveData.merchantFatigue.doubleDown=this.fatigue;
-    SaveManager.write(this.saveData);
+    const nuts = this.saveData.nuts, bolts = this.saveData.bolts, fat = this.fatigue;
+    this.saveData = SaveManager.update(s => {
+      s.nuts = nuts; s.bolts = bolts;
+      if (!s.merchantFatigue) s.merchantFatigue = {};
+      s.merchantFatigue.doubleDown = fat;
+    }) || this.saveData;
   }
-
-  // ── Tutorial ──────────────────────────────────────────────────────────────
 
   _showTutorial() {
-    const { width, height }=this.scale;
-    const steps=[
-      { tx:width/2, ty:440, tw:width-24, th:180,
-        title:'THE DICE',
-        body:'ROLL 6 DICE EACH ROUND.\nDICE THAT SCORE GLOW GREEN.\n1s AND 5s ALWAYS SCORE.\nSO DO THREE-OF-A-KIND.' },
-      { tx:width/2, ty:278, tw:width-32, th:14,
-        title:'SCORING GUIDE',
-        body:'1s = 100 pts EACH\n5s = 50 pts EACH\n3\xd7 ANY FACE = FACE \xd7 100\n(THREE 1s = 1000 pts)' },
-      { tx:width/2, ty:244, tw:width-32, th:44,
-        title:'ALWAYS READ THE BANNER',
-        body:'THE BANNER AT THE TOP TELLS YOU\nEXACTLY WHAT TO DO NEXT.\nGREEN = GOOD NEWS. RED = FARKLE.' },
-      { tx:width/2, ty:height-72, tw:width-24, th:60,
-        title:'BANK OR ROLL',
-        body:'TAP GREEN DICE TO HOLD THEM.\nROLL REMAINING DICE FOR MORE PTS.\nFARKLE = LOSE EVERYTHING THIS ROUND.\nBANK NEEDS 300 pts MINIMUM.' },
-    ];
-    let step=0;
-    const overlay=this.add.rectangle(width/2,height/2,width,height,0x000000,0.72).setDepth(50);
-    const pulse  =this.add.rectangle(0,0,0,0).setStrokeStyle(2,0xe8a020).setDepth(51);
-    this.tweens.add({ targets:pulse, alpha:0.4, duration:600, yoyo:true, repeat:-1 });
-    const cardY=height-152;
-    const card  =this.add.rectangle(width/2,cardY,width-32,96,0x0a0e14,0.98).setDepth(52);
-    const cardBdr=this.add.rectangle(width/2,cardY,width-32,96).setStrokeStyle(1,0xe8a020,0.6).setDepth(52);
-    const tT=this.add.text(width/2,cardY-28,'',{ fontFamily:'monospace',fontSize:'13px',color:'#e8a020',fontStyle:'bold',letterSpacing:3 }).setOrigin(0.5).setDepth(53);
-    const tB=this.add.text(width/2,cardY+4, '',{ fontFamily:'monospace',fontSize:'11px',color:'#8899aa',align:'center',wordWrap:{width:width-60} }).setOrigin(0.5).setDepth(53);
-    const tapTxt=this.add.text(width/2,cardY+38,'TAP TO CONTINUE',{ fontFamily:'monospace',fontSize:'9px',color:'#334455',letterSpacing:3 }).setOrigin(0.5).setDepth(53);
-    const show=(i)=>{ const s=steps[i]; pulse.setPosition(s.tx,s.ty).setSize(s.tw+10,s.th+10); tT.setText(s.title); tB.setText(s.body); };
-    show(0);
-    const next=()=>{ step++; if(step>=steps.length){ [overlay,pulse,card,cardBdr,tT,tB,tapTxt].forEach(e=>e.destroy()); this.saveData.tutorials.doubleDown=true; this._save(); return; } show(step); };
-    overlay.setInteractive();
-    overlay.on('pointerdown', next);
+    const { width, height } = this.scale;
+    Merchants.tour(this, 'doubleDown', [
+      { title: 'Meet Double-Down', body: Merchants.get('doubleDown').bio + '\n\nPay once per round, then push your luck.' },
+      { target: { x: width / 2, y: this.diceTop + 86, w: 316, h: 172 }, title: 'Roll six dice',
+        body: '1s, 5s and three of a kind score. Scoring dice are set aside automatically — roll the rest for more points.' },
+      { target: { x: width / 2, y: this.guideY, w: width - 32, h: 50 }, title: 'What scores', body: 'Keep this guide in view while you play.' },
+      { target: { x: width / 2, y: height - 72, w: width - 32, h: 64 }, title: 'Bank or roll',
+        body: 'A roll where nothing scores is a Farkle: the round ends and the points are lost. Bank at ' + DD_MIN_BANK + '+ points — every ' + DD_PTS_PER_BOLT + ' is about 1 bolt.' }
+    ]);
   }
 }

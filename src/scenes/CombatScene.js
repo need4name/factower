@@ -1123,6 +1123,10 @@ if (victory) {
   if (this.storylineId === 1 && this.levelId === 2) unlocks.push('Bomber and Barricade benches are available in the Factory.');
   if (this.storylineId === 1 && this.levelId === 3) unlocks.push('Tower upgrades — tap a placed tower mid-battle to spend Parts.');
   if (this.levelId === 8) unlocks.push('A new threat stirs: the Limbic Cartel has taken notice.');
+  if (this.storylineId === 1 && !this.isEndless && this.firstClear) {
+    Merchants.recruitedBy(this.levelId).forEach(m => unlocks.push('New merchant — ' + m.name + ' (' + m.tag.toLowerCase() + ') has set up shop in the Market.'));
+  }
+  if (this.merchantsRested) unlocks.push('Your merchants have rested — fresh payouts at the Market.');
   if (unlocks.length) card('UNLOCKED', unlocks.join('\n'), UI.C.amber);
 } else {
   card('TRY THIS', 'Place towers beside bends where the road doubles back — the coverage meter shows good spots.\nYour towers go back to the Armoury when you lose, so you can retry straight away.', UI.C.amber);
@@ -1187,7 +1191,8 @@ const save      = SaveManager.load();
 if (!save.completedLevels) save.completedLevels = {};
 const key = this.isEndless ? 'endless' : 'storyline' + this.storylineId;
 if (!save.completedLevels[key]) save.completedLevels[key] = [];
-if (!save.completedLevels[key].includes(this.levelId)) save.completedLevels[key].push(this.levelId);
+this.firstClear = !save.completedLevels[key].includes(this.levelId);
+if (this.firstClear) save.completedLevels[key].push(this.levelId);
 
 save.parts = (save.parts || 0) + this.parts;
 save.level = Math.max(save.level || 1, this.levelId + 1);
@@ -1235,6 +1240,7 @@ save.materials.salvagedMetal = (save.materials.salvagedMetal || 0) + this.materi
 if (this.levelId === 1 && this.storylineId === 1 && !save.workers) save.workers = 2;
 // Merchants recover while you're away fighting — fatigue would otherwise only
 // ever grow, making the Market steadily worse to use.
+this.merchantsRested = Object.values(save.merchantFatigue || {}).some(v => v > 0);
 save.merchantFatigue = { chrome: 0, ricochet: 0, doubleDown: 0 };
 if (this.levelId === 8 && this.storylineId === 1) save.factionOneComplete = true;
 

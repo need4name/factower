@@ -89,29 +89,29 @@ const SKILL_TREE = {
       nodes: [
         // T1 — gateway
         { id: 'GAM_01', name: 'Card Counter',   tier: 1, col: 1, prereqs: [],         cost: 10,  kind: 'significant',
-          effect:   'Gateway. Unlocks the Gambling branch. Base luck stat +5% on every merchant.',
+          effect:   'Gateway. +5% luck with every merchant — a losing play sometimes gets a second chance.',
           mechanic: { type: 'merchant_luck', value: 0.05, target: 'all' } },
 
         // T2
         { id: 'GAM_02', name: 'Gut Feel',       tier: 2, col: 0, prereqs: ['GAM_01'], cost: 25,  kind: 'incremental',
-          effect:   'Chrome merchant base luck stat +10%.',
+          effect:   'Chrome luck +10%: a losing spin is sometimes re-spun for free.',
           mechanic: { type: 'merchant_luck', value: 0.10, target: 'chrome' } },
         { id: 'GAM_03', name: 'Stamina',        tier: 2, col: 1, prereqs: ['GAM_01'], cost: 25,  kind: 'incremental',
-          effect:   'DoubleDown fatigue penalties start after 8 rolls instead of 5.',
+          effect:   'Double-Down stays fresh for 8 rounds instead of 5.',
           mechanic: { type: 'merchant_fatigue_threshold', value: 3, target: 'doubledown' } },
         { id: 'GAM_04', name: 'Ricochet Aim',   tier: 2, col: 2, prereqs: ['GAM_01'], cost: 25,  kind: 'incremental',
-          effect:   'Ricochet bounces favour higher-payout slots by 10%.',
+          effect:   'Ricochet luck +10%: a ball that misses the bucket is sometimes pulled in (+2 hits).',
           mechanic: { type: 'merchant_luck', value: 0.10, target: 'ricochet' } },
 
         // T3
         { id: 'GAM_05', name: 'Jackpot Sense',  tier: 3, col: 0, prereqs: ['GAM_02'], cost: 50,  kind: 'gamechanger',
-          effect:   'Game-changer. Chrome screen pulses amber the roll before a jackpot spin.',
+          effect:   'Game-changer. Chrome\'s cabinet glows the spin before a jackpot.',
           mechanic: { type: 'merchant_jackpot_tell', value: true, target: 'chrome' } },
         { id: 'GAM_06', name: 'Iron Will',      tier: 3, col: 1, prereqs: ['GAM_03'], cost: 50,  kind: 'significant',
-          effect:   'DoubleDown roll cost increases from fatigue are halved.',
+          effect:   'Double-Down cost rises from fatigue are halved.',
           mechanic: { type: 'merchant_fatigue_cost', value: 0.50, target: 'doubledown' } },
         { id: 'GAM_07', name: 'Lucky Bounce',   tier: 3, col: 2, prereqs: ['GAM_04'], cost: 50,  kind: 'gamechanger',
-          effect:   'Game-changer. Ricochet auto-redirects 10% of misses into a winning slot.',
+          effect:   'Game-changer. 10% of Ricochet busts are bounced up into the 1-bolt tier.',
           mechanic: { type: 'merchant_redirect', value: 0.10, target: 'ricochet' } },
 
         // T4
@@ -119,7 +119,7 @@ const SKILL_TREE = {
           effect:   'Chrome payouts permanently +20%.',
           mechanic: { type: 'merchant_payout', value: 0.20, target: 'chrome' } },
         { id: 'GAM_09', name: 'All In',         tier: 4, col: 1, prereqs: ['GAM_06'], cost: 100, kind: 'gamechanger',
-          effect:   'Game-changer. Unlocks All-In mode on DoubleDown: bet your entire Nut stack for a 5× payout chance.',
+          effect:   'Game-changer. All-In on Double-Down: stake your whole nut stack for 5× the bolts.',
           mechanic: { type: 'merchant_all_in', value: true, target: 'doubledown' } },
         { id: 'GAM_10', name: 'Plinko Master',  tier: 4, col: 2, prereqs: ['GAM_07'], cost: 100, kind: 'significant',
           effect:   'Ricochet payouts permanently +20%.',
@@ -127,7 +127,7 @@ const SKILL_TREE = {
 
         // T5 — capstone
         { id: 'GAM_11', name: 'House Loses',    tier: 5, col: 1, prereqs: ['GAM_09'], cost: 200, kind: 'capstone',
-          effect:   'Capstone. House edge cut from 30% to 15% across all three merchants.',
+          effect:   'Capstone. House edge cut from 30% to 15% — every merchant pays about 21% more.',
           mechanic: { type: 'merchant_house_edge', value: 0.50, target: 'all' } }
       ]
     },

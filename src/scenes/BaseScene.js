@@ -59,7 +59,7 @@ create() {
     { key: 'SkillTreeScene', name: 'Uplink', icon: 'signal', colour: UI.C.amber, unlocked: uplinkUnlocked,
       info: (s.bolts || 0) + ' bolts to spend', lock: 'Win a battle first' },
     { key: 'MarketplaceScene', name: 'Market', icon: 'coins', colour: UI.C.purple, unlocked: marketplaceUnlocked,
-      info: 'Trade nuts for bolts', lock: 'Win a battle first' },
+      info: this.marketInfo(s), lock: 'Win a battle first' },
     { key: null, name: 'Housing', icon: 'house', colour: UI.C.steel, unlocked: false,
       info: '', lock: 'Later in the story' }
   ];
@@ -73,6 +73,13 @@ create() {
     const y = gridTop + 8 + tileH / 2 + row * (tileH + gap);
     this.drawZoneTile(z, x, y, tileW, tileH, goal.scene === z.key);
   });
+}
+
+marketInfo(s) {
+  const met = (s.flags && s.flags.merchantsMet) || {};
+  const here = Merchants.list().filter(m => Merchants.isRecruited(s, m.id));
+  if (here.some(m => !met[m.id])) return 'New merchant in town!';
+  return here.length + ' merchant' + (here.length === 1 ? '' : 's') + '  ·  sell towers for nuts';
 }
 
 titleCase(str) {

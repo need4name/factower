@@ -216,7 +216,9 @@ class SkillTreeEffects {
       case 'base_hp_multiplier':      s.baseHpMult *= m.value; break;
       case 'base_damage_reduction':   s.baseDamageReduction += m.value; break;
       case 'power_capacity':          s.powerCapacity += m.value; break;
-      case 'fatal_save':              s.fatalSaveCharges = Math.max(s.fatalSaveCharges, m.value); break;
+      case 'fatal_save',
+  'merchant_luck','merchant_payout','merchant_house_edge','merchant_fatigue_threshold',
+  'merchant_fatigue_cost','merchant_jackpot_tell','merchant_redirect','merchant_all_in':              s.fatalSaveCharges = Math.max(s.fatalSaveCharges, m.value); break;
       case 'unlock_zone':             s.unlockedZones[m.value] = true; break;
 
       // ── PIRATE ──────────────────────────────────────────────────────────
@@ -346,7 +348,10 @@ SkillTreeEffects.IMPLEMENTED = new Set([
   'machine_speed', 'machine_speed_smelter', 'machine_speed_assembly', 'worker_speed',
   'belt_speed', 'worker_task_speed', 'store_feed_speed', 'auto_speed', 'automation_level',
   // Base branch: grid + defence (M7)
-  'factory_grid', 'base_hp_multiplier', 'base_damage_reduction', 'fatal_save'
+  'factory_grid', 'base_hp_multiplier', 'base_damage_reduction', 'fatal_save',
+  // Gambling branch (M8)
+  'merchant_luck', 'merchant_payout', 'merchant_house_edge', 'merchant_fatigue_threshold',
+  'merchant_fatigue_cost', 'merchant_jackpot_tell', 'merchant_redirect', 'merchant_all_in'
 ]);
 
 // Single global instance — scenes import implicitly via window scope.

@@ -1,4 +1,7 @@
 // ── ChromeScene.js ────────────────────────────────────────────────────────────
+// Slots. Three reels; three of a kind pays by symbol, any pair pays 1 bolt.
+// The next spin's result is decided (and saved) in advance, so leaving and
+// coming back can't re-roll it — that's what makes Jackpot Sense fair.
 const CHROME_SYMBOLS = [
   { glyph: '★', weight: 5  },
   { glyph: '◆', weight: 12 },
@@ -9,8 +12,8 @@ const CHROME_SYMBOLS = [
 const CHROME_WEIGHT_TOTAL = CHROME_SYMBOLS.reduce((s, x) => s + x.weight, 0);
 const THREE_MATCH_PAYOUT  = { '★': 20, '◆': 12, '▲': 8, '●': 5, '■': 3 };
 const TWO_MATCH_PAYOUT    = 1;
-const CHROME_BASE_COST    = 2;
-const REEL_AUTO_STOP_MS   = [3500, 6000, 8500];
+const REEL_AUTO_STOP_MS   = [2200, 3400, 4600];
+const CHROME_PITY_SPINS   = 10;   // this many losses in a row guarantees a pair
 
 class ChromeScene extends Phaser.Scene {
   constructor() { super({ key: 'ChromeScene' }); }
@@ -18,15 +21,22 @@ class ChromeScene extends Phaser.Scene {
   create() {
     const { width, height } = this.scale;
     this.saveData = SaveManager.load() || {};
-    if (!this.saveData.nuts)            this.saveData.nuts = 0;
-    if (!this.saveData.bolts)           this.saveData.bolts = 0;
-    if (!this.saveData.merchantFatigue) this.saveData.merchantFatigue = { chrome: 0, ricochet: 0, doubleDown: 0 };
-    if (!this.saveData.chromeState)     this.saveData.chromeState = { pityCount: 0 };
-    if (!this.saveData.tutorials)       this.saveData.tutorials = {};
+    if (!Merchants.isRecruited(this.saveData, 'chrome')) { this.scene.start('MarketplaceScene'); return; }
+    this.saveData = SaveManager.update(s => {
+      if (!s.flags) s.flags = {};
+      if (!s.flags.merchantsMet) s.flags.merchantsMet = {};
+      s.flags.merchantsMet.chrome = true;
+      if (!s.merchantFatigue) s.merchantFatigue = { chrome: 0, ricochet: 0, doubleDown: 0 };
+      if (!s.chromeState) s.chromeState = { pityCount: 0 };
+      if (!s.tutorials) s.tutorials = {};
+      s.nuts = s.nuts || 0; s.bolts = s.bolts || 0;
+    }) || this.saveData;
 
-    this.fatigue        = this.saveData.merchantFatigue.chrome || 0;
-    this.pityCount      = this.saveData.chromeState.pityCount  || 0;
-    this.spinning       = false;
+    this.fx        = Merchants.effects(this.saveData);
+    this.fatigue   = Merchants.fatigue(this.saveData, 'chrome');
+    this.pityCount = this.saveData.chromeState.pityCount || 0;
+    this.nextSpin  = this.saveData.chromeState.next || this._rollResult();
+    this.spinning  = false;
     this.reelSpinning   = [false, false, false];
     this.reelStopped    = [false, false, false];
     this.reelTimers     = [null, null, null];
@@ -34,144 +44,138 @@ class ChromeScene extends Phaser.Scene {
     this._pendingResults = [];
 
     UI.backdrop(this);
-
     UI.fadeIn(this);
-
-    // Shared header — nuts/bolts live in its chips (they accept setText for legacy calls)
-
     this.hdr = UI.header(this, {
-
       title: 'CHROME', sub: 'THE SLOTS', accent: UI.C.amber,
-
       onBack: () => { if (this.spinning) return; this._save(); UI.go(this, 'MarketplaceScene'); },
-
       chips: [{ kind: 'nuts', value: this.saveData.nuts }, { kind: 'bolts', value: this.saveData.bolts }]
-
     });
 
-    this.nutsText  = this.hdr.chips.nuts;
-
-    this.boltsText = this.hdr.chips.bolts;
-
     // ── Cabinet ───────────────────────────────────────────────────────────
-    const cabY = 395, cabH = 300;   // cabinet sits just under the shared header
-    UI.panel(this, width / 2, cabY, width - 24, cabH, { fill: 0x0f1318, stroke: UI.C.amber, strokeAlpha: 0.7, strokeWidth: 2, radius: 18 });
-    UI.panel(this, width / 2, cabY - cabH / 2, 160, 30, { fill: UI.C.amber, stroke: UI.C.amber, radius: 15 });
-    this.add.text(width / 2, cabY - cabH / 2, 'C H R O M E', { fontFamily: 'monospace', fontSize: '12px', color: '#0d1117', fontStyle: 'bold', letterSpacing: 4 }).setOrigin(0.5);
-    this.add.rectangle(width / 2, cabY - 2, width - 48, 2, 0xe8a020, 0.5);
+    const cabY = 284, cabH = 300;
+    this.cabY = cabY; this.cabH = cabH;
+    this.cabGlow = this.add.graphics();
+    UI.panel(this, width / 2, cabY, width - 32, cabH, { fill: 0x0f1318, stroke: UI.C.amber, strokeAlpha: 0.7, strokeWidth: 2, radius: 18 });
+    UI.panel(this, width / 2, cabY - cabH / 2, 150, 28, { fill: UI.C.amber, stroke: UI.C.amber, radius: 14 });
+    UI.text(this, width / 2, cabY - cabH / 2, 'C H R O M E', 'tag', { size: 12, origin: 0.5, color: UI.T.dark });
 
     // ── Reels ─────────────────────────────────────────────────────────────
     this.reelDisplays = [];
     this.reelBgs      = [];
-    const reelY = cabY, reelW = 82, reelH = 110, gap = 96;
+    const reelY = cabY - 16, reelW = 88, reelH = 132, gap = 100;
+    this.reelY = reelY; this.reelW = reelW; this.reelH = reelH; this.reelGap = gap;
     const reelXs = [width / 2 - gap, width / 2, width / 2 + gap];
-
     reelXs.forEach((rx, i) => {
-      const bg = this.add.rectangle(rx, reelY, reelW, reelH, 0x161b22);
-      this.add.rectangle(rx, reelY, reelW, reelH).setStrokeStyle(1, 0x334455);
+      const bg = this.add.graphics();
+      const drawBg = (lit) => {
+        bg.clear();
+        bg.fillStyle(lit ? 0x1e2530 : 0x161b22, 1);
+        bg.fillRoundedRect(rx - reelW / 2, reelY - reelH / 2, reelW, reelH, 12);
+        bg.lineStyle(1, 0x334455, 1);
+        bg.strokeRoundedRect(rx - reelW / 2, reelY - reelH / 2, reelW, reelH, 12);
+      };
+      drawBg(false);
+      bg.drawBg = drawBg;
       this.reelBgs.push(bg);
-      this.add.text(rx, reelY - reelH / 2 - 20, CHROME_SYMBOLS[2].glyph, { fontFamily: 'monospace', fontSize: '22px', color: '#1e2a38' }).setOrigin(0.5);
-      this.add.text(rx, reelY + reelH / 2 + 20, CHROME_SYMBOLS[3].glyph, { fontFamily: 'monospace', fontSize: '22px', color: '#1e2a38' }).setOrigin(0.5);
-
-      const sym  = this.add.text(rx, reelY, CHROME_SYMBOLS[0].glyph, { fontFamily: 'monospace', fontSize: '44px', color: '#8899aa', fontStyle: 'bold' }).setOrigin(0.5);
-      const hint = this.add.text(rx, reelY + 66, 'TAP', { fontFamily: 'monospace', fontSize: '9px', color: '#556677', letterSpacing: 2 }).setOrigin(0.5).setAlpha(0);
+      const sym  = UI.text(this, rx, reelY, CHROME_SYMBOLS[i].glyph, 'hero', { size: 52, origin: 0.5, color: '#8899aa' });
+      const hint = UI.text(this, rx, reelY + reelH / 2 - 14, 'TAP', 'tag', { size: 10, origin: 0.5, color: UI.T.mute }).setAlpha(0);
       sym.stopLabel = hint;
       this.reelDisplays.push(sym);
-
-      bg.setInteractive();
-      bg.on('pointerdown', () => this._tapReel(i));
+      this.add.zone(rx, reelY, reelW, reelH).setInteractive().on('pointerdown', () => this._tapReel(i));
     });
 
-    this.resultBanner = this.add.text(width / 2, cabY + 110 / 2 + 48, '', {
-      fontFamily: 'monospace', fontSize: '16px', color: '#e8a020', fontStyle: 'bold', align: 'center', letterSpacing: 2
-    }).setOrigin(0.5).setAlpha(0);
+    this.resultBanner = UI.text(this, width / 2, reelY + reelH / 2 + 34, '', 'heading', { size: 17, origin: 0.5, color: UI.T.amber }).setAlpha(0);
+    this.tellText = UI.text(this, width / 2, reelY + reelH / 2 + 34, 'The cabinet hums… something big is coming.', 'small',
+      { size: 12, origin: 0.5, color: UI.T.amber }).setAlpha(0);
 
-    // ── Fatigue bar ───────────────────────────────────────────────────────
-    const fatY = cabY + cabH / 2 + 24;
-    this.add.text(width / 2, fatY, 'FATIGUE', { fontFamily: 'monospace', fontSize: '9px', color: '#445566', letterSpacing: 3 }).setOrigin(0.5);
-    const bW = width - 80, bY = fatY + 16;
-    this.add.rectangle(width / 2, bY, bW, 8, 0x1a2230);
-    this.fatigueFill  = this.add.rectangle(width / 2 - bW / 2, bY, 2, 8, 0xe8a020).setOrigin(0, 0.5);
-    this.fatigueLabel = this.add.text(width / 2, bY + 14, this._fatigueText(), { fontFamily: 'monospace', fontSize: '9px', color: '#556677', letterSpacing: 1 }).setOrigin(0.5);
-    this._updateFatigueBar(bW);
+    // ── Paytable ──────────────────────────────────────────────────────────
+    const payY = cabY + cabH / 2 + 46;
+    UI.panel(this, width / 2, payY, width - 32, 64, { fill: UI.C.surface, stroke: UI.C.line, radius: 12 });
+    UI.text(this, 32, payY - 16, 'PAYS (BOLTS)', 'label', { size: 10, origin: [0, 0.5] });
+    const pays = CHROME_SYMBOLS.map(s => [s.glyph + s.glyph + s.glyph, THREE_MATCH_PAYOUT[s.glyph]]).concat([['ANY PAIR', TWO_MATCH_PAYOUT]]);
+    const colW = (width - 48) / pays.length;
+    pays.forEach(([k, v], i) => {
+      const x = 24 + colW * i + colW / 2;
+      UI.text(this, x, payY + 6, k, 'small', { size: k === 'ANY PAIR' ? 10 : 12, origin: 0.5, color: UI.T.dim });
+      UI.text(this, x, payY + 22, String(v), 'number', { size: 14, origin: 0.5, color: UI.T.amber });
+    });
 
-    const costY = bY + 36;
-    this.add.text(width / 2, costY, 'ROLL COST', { fontFamily: 'monospace', fontSize: '9px', color: '#445566', letterSpacing: 3 }).setOrigin(0.5);
-    this.costText = this.add.text(width / 2, costY + 16, `${this._rollCost()} NUTS`, { fontFamily: 'monospace', fontSize: '14px', color: '#e8a020', fontStyle: 'bold' }).setOrigin(0.5);
-
-    // ── SPIN button ───────────────────────────────────────────────────────
-    const spinY = height - 90;
-    this.spinBtn = UI.button(this, width / 2, spinY, width - 32, 68, {
-      label: 'SPIN', sub: `COSTS ${this._rollCost()} NUTS`, variant: 'primary', size: 22, onTap: () => this._startSpin()
+    // ── Fatigue strip + spin ──────────────────────────────────────────────
+    this.strip = Merchants.drawStrip(this, payY + 74, 'chrome', this.fx).refresh(this.fatigue);
+    this.spinBtn = UI.button(this, width / 2, height - 76, width - 32, 68, {
+      label: 'SPIN', sub: '', variant: 'primary', size: 22, onTap: () => this._startSpin()
     });
     this._refreshSpinButton();
+    this._showTell();
 
-    if (!this.saveData.tutorials.chrome) {
-      this.time.delayedCall(200, () => this._showTutorial());
-    }
+    if (!this.saveData.tutorials.chrome) this.time.delayedCall(250, () => this._showTutorial());
   }
 
-  _rollCost() {
-    return Math.min(Math.round(CHROME_BASE_COST * (1 + Math.pow(this.fatigue, 3) / 500)), 60);
-  }
-
-  _rewardMultiplier() {
-    return Math.max(0.2, 1 / (1 + 0.08 * this.fatigue));
-  }
-
-  _fatigueText() {
-    if (this.fatigue === 0) return 'FRESH — FULL PAYOUTS';
-    if (this.fatigue < 6)   return `WARM (${this.fatigue} ROLLS)`;
-    if (this.fatigue < 14)  return `TIRED (${this.fatigue} ROLLS) — REDUCED`;
-    return `BURNT (${this.fatigue} ROLLS) — HEAVY REDUCTION`;
-  }
-
-  _updateFatigueBar(bW) {
-    const pct = Math.min(this.fatigue / 20, 1);
-    const col = this.fatigue < 6 ? 0x5eba7d : this.fatigue < 14 ? 0xe8a020 : 0xc43a3a;
-    this.fatigueFill.setSize(Math.max(2, bW * pct), 8).setFillStyle(col);
-  }
+  _cost() { return Merchants.cost('chrome', this.fatigue, this.fx); }
 
   _refreshSpinButton() {
-    const cost = this._rollCost(), ok = this.saveData.nuts >= cost;
-    this.spinBtn.setLabel('SPIN', ok ? `COSTS ${cost} NUTS` : `NEED ${cost} NUTS`);
+    const cost = this._cost(), ok = this.saveData.nuts >= cost;
+    this.spinBtn.setLabel('SPIN', ok ? 'COSTS ' + cost + ' NUTS' : 'NEED ' + cost + ' NUTS — SELL TOWERS AT THE MARKET');
     this.spinBtn.setEnabled(ok && !this.spinning);
-    this.costText.setText(`${cost} NUTS`);
+  }
+
+  _rollResult() { return [this._weightedSymbol(), this._weightedSymbol(), this._weightedSymbol()]; }
+  _isTriple(r) { return r[0] === r[1] && r[1] === r[2]; }
+  _isWin(r)    { return r[0] === r[1] || r[1] === r[2] || r[0] === r[2]; }
+
+  // Jackpot Sense: glow when the saved next spin is three of a kind
+  _showTell() {
+    const on = this.fx.hasMerchantJackpotTell() && this._isTriple(this.nextSpin) && !this.spinning;
+    const { width } = this.scale;
+    this.cabGlow.clear();
+    if (this._tellTween) { this._tellTween.stop(); this._tellTween = null; }
+    this.tellText.setAlpha(0);
+    if (!on) return;
+    this.cabGlow.fillStyle(UI.C.amber, 0.22);
+    this.cabGlow.fillRoundedRect(16 - 8, this.cabY - this.cabH / 2 - 8, width - 32 + 16, this.cabH + 16, 24);
+    this._tellTween = this.tweens.add({ targets: [this.cabGlow, this.tellText], alpha: { from: 0.25, to: 1 }, duration: 600, yoyo: true, repeat: -1 });
   }
 
   _startSpin() {
     if (this.spinning) return;
-    const cost = this._rollCost();
+    const cost = this._cost();
     if (this.saveData.nuts < cost) return;
+
+    let result = this.nextSpin.slice();
+    this.lucky = false;
+    if (!this._isWin(result) && Math.random() < Merchants.luck('chrome', this.fx)) {
+      result = this._rollResult();
+      this.lucky = this._isWin(result);
+    }
+    if (!this._isWin(result) && this.pityCount >= CHROME_PITY_SPINS) result[1] = result[0];
+    this._pendingResults = result;
+    this.nextSpin = this._rollResult();
 
     this.saveData.nuts -= cost;
     this._save();   // persist the stake now — reloading mid-spin must not refund it
-    this.nutsText.setText(`${this.saveData.nuts} NUTS`);
-    this.spinning       = true;
-    this.reelSpinning   = [true, true, true];
-    this.reelStopped    = [false, false, false];
-    this._pendingResults = [this._weightedSymbol(), this._weightedSymbol(), this._weightedSymbol()];
-    if (this.pityCount >= 10) this._pendingResults[1] = this._pendingResults[0];
-
+    this.hdr.chips.nuts.setValue(this.saveData.nuts);
+    this.spinning     = true;
+    this.reelSpinning = [true, true, true];
+    this.reelStopped  = [false, false, false];
+    this._showTell();
     this.tweens.add({ targets: this.resultBanner, alpha: 0, duration: 100 });
 
     this.reelDisplays.forEach((d, i) => {
-      d.setStyle({ color: '#8899aa' });
+      d.setColor('#8899aa');
       this._spinReel(i);
-      this.time.delayedCall(1000, () => {
+      this.time.delayedCall(700, () => {
         if (this.reelSpinning[i]) this.tweens.add({ targets: d.stopLabel, alpha: 1, duration: 200 });
       });
       this.autoStopTimers[i] = this.time.delayedCall(REEL_AUTO_STOP_MS[i], () => this._tapReel(i));
     });
-
-    this.spinBtn.setEnabled(false).setLabel('SPINNING', 'TAP REELS TO STOP EARLY');
+    this.spinBtn.setEnabled(false).setLabel('SPINNING', 'TAP A REEL TO STOP IT EARLY');
   }
 
   _spinReel(i) {
     if (!this.reelSpinning[i]) return;
     const n = Math.floor(Math.random() * CHROME_SYMBOLS.length);
     this.reelDisplays[i].setText(CHROME_SYMBOLS[n].glyph);
-    this.reelBgs[i].setFillStyle(0x1e2530);
+    this.reelBgs[i].drawBg(true);
     this.reelTimers[i] = this.time.delayedCall(80, () => this._spinReel(i));
   }
 
@@ -180,12 +184,11 @@ class ChromeScene extends Phaser.Scene {
     this.reelSpinning[i] = false;
     if (this.reelTimers[i])     { this.reelTimers[i].remove(false);     this.reelTimers[i] = null; }
     if (this.autoStopTimers[i]) { this.autoStopTimers[i].remove(false); this.autoStopTimers[i] = null; }
-
     const r = this._pendingResults[i];
-    this.reelDisplays[i].setText(CHROME_SYMBOLS[r].glyph).setStyle({ color: '#eef2f8' });
-    this.reelBgs[i].setFillStyle(0x161b22);
+    this.reelDisplays[i].setText(CHROME_SYMBOLS[r].glyph).setColor('#eef2f8');
+    this.reelBgs[i].drawBg(false);
     this.tweens.add({ targets: this.reelDisplays[i].stopLabel, alpha: 0, duration: 100 });
-    this.cameras.main.flash(60, 232, 160, 32, false);
+    this.tweens.add({ targets: this.reelDisplays[i], scale: { from: 1.18, to: 1 }, duration: 160 });
     this.reelStopped[i] = true;
     if (this.reelStopped.every(s => s)) this.time.delayedCall(300, () => this._evaluateResult());
   }
@@ -198,112 +201,68 @@ class ChromeScene extends Phaser.Scene {
 
   _evaluateResult() {
     const g = this._pendingResults.map(s => CHROME_SYMBOLS[s].glyph);
-    let raw = 0, msg = '', col = '#8899aa';
-
-    if (g[0] === g[1] && g[1] === g[2]) {
-      raw = THREE_MATCH_PAYOUT[g[0]] || 3; msg = `${g[0]} ${g[0]} ${g[0]}  JACKPOT`; col = '#e8a020';
-      this.cameras.main.flash(200, 232, 160, 32, false);
+    let raw = 0, msg = '', col = UI.T.mute;
+    const triple = g[0] === g[1] && g[1] === g[2];
+    if (triple) {
+      raw = THREE_MATCH_PAYOUT[g[0]] || 3; msg = g[0] + ' ' + g[0] + ' ' + g[0] + '   JACKPOT'; col = UI.T.amber;
+      this.cameras.main.flash(220, 242, 169, 59, false);
     } else if (g[0] === g[1] || g[1] === g[2] || g[0] === g[2]) {
-      raw = TWO_MATCH_PAYOUT; msg = `PAIR  +${raw} BOLT${raw === 1 ? '' : 'S'}`; col = '#8ab4cc';
+      raw = TWO_MATCH_PAYOUT; msg = 'PAIR'; col = '#7cc4f2';
     } else {
-      msg = 'NO MATCH'; col = '#445566';
+      msg = 'NO MATCH';
     }
+    if (this.lucky && raw > 0) msg = 'LUCKY RE-SPIN — ' + msg;
 
-    const payout = Math.max(raw > 0 ? 1 : 0, Math.round(raw * this._rewardMultiplier()));
+    const payout = Merchants.payout(raw, 'chrome', this.fatigue, this.fx);
     this.pityCount = payout === 0 ? this.pityCount + 1 : 0;
 
     if (payout > 0) {
       this.saveData.bolts += payout;
-      this.boltsText.setText(`${this.saveData.bolts} BOLTS`);
-      this.tweens.add({ targets: this.boltsText, scaleX: 1.3, scaleY: 1.3, duration: 150, yoyo: true });
-      const { width } = this.scale;
-      const pop = this.add.text(width / 2, 380, `+${payout} BOLT${payout === 1 ? '' : 'S'}`, {
-        fontFamily: 'monospace', fontSize: '20px', color: '#8ab4cc', fontStyle: 'bold'
-      }).setOrigin(0.5).setDepth(10).setAlpha(0);
-      this.tweens.add({ targets: pop, y: 340, alpha: 1, duration: 200, onComplete: () =>
-        this.time.delayedCall(800, () => this.tweens.add({ targets: pop, alpha: 0, duration: 300, onComplete: () => pop.destroy() }))
-      });
+      this.hdr.chips.bolts.setValue(this.saveData.bolts).pulse();
+      Merchants.popBolts(this, this.scale.width / 2, this.reelY - 50, payout);
     }
+    if (triple) this.reelDisplays.forEach(d => d.setColor(UI.T.amber));
+    else [[0, 1], [1, 2], [0, 2]].forEach(([a, b]) => {
+      if (g[a] === g[b]) { this.reelDisplays[a].setColor('#7cc4f2'); this.reelDisplays[b].setColor('#7cc4f2'); }
+    });
 
-    if (g[0] === g[1] && g[1] === g[2]) { this.reelDisplays.forEach(d => d.setStyle({ color: '#e8a020' })); }
-    else { [[0,1],[1,2],[0,2]].forEach(([a,b]) => { if (g[a] === g[b]) { this.reelDisplays[a].setStyle({ color: '#8ab4cc' }); this.reelDisplays[b].setStyle({ color: '#8ab4cc' }); } }); }
-
-    this.resultBanner.setText(msg).setStyle({ color: col });
+    this.resultBanner.setText(msg + (payout > 0 ? '   +' + payout : '')).setColor(col);
     this.tweens.add({ targets: this.resultBanner, alpha: 1, duration: 250 });
 
     this.fatigue++;
     this._save();
-    const bW = this.scale.width - 80;
-    this._updateFatigueBar(bW);
-    this.fatigueLabel.setText(this._fatigueText());
+    this.strip.refresh(this.fatigue);
     this.spinning = false;
     this.reelStopped = [false, false, false];
     this._refreshSpinButton();
+    // Jackpot Sense: once the result has been read, swap the banner for the tell
+    if (this.fx.hasMerchantJackpotTell() && this._isTriple(this.nextSpin)) {
+      this.time.delayedCall(1200, () => { if (!this.spinning) { this.resultBanner.setAlpha(0); this._showTell(); } });
+    }
   }
 
   _save() {
-    this.saveData.merchantFatigue.chrome = this.fatigue;
-    this.saveData.chromeState.pityCount  = this.pityCount;
-    SaveManager.write(this.saveData);
+    const st = { pityCount: this.pityCount, next: this.nextSpin };
+    const bolts = this.saveData.bolts, nuts = this.saveData.nuts, fat = this.fatigue;
+    this.saveData = SaveManager.update(s => {
+      s.nuts = nuts; s.bolts = bolts;
+      if (!s.merchantFatigue) s.merchantFatigue = {};
+      s.merchantFatigue.chrome = fat;
+      s.chromeState = st;
+    }) || this.saveData;
   }
 
   _showTutorial() {
     const { width, height } = this.scale;
-    const cabY = 395, cabH = 300, reelY = 395, reelW = 82, reelH = 110, gap = 96;
-    const steps = [
-      {
-        tx: width / 2, ty: cabY, tw: width - 24, th: cabH,
-        title: 'THE MACHINE',
-        body: 'THREE REELS SPIN WHEN YOU\nPRESS SPIN. EACH STOPS\nAUTOMATICALLY — OR TAP EARLY.'
-      },
-      {
-        tx: width / 2 - gap, ty: reelY, tw: reelW + 8, th: reelH + 8,
-        title: 'TAP TO STOP',
-        body: 'TAP ANY SPINNING REEL TO\nSTOP IT EARLY. REELS AUTO-STOP\nAT 3.5s, 6s, AND 8.5s.'
-      },
-      {
-        tx: width / 2, ty: cabY + cabH / 2 + 54, tw: width - 60, th: 36,
-        title: 'FATIGUE',
-        body: 'ROLLING MANY TIMES INCREASES\nCOST AND REDUCES PAYOUTS.\nTAKE A BREAK TO RESET.'
-      },
-      {
-        tx: width / 2, ty: height - 90, tw: width - 48, th: 68,
-        title: 'SPIN',
-        body: 'COSTS NUTS. MATCH SYMBOLS\nACROSS ALL 3 REELS FOR BOLTS.\nPAIRS PAY A CONSOLATION BOLT.'
-      },
-    ];
-
-    let step = 0;
-    const overlay  = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.72).setDepth(50);
-    const pulse    = this.add.rectangle(0, 0, 0, 0).setStrokeStyle(2, 0xe8a020).setDepth(51);
-    this.tweens.add({ targets: pulse, alpha: 0.4, duration: 600, yoyo: true, repeat: -1 });
-
-    const cardY   = height - 148;
-    const card    = this.add.rectangle(width / 2, cardY, width - 32, 88, 0x0a0e14, 0.98).setDepth(52);
-    const cardBdr = this.add.rectangle(width / 2, cardY, width - 32, 88).setStrokeStyle(1, 0xe8a020, 0.6).setDepth(52);
-    const tTitle  = this.add.text(width / 2, cardY - 24, '', { fontFamily: 'monospace', fontSize: '13px', color: '#e8a020', fontStyle: 'bold', letterSpacing: 3 }).setOrigin(0.5).setDepth(53);
-    const tBody   = this.add.text(width / 2, cardY + 4,  '', { fontFamily: 'monospace', fontSize: '11px', color: '#8899aa', align: 'center', wordWrap: { width: width - 60 } }).setOrigin(0.5).setDepth(53);
-    const tapTxt = this.add.text(width / 2, cardY + 34, 'TAP TO CONTINUE', { fontFamily: 'monospace', fontSize: '9px', color: '#334455', letterSpacing: 3 }).setOrigin(0.5).setDepth(53);
-
-    const show = (i) => {
-      const s = steps[i];
-      pulse.setPosition(s.tx, s.ty).setSize(s.tw + 10, s.th + 10);
-      tTitle.setText(s.title);
-      tBody.setText(s.body);
-    };
-    show(0);
-
-    const next = () => {
-      step++;
-      if (step >= steps.length) {
-        [overlay, pulse, card, cardBdr, tTitle, tBody, tapTxt].forEach(e => e.destroy());
-        this.saveData.tutorials.chrome = true;
-        this._save();
-        return;
-      }
-      show(step);
-    };
-    overlay.setInteractive();
-    overlay.on('pointerdown', next);
+    Merchants.tour(this, 'chrome', [
+      { title: 'Meet Chrome', body: Merchants.get('chrome').bio + '\n\nEach spin costs nuts and can win bolts.' },
+      { target: { x: width / 2, y: this.reelY, w: this.reelGap * 2 + this.reelW, h: this.reelH }, title: 'Three reels',
+        body: 'Reels stop on their own, or tap one to stop it early. Three of a kind pays big; any pair pays 1 bolt.' },
+      { target: { x: width / 2, y: this.cabY + this.cabH / 2 + 46, w: width - 32, h: 64 }, title: 'The paytable',
+        body: 'Rarer symbols pay more. ★★★ is the jackpot.' },
+      { target: { x: width / 2, y: this.cabY + this.cabH / 2 + 120, w: width - 32, h: 58 }, title: 'Fatigue',
+        body: 'Your first few spins are full price. After that each spin costs a bit more and pays a bit less. Merchants rest after every battle you win.' },
+      { target: { x: width / 2, y: height - 76, w: width - 32, h: 68 }, title: 'Spin', body: 'Out of nuts? Sell spare towers at the Market\'s trade counter.' }
+    ]);
   }
 }

@@ -27,7 +27,7 @@ class SkillTreeScene extends Phaser.Scene {
     const band = this.add.graphics().setDepth(18);
     band.fillStyle(UI.C.bg, 0.96);
     band.fillRect(0, UI.HEADER_H, width, this.CONTENT_TOP - UI.HEADER_H - 6);
-    UI.text(this, width / 2, this.TABS_Y + 38, 'Factory and Base upgrades are live. Marked ones are coming soon.', 'small',
+    UI.text(this, width / 2, this.TABS_Y + 38, 'Factory, Base and Gambling upgrades are live. Marked ones are coming soon.', 'small',
       { origin: 0.5, size: 11, color: UI.T.amber, depth: 19 });
 
     this.drawTabs();

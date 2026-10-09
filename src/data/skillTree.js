@@ -52,27 +52,27 @@ const SKILL_TREE = {
         { id: 'FAC_05', name: 'Refined Process',tier: 3, col: 0, prereqs: ['FAC_02'], cost: 50,  kind: 'significant',
           effect:   'All machines run an additional 15% faster (stacks).',
           mechanic: { type: 'machine_speed', value: 0.85 } },
-        { id: 'FAC_06', name: 'Conveyor Stub',  tier: 3, col: 1, prereqs: ['FAC_03'], cost: 50,  kind: 'significant',
-          effect:   'Unlocks Tier 1 conveyor belts. Place them between machines to remove worker steps.',
-          mechanic: { type: 'unlock_conveyor', value: 1 } },
-        { id: 'FAC_07', name: 'Apprentice',     tier: 3, col: 2, prereqs: ['FAC_04'], cost: 50,  kind: 'significant',
-          effect:   'Workers handle Tier 2 materials at full speed (no weight slowdown).',
-          mechanic: { type: 'worker_tier', value: 2 } },
+        { id: 'FAC_06', name: 'Express Belts',  tier: 3, col: 1, prereqs: ['FAC_03'], cost: 50,  kind: 'significant',
+          effect:   'Belts move items 40% faster.',
+          mechanic: { type: 'belt_speed', value: 0.60 } },
+        { id: 'FAC_07', name: 'Quick Hands',     tier: 3, col: 2, prereqs: ['FAC_04'], cost: 50,  kind: 'significant',
+          effect:   'Workers collect, load and deliver 20% faster.',
+          mechanic: { type: 'worker_task_speed', value: 0.80 } },
 
         // T4
-        { id: 'FAC_08', name: 'Peak Throughput',tier: 4, col: 0, prereqs: ['FAC_05'], cost: 100, kind: 'significant',
-          effect:   'Storage drums hold 50% more material before bottlenecking.',
-          mechanic: { type: 'storage_capacity', value: 1.50 } },
+        { id: 'FAC_08', name: 'Wide Chutes',tier: 4, col: 0, prereqs: ['FAC_05'], cost: 100, kind: 'significant',
+          effect:   'Stores feed their belts twice as fast.',
+          mechanic: { type: 'store_feed_speed', value: 0.50 } },
         { id: 'FAC_09', name: 'Partial Auto',   tier: 4, col: 1, prereqs: ['FAC_06'], cost: 100, kind: 'gamechanger',
-          effect:   'Game-changer. Conveyor lines run during waves (T1 and T2 materials only).',
+          effect:   'Game-changer. Belts, store feeds and self-running machines keep working while you are away from the Factory — even during battles (up to 30 minutes).',
           mechanic: { type: 'automation_level', value: 1 } },
-        { id: 'FAC_10', name: 'Heavy Hauler',   tier: 4, col: 2, prereqs: ['FAC_07'], cost: 100, kind: 'significant',
-          effect:   'Workers can carry T4 materials (Helix Conduit Wire, MIL-Certified Chips).',
-          mechanic: { type: 'worker_tier', value: 4 } },
+        { id: 'FAC_10', name: 'Overtime',   tier: 4, col: 2, prereqs: ['FAC_07'], cost: 100, kind: 'significant',
+          effect:   'Machines running by themselves (AUTO) work 25% faster.',
+          mechanic: { type: 'auto_speed', value: 0.75 } },
 
         // T5 — capstone
         { id: 'FAC_11', name: 'Full Automation',tier: 5, col: 1, prereqs: ['FAC_09'], cost: 200, kind: 'capstone',
-          effect:   'Capstone. All conveyor lines run continuously. The factory never freezes.',
+          effect:   'Capstone. Workers on routes keep working while you are away too. The factory never stops.',
           mechanic: { type: 'automation_level', value: 2 } }
       ]
     },
@@ -259,7 +259,7 @@ const SKILL_TREE = {
 
         // T2
         { id: 'BAS_02', name: 'Grid Plus I',    tier: 2, col: 0, prereqs: ['BAS_01'], cost: 25,  kind: 'significant',
-          effect:   'Factory grid expands to 3×4. One extra row of placeable tiles.',
+          effect:   'Factory floor expands to 3 rows × 4 columns.',
           mechanic: { type: 'factory_grid', value: { rows: 3, cols: 4 } } },
         { id: 'BAS_03', name: 'Cable Tap',      tier: 2, col: 1, prereqs: ['BAS_01'], cost: 25,  kind: 'incremental',
           effect:   'Underwater Cable Siphon power output +20%.',
@@ -270,7 +270,7 @@ const SKILL_TREE = {
 
         // T3
         { id: 'BAS_05', name: 'Grid Plus II',   tier: 3, col: 0, prereqs: ['BAS_02'], cost: 50,  kind: 'significant',
-          effect:   'Factory grid expands to 4×4.',
+          effect:   'Factory floor expands to 4 × 4.',
           mechanic: { type: 'factory_grid', value: { rows: 4, cols: 4 } } },
         { id: 'BAS_06', name: 'Recycling Plant',tier: 3, col: 1, prereqs: ['BAS_03'], cost: 50,  kind: 'gamechanger',
           effect:   'Game-changer. Unlocks the Plastic Recycling Plant zone. Output scales with factory waste.',
@@ -281,7 +281,7 @@ const SKILL_TREE = {
 
         // T4
         { id: 'BAS_08', name: 'Grid Plus III',  tier: 4, col: 0, prereqs: ['BAS_05'], cost: 100, kind: 'significant',
-          effect:   'Factory grid expands to 4×5.',
+          effect:   'Factory floor expands to 4 rows × 5 columns.',
           mechanic: { type: 'factory_grid', value: { rows: 4, cols: 5 } } },
         { id: 'BAS_09', name: 'Wind Turbines',  tier: 4, col: 1, prereqs: ['BAS_06'], cost: 100, kind: 'gamechanger',
           effect:   'Game-changer. Unlocks Offshore Wind Turbines as a separate map. Major power boost between maintenance missions.',
@@ -292,7 +292,7 @@ const SKILL_TREE = {
 
         // T5 — capstone
         { id: 'BAS_11', name: 'Sovereign Territory', tier: 5, col: 1, prereqs: ['BAS_08'], cost: 200, kind: 'capstone',
-          effect:   'Capstone. Factory grid expands to its maximum 5×5. The Pirate Island is now sovereign noncontinuous territory.',
+          effect:   'Capstone. Factory floor expands to its maximum 5 × 5. The Pirate Island is now sovereign territory.',
           mechanic: { type: 'factory_grid', value: { rows: 5, cols: 5 } } }
       ]
     },

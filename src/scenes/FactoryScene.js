@@ -52,15 +52,17 @@ create() {
   this.factory = new Factory();
   this.factory.loadFromSave(this.saveData);
 
-  // Legacy cleanup: older saves used a 5x5 grid; drop machines outside 3x3.
-  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
-    if ((r >= 3 || c >= 3) && this.factory.getMachineAt(r, c)) this.factory.deleteMachine(r, c);
-  }
+  // ── Skill tree (M7): speeds + floor size from purchased upgrades ─────
+  skillTreeEffects.rebuildFromSaveData(this.saveData);
+  this.factory.applySkillEffects(skillTreeEffects);
 
   // ── Layout ───────────────────────────────────────────────────────────
-  this.TILE    = 88;
-  this.COLS    = 3;
-  this.ROWS    = 3;
+  // The floor grows with Grid Plus upgrades (up to 5x5); tiles shrink to fit.
+  this.COLS    = this.factory.COLS;
+  this.ROWS    = this.factory.ROWS;
+  const gridSpace = (height - 16 - 88 - 12) - (UI.HEADER_H + 14 + 66 + 16) - (14 + 52 + 44);
+  this.TILE    = Math.min(88, Math.floor((width - 56) / this.COLS), Math.floor(gridSpace / this.ROWS));
+  this.TS      = this.TILE / 88;     // text scale for machine labels
   this.GX      = (width - this.TILE * this.COLS) / 2;
   this.STORE_H = 66;
   this.STORE_Y = UI.HEADER_H + 14 + this.STORE_H / 2;
@@ -73,7 +75,7 @@ create() {
   this.STATUS_Y = this.DEPOT_Y + this.DEPOT_H / 2 + 26;
   this.TOOL_H  = 88;
   this.TOOL_Y  = height - 16 - this.TOOL_H / 2;
-  this.WORKER_SPEED = 80;
+  this.WORKER_SPEED = 80 * skillTreeEffects.getWorkerSpeed();
 
   this.placingMachine     = null;
   this.deleteMode         = false;
@@ -113,6 +115,8 @@ create() {
   this.drawToolbar();
   this.drawStatusBar();
 
+  this.catchUpAway();
+
   this.coach = new Coach(this);
   this.events.once('shutdown', () => this.coach.destroy());
 
@@ -122,6 +126,36 @@ create() {
     this.checkWorker2Recruitment();
     this.checkNewTowerTutorials();
   }
+}
+
+// ── Partial Auto / Full Automation (M7) ──────────────────────────────────
+// Fast-forward the factory for the time since it was last saved, if the
+// skill tree lets it run while you're away (up to 30 minutes).
+catchUpAway() {
+  const level = skillTreeEffects.getAutomationLevel();
+  const last  = this.saveData.factory && this.saveData.factory.lastRun;
+  if (level < 1 || !last || !this.factory.tutorialComplete) return;
+  const away = Math.min(Date.now() - last, 30 * 60 * 1000);
+  if (away < 5000) return;
+  const before = { scrap: this.factory.materials.plasticScrap, metal: this.factory.materials.salvagedMetal };
+  this.factory.catchUp(away, level >= 2);
+  const towers = this.factory.takeDeliveries();
+  towers.forEach(t => this.addTowerToStockpile(t, true));
+  this.factory.save();
+  this.drawMachines();
+  this.updateStatus();
+  this.updateMaterialDisplay();
+  if (!towers.length) return;
+  const mins = Math.max(1, Math.round(away / 60000));
+  const used = (before.scrap - this.factory.materials.plasticScrap) + (before.metal - this.factory.materials.salvagedMetal);
+  const byType = {};
+  towers.forEach(t => { byType[t] = (byType[t] || 0) + 1; });
+  const list = Object.entries(byType).map(([t, n]) => n + ' ' + t.charAt(0).toUpperCase() + t.slice(1) + (n === 1 ? '' : 's')).join(', ');
+  this.time.delayedCall(300, () => UI.modal(this, {
+    title: 'While you were away', icon: 'factory', accent: UI.C.green,
+    body: 'The factory kept running for ' + mins + ' minute' + (mins === 1 ? '' : 's') + ' and built ' + list + ' (' + used + ' materials used). They\u2019re in the Armoury.',
+    buttons: [{ label: 'NICE', variant: 'primary', colour: UI.C.green }]
+  }));
 }
 
 leave(sceneKey) {
@@ -285,7 +319,7 @@ tileCentre(row, col) {
 drawGrid() {
   const g = this.add.graphics();
   // Floor plate
-  UI.drawPanel(g, this.GX + this.TILE * 1.5, this.GY + this.TILE * 1.5, this.TILE * 3 + 8, this.TILE * 3 + 8,
+  UI.drawPanel(g, this.GX + this.TILE * this.COLS / 2, this.GY + this.TILE * this.ROWS / 2, this.TILE * this.COLS + 8, this.TILE * this.ROWS + 8,
     { fill: 0x0e131a, stroke: UI.C.lineSoft, radius: 14 });
   this.tileGfx = {};
   for (let row = 0; row < this.ROWS; row++) for (let col = 0; col < this.COLS; col++) {
@@ -310,7 +344,8 @@ drawAutoMarkers() {
     g.beginPath(); g.moveTo(x - 6, y - 3); g.lineTo(x, y + 3); g.lineTo(x + 6, y - 3); g.strokePath();
   };
   const top = this.GY - 8, bottom = this.GY + this.ROWS * this.TILE + 7;
-  Object.entries(this.factory.STORE_FEEDS).forEach(([key, f]) => {
+  Object.keys(this.factory.STORE_FEEDS).forEach(key => {
+    const f = this.factory.feedTile(key);
     const x = this.tileCentre(f.row, f.col).x;
     chevron(x, top, key === 'store_scrap' ? UI.C.blue : UI.C.green, 0.9);
   });
@@ -659,12 +694,13 @@ drawMachineAt(row, col, type) {
     icon = this.add.graphics({ x, y }).setDepth(3).setRotation(ang);
     icon.lineStyle(3, mt.colour, 0.9);
     [-12, 4].forEach(off => { icon.beginPath(); icon.moveTo(off, -10); icon.lineTo(off + 10, 0); icon.lineTo(off, 10); icon.strokePath(); });
-    lbl = UI.text(this, x, y + s / 2 - 10, 'HOLD TO TURN', 'label', { size: 8.5, origin: 0.5, color: UI.T.faint, ls: 0.5, depth: 3 });
+    lbl = UI.text(this, x, y + s / 2 - 10, this.TILE >= 80 ? 'HOLD TO TURN' : '', 'label', { size: 8.5, origin: 0.5, color: UI.T.faint, ls: 0.5, depth: 3 });
   } else {
     const isAsm = this.factory.isAssemblyType(type);
-    lbl = UI.text(this, x, y - 14, this.machineLabel(type), 'tag', { size: type === 'assembly_barricade' ? 11 : 12.5, origin: 0.5, color: mt.colourHex, depth: 3 });
-    sub = UI.text(this, x, y + 2, isAsm ? 'BENCH' : 'SCRAP → REF', 'label', { size: 9, origin: 0.5, color: UI.T.mute, ls: 1, depth: 3 });
-    statusTxt = UI.text(this, x, y + 20, '', 'tag', { size: 10, origin: 0.5, color: UI.T.green, depth: 3 });
+    const ts = this.TS;
+    lbl = UI.text(this, x, y - 14 * ts, this.machineLabel(type), 'tag', { size: (type === 'assembly_barricade' ? 11 : 12.5) * ts, origin: 0.5, color: mt.colourHex, depth: 3, ls: ts < 0.9 ? 0.5 : 1.5 });
+    sub = UI.text(this, x, y + 2 * ts, this.TILE >= 80 ? (isAsm ? 'BENCH' : 'SCRAP → REF') : '', 'label', { size: 9, origin: 0.5, color: UI.T.mute, ls: 1, depth: 3 });
+    statusTxt = UI.text(this, x, y + 20 * ts, '', 'tag', { size: 10, origin: 0.5, color: UI.T.green, depth: 3 });
     barBg = this.add.rectangle(x, y + s / 2 - 8, s - 16, 4, UI.C.line).setDepth(3);
     bar = this.add.rectangle(x - (s - 16) / 2, y + s / 2 - 8, 0, 4, mt.colour).setOrigin(0, 0.5).setDepth(3);
     bar._maxW = s - 16;
@@ -717,7 +753,7 @@ redrawMachineAt(row, col) {
 // ── Workers ────────────────────────────────────────────────────────────────
 // Workers wait beside the grid until given a job.
 workerHome(id) {
-  return { x: this.GX - 28, y: this.GY + 30 + id * 46 };
+  return { x: Math.max(18, this.GX - 28), y: this.GY + 30 + id * 46 };
 }
 
 drawWorkers() {
@@ -1004,7 +1040,7 @@ updateTutorial() {
       this.coach.show(Object.assign({ key: 'pick', mode: 'block', target: this._asmGunnerRect, title: 'Choose Gunner',
         body: 'Gunners fire fast single shots and need just 1 Plastic Scrap each. Other tower types unlock as you win battles.' }, step(2)));
     } else if (this.placingMachine === 'assembly') {
-      const g = { x: this.GX + this.TILE * 1.5, y: this.GY + this.TILE * 1.5, w: this.TILE * 3, h: this.TILE * 3 };
+      const g = { x: this.GX + this.TILE * this.COLS / 2, y: this.GY + this.TILE * this.ROWS / 2, w: this.TILE * this.COLS, h: this.TILE * this.ROWS };
       this.coach.show(Object.assign({ key: 'tile', mode, target: g, placement: 'below', finger: false, title: 'Pick a spot on the floor',
         body: 'Tap any empty tile. The bench will sit there permanently (you can remove it later for a full refund).' }, step(1)));
     } else {
@@ -1177,13 +1213,13 @@ _renderTileItems() {
   }
 }
 
-addTowerToStockpile(type) {
+addTowerToStockpile(type, quiet) {
   this.saveData = SaveManager.update(save => {
     if (!save.stockpile) save.stockpile = { gunner: 0, bomber: 0, barricade: 0 };
     save.stockpile[type] = (save.stockpile[type] || 0) + 1;
   }) || this.saveData;
   this.hdr.chips.towers.setValue(this.stockTotal()).pulse();
-  this.showMessage(type.charAt(0).toUpperCase() + type.slice(1) + ' added to the Armoury', 'good');
+  if (!quiet) this.showMessage(type.charAt(0).toUpperCase() + type.slice(1) + ' added to the Armoury', 'good');
   this.factory.save();
 }
 }

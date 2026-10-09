@@ -109,6 +109,10 @@ class Factory {
     this._feedAccumulator = 0;
     // Towers that reached the depository by belt since the scene last asked
     this.deliveries      = [];
+
+    // ── Skill-tree modifiers (Milestone 7) ────────────────────────────
+    // Duration multipliers (lower = faster), set by applySkillEffects().
+    this.mods = { machine: 1, smelter: 1, assembly: 1, workerTask: 1, belt: 1, feed: 1, auto: 1 };
     this._beltAccumulator = 0;
 
     this.workers = [
@@ -234,6 +238,7 @@ class Factory {
         routePos:          w.routePos
       })),
       factoryVersion:   2,
+      lastRun:          Date.now(),   // for catching up time spent away (M7)
       tutorialStep:     this.tutorialStep,
       tutorialComplete: this.tutorialComplete
     };
@@ -643,8 +648,14 @@ class Factory {
     return false;
   }
 
+  // Feed tiles: top-left for scrap, top-right (of the current width) for metal
+  feedTile(storeKey) {
+    return storeKey === 'store_scrap' ? { row: 0, col: 0 } : { row: 0, col: this.COLS - 1 };
+  }
+
   _feedStores() {
-    Object.values(this.STORE_FEEDS).forEach(f => {
+    Object.entries(this.STORE_FEEDS).forEach(([key, base]) => {
+      const f = Object.assign({}, base, this.feedTile(key));
       const m = this.getMachineAt(f.row, f.col);
       if (!m || m.type !== 'conveyor') return;
       if (this.tileItems[f.row][f.col] !== null) return;
@@ -668,7 +679,7 @@ class Factory {
         continue;
       }
       if (!m.heldMaterial || !this.hasOutputBelt(r, c)) { m.autoProgress = 0; continue; }
-      const duration = m.type === 'smelter' ? MACHINE_TYPES.smelter.duration : MACHINE_TYPES[m.type].duration;
+      const duration = this.machineDuration(m) * this.mods.auto;
       m.autoProgress = (m.autoProgress || 0) + delta / duration;
       if (m.autoProgress < 1) continue;
       m.autoProgress = 0;
@@ -686,12 +697,83 @@ class Factory {
     return d;
   }
 
-  update(delta) {
+  // ── Skill tree (Milestone 7) ───────────────────────────────────────────────
+  // Pulls speed modifiers and grid size from the skill-tree effects object.
+  applySkillEffects(fx) {
+    if (!fx) return;
+    this.mods = {
+      machine:    fx.getMachineSpeed(),
+      smelter:    fx.state.machineSpeedSmelter,
+      assembly:   fx.state.machineSpeedAssembly,
+      workerTask: fx.getWorkerTaskSpeed(),
+      belt:       fx.getBeltSpeed(),
+      feed:       fx.getStoreFeedSpeed(),
+      auto:       fx.getAutoSpeed()
+    };
+    const g = fx.getFactoryGrid();
+    this.setSize(g.rows, g.cols);
+  }
+
+  // Resize the floor to rows × cols. Machines outside the new bounds (only
+  // possible for very old 5x5 saves) are removed; their tiles are dropped.
+  setSize(rows, cols) {
+    const removed = [];
+    for (let r = 0; r < this.grid.length; r++) for (let c = 0; c < (this.grid[r] || []).length; c++) {
+      if ((r >= rows || c >= cols) && this.grid[r][c]) removed.push({ row: r, col: c, machine: this.grid[r][c] });
+    }
+    const grid = Array.from({ length: rows }, (_, r) => Array.from({ length: cols }, (_, c) => (this.grid[r] && this.grid[r][c]) || null));
+    const items = Array.from({ length: rows }, (_, r) => Array.from({ length: cols }, (_, c) => (this.tileItems[r] && this.tileItems[r][c]) || null));
+    this.grid = grid; this.tileItems = items; this.ROWS = rows; this.COLS = cols;
+    return removed;
+  }
+
+  // Durations, scaled by the skill tree
+  machineDuration(m) {
+    const base = m.type === 'smelter' ? MACHINE_TYPES.smelter.duration : MACHINE_TYPES[m.type].duration;
+    const typeMod = m.type === 'smelter' ? this.mods.smelter : this.mods.assembly;
+    return base * this.mods.machine * typeMod;
+  }
+
+  // ── Running while away (Milestone 7: Partial Auto / Full Automation) ──────
+  // Fast-forwards the factory by ms. Automated parts (store feeds, belts,
+  // self-running machines) always run; workers only when withWorkers, and
+  // then only those on routes (walks take a fixed time off-screen).
+  catchUp(ms, withWorkers) {
+    const step = 250, OFFSCREEN_WALK_MS = 1500;
+    const towersBefore = this.deliveries.length;
+    for (let t = 0; t < ms; t += step) {
+      const done = this.update(step, { workers: withWorkers });
+      done.forEach(id => {
+        const w = this.workers[id];
+        if (w.station === 'depository') { this.deliveries.push(w._producedTowerType || 'gunner'); w._producedTowerType = null; }
+      });
+      if (!withWorkers) continue;
+      this.workers.forEach(w => {
+        if (w._offWalk !== undefined) {
+          w._offWalk -= step;
+          if (w._offWalk <= 0) { const k = w._offTarget; delete w._offWalk; delete w._offTarget; this.startWorkAt(k, w.id); }
+          return;
+        }
+        const next = this.nextLoopStation(w.id);
+        if (!next || next.stopped) return;
+        this.advanceLoop(w.id);
+        this.markWalking(next, w.id);
+        w._offWalk = OFFSCREEN_WALK_MS; w._offTarget = next;
+      });
+    }
+    // Anyone mid-walk when the catch-up ends goes back to waiting; the scene
+    // picks their route up again.
+    this.workers.forEach(w => { if (w._offWalk !== undefined) { delete w._offWalk; delete w._offTarget; w.state = 'waiting'; w.targetStation = null; w.routePos = (w.routePos - 1 + w.route.length) % (w.route.length || 1); } });
+    return this.deliveries.length - towersBefore;
+  }
+
+  update(delta, opts) {
     const completed = [];
+    const runWorkers = !opts || opts.workers !== false;
 
     this._feedAccumulator += delta;
-    while (this._feedAccumulator >= this.STORE_FEED_MS) {
-      this._feedAccumulator -= this.STORE_FEED_MS;
+    while (this._feedAccumulator >= this.STORE_FEED_MS * this.mods.feed) {
+      this._feedAccumulator -= this.STORE_FEED_MS * this.mods.feed;
       this._feedStores();
     }
     this._tickMachines(delta);
@@ -702,34 +784,34 @@ class Factory {
     // backed-up belts cause queueing. Multiple ticks per frame are possible
     // if delta is huge (e.g. tab regained focus).
     this._beltAccumulator += delta;
-    while (this._beltAccumulator >= this.BELT_TICK_MS) {
-      this._beltAccumulator -= this.BELT_TICK_MS;
+    while (this._beltAccumulator >= this.BELT_TICK_MS * this.mods.belt) {
+      this._beltAccumulator -= this.BELT_TICK_MS * this.mods.belt;
       this._tickBelts();
     }
 
     this.workers.forEach(w => {
-      if (!w.unlocked || w.state !== 'working') return;
+      if (!runWorkers || !w.unlocked || w.state !== 'working') return;
 
       const station = w.station;
       let duration;
 
       if (station === 'store_scrap' || station === 'store_metal') {
-        duration = 4000;
+        duration = 4000 * this.mods.workerTask;
       } else if (station === 'depository') {
-        duration = 2500;
+        duration = 2500 * this.mods.workerTask;
       } else {
         const [r, c] = station.split(',').map(Number);
         const machine = this.getMachineAt(r, c);
         if (!machine) { w.state = 'idle'; return; }
 
         if (machine.type === 'conveyor') {
-          duration = 1500;   // quick drop, similar to deposit
+          duration = 1500 * this.mods.workerTask;   // quick drop, similar to deposit
         } else if (machine.type === 'smelter') {
-          duration = 12000;
+          duration = this.machineDuration(machine);
         } else if (this.isAssemblyType(machine.type)) {
           duration = w.stationAction === 'deposit'
-            ? MACHINE_TYPES[machine.type].depositDuration
-            : MACHINE_TYPES[machine.type].duration;
+            ? MACHINE_TYPES[machine.type].depositDuration * this.mods.workerTask
+            : this.machineDuration(machine);
         } else {
           duration = 5000;
         }

@@ -27,8 +27,11 @@ this.setFactoryActive(false);
 
 // ── State ────────────────────────────────────────────────────────────
 this.parts             = 0;
-this.baseHp            = this.levelData ? this.levelData.baseHp : 10;
+// Base-branch skill upgrades (M7): max HP, damage reduction, fatal save
+skillTreeEffects.rebuildFromSaveData(this.saveData);
+this.baseHp            = Math.round((this.levelData ? this.levelData.baseHp : 10) * skillTreeEffects.getBaseHpMult());
 this.baseHpMax         = this.baseHp;
+this.fatalSaves        = skillTreeEffects.getFatalSaveCharges();
 this.currentWave       = 0;
 this.waveActive        = false;
 this.gameOver          = false;
@@ -1003,7 +1006,13 @@ if (enemy.hpBg)   { enemy.hpBg.destroy();   enemy.hpBg   = null; }
 if (enemy.hpFill) { enemy.hpFill.destroy();  enemy.hpFill = null; }
 if (enemy.sprite) enemy.sprite.destroy();
 
-this.baseHp -= enemy.data.baseDamage;
+this.baseHp -= Math.max(1, enemy.data.baseDamage - skillTreeEffects.getBaseDamageReduction());
+if (this.baseHp <= 0 && this.fatalSaves > 0) {
+  // Iron Fortress: survive one fatal hit per level at 1 HP
+  this.fatalSaves--;
+  this.baseHp = 1;
+  UI.toast(this, 'Iron Fortress held — the base survives at 1 HP', 'warn', { y: this.PLAY_TOP + 26 });
+}
 if (this.baseHp < 0) this.baseHp = 0;
 this.updateHpBar();
 this.cameras.main.shake(140, 0.007);

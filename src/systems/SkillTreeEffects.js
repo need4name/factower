@@ -49,6 +49,10 @@ class SkillTreeEffects {
       workerForceTier:        1,      // forces all workers to operate at this tier minimum
       storageCapacity:        1.00,   // multiplier on storage drum capacity
       automationLevel:        0,      // 0=frozen, 1=partial, 2=full
+      beltSpeed:              1.00,   // multiplier on belt tick interval (lower = faster)
+      workerTaskSpeed:        1.00,   // multiplier on worker task durations at stores/depot/belts
+      storeFeedSpeed:         1.00,   // multiplier on store → belt feed interval
+      autoSpeed:              1.00,   // multiplier on self-running machine durations
 
       // ── GAMBLING ────────────────────────────────────────────────────────
       // Per-merchant bonuses keyed by merchant id ('chrome'|'doubledown'|'ricochet').
@@ -144,6 +148,10 @@ class SkillTreeEffects {
       case 'worker_force_tier':       s.workerForceTier = Math.max(s.workerForceTier, m.value); break;
       case 'storage_capacity':        s.storageCapacity *= m.value; break;
       case 'automation_level':        s.automationLevel = Math.max(s.automationLevel, m.value); break;
+      case 'belt_speed':              s.beltSpeed *= m.value; break;
+      case 'worker_task_speed':       s.workerTaskSpeed *= m.value; break;
+      case 'store_feed_speed':        s.storeFeedSpeed *= m.value; break;
+      case 'auto_speed':              s.autoSpeed *= m.value; break;
 
       // ── GAMBLING ────────────────────────────────────────────────────────
       case 'merchant_luck':
@@ -236,6 +244,14 @@ class SkillTreeEffects {
     }
   }
 
+  // ── WHAT ACTUALLY WORKS ────────────────────────────────────────────────────
+  // Mechanics the game applies today. Nodes with any other mechanic show as
+  // "coming soon" in the Uplink and can't be bought, so bolts are never spent
+  // on an upgrade that does nothing.
+  isImplemented(node) {
+    return !!(node && node.mechanic && SkillTreeEffects.IMPLEMENTED.has(node.mechanic.type));
+  }
+
   // ── LOOKUP HELPER ──────────────────────────────────────────────────────────
   // Walks SKILL_TREE and returns the node matching the given id, or null.
   findNodeById(nodeId) {
@@ -262,6 +278,10 @@ class SkillTreeEffects {
   getWorkerMaxTier()          { return Math.max(this.state.workerMaxTier, this.state.workerForceTier); }
   getStorageCapacity()        { return this.state.storageCapacity; }
   getAutomationLevel()        { return this.state.automationLevel; }
+  getBeltSpeed()              { return this.state.beltSpeed; }
+  getWorkerTaskSpeed()        { return this.state.workerTaskSpeed; }
+  getStoreFeedSpeed()         { return this.state.storeFeedSpeed; }
+  getAutoSpeed()              { return this.state.autoSpeed; }
   isAutomationUnlocked()      { return this.state.automationLevel >= 1; }
   isFullAutomation()          { return this.state.automationLevel >= 2; }
 
@@ -320,6 +340,14 @@ class SkillTreeEffects {
   isAllyMechanicUnlocked()    { return this.state.allyMechanicUnlocked; }
   isPirateKingMythActive()    { return this.state.pirateKingMythActive; }
 }
+
+SkillTreeEffects.IMPLEMENTED = new Set([
+  // Factory branch (M7)
+  'machine_speed', 'machine_speed_smelter', 'machine_speed_assembly', 'worker_speed',
+  'belt_speed', 'worker_task_speed', 'store_feed_speed', 'auto_speed', 'automation_level',
+  // Base branch: grid + defence (M7)
+  'factory_grid', 'base_hp_multiplier', 'base_damage_reduction', 'fatal_save'
+]);
 
 // Single global instance — scenes import implicitly via window scope.
 const skillTreeEffects = new SkillTreeEffects();

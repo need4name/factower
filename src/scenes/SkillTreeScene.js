@@ -27,7 +27,7 @@ class SkillTreeScene extends Phaser.Scene {
     const band = this.add.graphics().setDepth(18);
     band.fillStyle(UI.C.bg, 0.96);
     band.fillRect(0, UI.HEADER_H, width, this.CONTENT_TOP - UI.HEADER_H - 6);
-    UI.text(this, width / 2, this.TABS_Y + 38, 'Preview — purchases are saved but don’t take effect yet.', 'small',
+    UI.text(this, width / 2, this.TABS_Y + 38, 'Factory and Base upgrades are live. Marked ones are coming soon.', 'small',
       { origin: 0.5, size: 11, color: UI.T.amber, depth: 19 });
 
     this.drawTabs();
@@ -140,7 +140,7 @@ class SkillTreeScene extends Phaser.Scene {
     branch.nodes.forEach(nd => {
       const { x, y } = pos(nd);
       const state = this.getNodeState(nd);
-      const bought = state === 'purchased', avail = state === 'available';
+      const bought = state === 'purchased', avail = state === 'available', soon = state === 'soon';
       const g = this.add.graphics();
       UI.drawPanel(g, x, y, nodeW, nodeH, {
         fill: bought ? branch.colour : avail ? UI.C.surface2 : 0x10151c,
@@ -154,11 +154,11 @@ class SkillTreeScene extends Phaser.Scene {
       }
       C.add(UI.text(this, x, y - 8, nd.name, 'heading', {
         size: 12.5, origin: 0.5, align: 'center', wrap: nodeW - 14, lineSpacing: -2,
-        color: state === 'locked' ? UI.T.faint : UI.T.text
+        color: state === 'locked' || soon ? UI.T.faint : UI.T.text
       }));
       C.add(bought
         ? UI.icon(this, x, y + 22, 'check', 12, branch.colour)
-        : UI.text(this, x, y + 22, nd.cost + ' bolts', 'small', { size: 11, origin: 0.5, color: avail ? UI.T.amber : UI.T.faint }));
+        : UI.text(this, x, y + 22, soon ? 'COMING SOON' : nd.cost + ' bolts', soon ? 'label' : 'small', { size: soon ? 9.5 : 11, origin: 0.5, color: avail ? UI.T.amber : UI.T.faint }));
 
       const zone = this.add.zone(x, y, nodeW, nodeH).setInteractive();
       zone.on('pointerup', () => { if (!this._dragging && !this.nodePanel) this.showNodePanel(branch, nd, state); });
@@ -172,6 +172,7 @@ class SkillTreeScene extends Phaser.Scene {
 
   getNodeState(node) {
     if (this.saveData.skillTree[node.id]) return 'purchased';
+    if (!skillTreeEffects.isImplemented(node)) return 'soon';
     return node.prereqs.every(pid => this.saveData.skillTree[pid]) ? 'available' : 'locked';
   }
 
@@ -204,6 +205,8 @@ class SkillTreeScene extends Phaser.Scene {
     const by = y + 26;
     if (state === 'purchased') {
       items.push(UI.button(this, width / 2, by, w - 44, 52, { label: 'OWNED', variant: 'ghost', disabled: true, depth: 43 }));
+    } else if (state === 'soon') {
+      items.push(UI.button(this, width / 2, by, w - 44, 52, { label: 'COMING SOON', variant: 'ghost', disabled: true, depth: 43 }));
     } else if (state === 'locked') {
       items.push(UI.button(this, width / 2, by, w - 44, 52, { label: 'LOCKED — UNLOCK REQUIREMENTS FIRST', variant: 'ghost', disabled: true, depth: 43, size: 13 }));
     } else {
@@ -225,6 +228,7 @@ class SkillTreeScene extends Phaser.Scene {
     if (this.saveData.bolts < node.cost) return;
     if (this.saveData.skillTree[node.id]) return;
     if (!node.prereqs.every(pid => this.saveData.skillTree[pid])) return;
+    if (!skillTreeEffects.isImplemented(node)) return;
 
     this.saveData = SaveManager.update(s => {
       if (!s.skillTree) s.skillTree = {};

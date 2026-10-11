@@ -354,18 +354,19 @@ class Factory {
 
     // ── Fixed stations ───────────────────────────────────────────────────────
 
+    // Stores: collect with empty hands, or put a carried material back — the
+    // way out when a worker is holding something nothing else will take.
     if (stationKey === 'store_scrap') {
-      // Only allow collection if worker is empty AND scrap is available
-      return (w.inventory.length === 0 && this.materials.plasticScrap > 0)
-        ? 'collect_scrap'
-        : null;
+      if (w.inventory.length === 0) return this.materials.plasticScrap > 0 ? 'collect_scrap' : null;
+      if (w.inventory.includes('plasticScrap'))   return 'return_scrap';
+      if (w.inventory.includes('refinedPlastic')) return 'return_refined';
+      return null;
     }
 
     if (stationKey === 'store_metal') {
-      // Only allow collection if worker is empty AND metal is available
-      return (w.inventory.length === 0 && this.materials.salvagedMetal > 0)
-        ? 'collect_metal'
-        : null;
+      if (w.inventory.length === 0) return this.materials.salvagedMetal > 0 ? 'collect_metal' : null;
+      if (w.inventory.includes('salvagedMetal')) return 'return_metal';
+      return null;
     }
 
     if (stationKey === 'depository') {
@@ -410,6 +411,28 @@ class Factory {
     }
 
     return null;
+  }
+
+  // Plain-English reason a worker can't do anything at a station (for the UI).
+  whyCantWork(stationKey, workerId) {
+    const w = this.workers[workerId];
+    if (!w) return '';
+    const occupant = this.getWorkerAtStation(stationKey);
+    if (occupant && occupant.id !== workerId) return 'Another worker is here';
+    const full = w.inventory.length > 0;
+    if (stationKey === 'store_scrap' || stationKey === 'store_metal') return full ? 'Hands full' : 'Store is empty';
+    if (stationKey === 'depository') return 'Not carrying a tower';
+    const [r, c] = stationKey.split(',').map(Number);
+    const m = this.getMachineAt(r, c);
+    if (!m) return '';
+    if (m.type === 'conveyor') return full ? 'Belt tile is busy' : 'Nothing to drop';
+    if (m.type === 'smelter') return 'Needs scrap';
+    if (this.isAssemblyType(m.type)) {
+      const pri = MACHINE_TYPES[m.type].primaryInput;
+      if (m.heldMaterial && full) return 'Hands full';
+      if (!m.heldMaterial) return 'Needs ' + ({ plasticScrap: 'scrap', salvagedMetal: 'metal', refinedPlastic: 'refined plastic' }[pri] || pri);
+    }
+    return 'Nothing to do here';
   }
 
   canWorkerStartAt(stationKey, workerId) {
@@ -796,7 +819,7 @@ class Factory {
       let duration;
 
       if (station === 'store_scrap' || station === 'store_metal') {
-        duration = 4000 * this.mods.workerTask;
+        duration = (/^return_/.test(w.stationAction) ? 1500 : 4000) * this.mods.workerTask;
       } else if (station === 'depository') {
         duration = 2500 * this.mods.workerTask;
       } else {
@@ -837,6 +860,14 @@ class Factory {
     if (!w) return;
 
     // ── Fixed station completions ────────────────────────────────────────────
+
+    const RETURNS = { return_scrap: 'plasticScrap', return_refined: 'refinedPlastic', return_metal: 'salvagedMetal' };
+    if (RETURNS[w.stationAction]) {
+      const item = RETURNS[w.stationAction];
+      const i = w.inventory.indexOf(item);
+      if (i >= 0) { w.inventory.splice(i, 1); this.materials[item] = (this.materials[item] || 0) + 1; }
+      return;
+    }
 
     if (station === 'store_scrap') {
       // Deduct 1 unit from the material pool

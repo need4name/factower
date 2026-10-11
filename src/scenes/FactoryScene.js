@@ -502,7 +502,7 @@ openWorkerMenu(stationKey) {
   const height = this.H;
   const pos = this.getStationPos(stationKey);
   const D = 110;
-  const menuH = 112, menuW = width - 48;
+  const menuH = 128, menuW = width - 48;
   const menuY = pos.y > height / 2 ? pos.y - 96 : pos.y + 96;
   const items = [];
   const dismissZone = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.35).setInteractive().setDepth(D);
@@ -510,18 +510,25 @@ openWorkerMenu(stationKey) {
   items.push(UI.panel(this, width / 2, menuY, menuW, menuH, { fill: UI.C.surface, stroke: UI.C.line, radius: 16, depth: D + 1 }));
   items.push(UI.text(this, width / 2, menuY - menuH / 2 + 18, 'WHO SHOULD GO?', 'label', { size: 11, origin: 0.5, depth: D + 2 }));
   const dismiss = () => { items.forEach(e => e && e.destroy && e.destroy()); this.workerMenuActive = false; };
+  // When nobody can act here, say how to get unstuck instead of a dead menu
+  const anyCan = unlocked.some(w => this.factory.canWorkerStartAt(stationKey, w.id));
+  const fullHands = !anyCan && unlocked.some(w => this.factory.whyCantWork(stationKey, w.id) === 'Hands full');
+  items.push(UI.text(this, width / 2, menuY + menuH / 2 - 12,
+    fullHands ? 'Tip: tap a store to put a carried item back' : 'Tap outside to close', 'small',
+    { size: fullHands ? 11 : 10, origin: 0.5, depth: D + 2, color: fullHands ? UI.T.amber : UI.T.faint }));
 
   const bw = (menuW - 36) / 2;
   unlocked.forEach((w, i) => {
     const bx = width / 2 + (i === 0 ? -1 : 1) * (bw / 2 + 6);
-    const by = menuY + 14;
+    const by = menuY + 6;
     const canWork = this.factory.canWorkerStartAt(stationKey, w.id);
     const wc = WORKER_COLOURS[w.id];
     const p = UI.panel(this, bx, by, bw, 62, { fill: canWork ? UI.C.surface2 : 0x10151c, stroke: canWork ? wc : UI.C.lineSoft, radius: 12, depth: D + 2 });
     const dot = this.add.circle(bx - bw / 2 + 24, by, 13, canWork ? wc : UI.C.line).setDepth(D + 3);
     const lbl = UI.text(this, bx - bw / 2 + 24, by, WORKER_LABELS[w.id], 'tag', { size: 10, origin: 0.5, color: UI.T.dark, depth: D + 4 });
-    const st  = UI.text(this, bx - bw / 2 + 46, by - 10, this.workerStateLabel(w), 'bodyB', { size: 13, origin: [0, 0.5], depth: D + 3, color: canWork ? UI.T.text : UI.T.faint });
-    const inv = UI.text(this, bx - bw / 2 + 46, by + 10, this.factory.getInventoryDisplay(w.id), 'small', { size: 11, origin: [0, 0.5], depth: D + 3 });
+    const st  = UI.text(this, bx - bw / 2 + 46, by - 10, (w.looping ? 'On a route' : this.workerStateLabel(w)), 'bodyB', { size: 13, origin: [0, 0.5], depth: D + 3, color: canWork ? UI.T.text : UI.T.faint });
+    const sub = canWork ? this.factory.getInventoryDisplay(w.id) : this.factory.whyCantWork(stationKey, w.id);
+    const inv = UI.text(this, bx - bw / 2 + 46, by + 10, sub, 'small', { size: 11, origin: [0, 0.5], depth: D + 3, wrap: bw - 54, color: canWork ? UI.T.mute : UI.T.amber });
     items.push(p, dot, lbl, st, inv);
     if (canWork) {
       const z = this.add.zone(bx, by, bw, 62).setInteractive().setDepth(D + 5);
@@ -614,7 +621,7 @@ tryAssignWorker(workerId, stationKey) {
       const mat = stationKey === 'store_scrap' ? 'plasticScrap' : 'salvagedMetal';
       const name = stationKey === 'store_scrap' ? 'Plastic Scrap' : 'Salvaged Metal';
       if (this.factory.getMaterialCount(mat) <= 0) this.showMessage(W + 'no ' + name + ' left — win battles to earn more', 'bad');
-      else if (w.inventory.length > 0) this.showMessage(W + 'hands are full — use what you’re carrying first', 'warn');
+      else if (w.inventory.length > 0) this.showMessage(W + 'hands are full — this store doesn’t take what they’re carrying', 'warn');
       else this.showMessage(W + 'someone is already collecting here', 'warn');
     } else if (stationKey === 'depository') {
       this.showMessage(W + 'nothing finished to deliver yet', 'warn');
@@ -629,7 +636,7 @@ tryAssignWorker(workerId, stationKey) {
         const pri = MACHINE_TYPES[machine.type].primaryInput;
         const nice = { plasticScrap: 'Plastic Scrap', refinedPlastic: 'Refined Plastic', salvagedMetal: 'Salvaged Metal' }[pri] || pri;
         if (machine.heldMaterial === null && !w.inventory.includes(pri)) this.showMessage(W + 'this bench needs ' + nice + ' — collect some first', 'warn');
-        else if (machine.heldMaterial === pri && w.inventory.length > 0) this.showMessage(W + 'empty your hands to assemble', 'warn');
+        else if (machine.heldMaterial === pri && w.inventory.length > 0) this.showMessage(W + 'hands full — tap the store to put the item back, then assemble', 'warn');
         else this.showMessage(W + 'someone is already working this bench', 'warn');
       } else if (machine && machine.type === 'smelter') {
         this.showMessage(W + 'bring Plastic Scrap to smelt', 'warn');

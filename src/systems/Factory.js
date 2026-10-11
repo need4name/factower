@@ -32,7 +32,7 @@ const MACHINE_TYPES = {
     colourHex:  '#e8a020',
     inputItems: ['plasticScrap'],
     outputItem: 'refinedPlastic',
-    duration:   12000
+    duration:   8000
   },
   assembly_gunner: {
     key:          'assembly_gunner',
@@ -42,8 +42,8 @@ const MACHINE_TYPES = {
     colourHex:    '#3a8fc4',
     produces:     'gunner',
     primaryInput: 'plasticScrap',   // deposited directly — no smelter needed
-    duration:     5000,
-    depositDuration: 1500
+    duration:     4000,
+    depositDuration: 1000
   },
   assembly_bomber: {
     key:          'assembly_bomber',
@@ -53,8 +53,8 @@ const MACHINE_TYPES = {
     colourHex:    '#e8a020',
     produces:     'bomber',
     primaryInput: 'refinedPlastic', // requires smelter step first
-    duration:     5000,
-    depositDuration: 1500
+    duration:     4000,
+    depositDuration: 1000
   },
   assembly_barricade: {
     key:          'assembly_barricade',
@@ -64,8 +64,8 @@ const MACHINE_TYPES = {
     colourHex:    '#c43a3a',
     produces:     'barricade',
     primaryInput: 'salvagedMetal',  // deposited directly — no smelter needed
-    duration:     5000,
-    depositDuration: 1500
+    duration:     4000,
+    depositDuration: 1000
   },
   conveyor: {
     key:        'conveyor',
@@ -76,6 +76,8 @@ const MACHINE_TYPES = {
     isConveyor: true   // distinguishing flag — not a production machine
   }
 };
+
+const ITEM_NAMES = { plasticScrap: 'scrap', salvagedMetal: 'metal', refinedPlastic: 'refined plastic', towerComponent: 'tower' };
 
 const WORKER_COLOURS = [0xe8a020, 0x3a8fc4];
 const WORKER_LABELS  = ['W1', 'W2'];
@@ -121,6 +123,10 @@ class Factory {
     ];
     // Materials loaded from saveData — not hardcoded here
     this.materials = { plasticScrap: 0, refinedPlastic: 0, salvagedMetal: 0 };
+    // Last item a worker put down to take a new job (1 slot)
+    this.lostFound        = null;
+    // Salvaged Metal (and its store) appears later in the story
+    this.metalUnlocked    = true;
     this.tutorialStep     = 0;
     this.tutorialComplete = false;
     this.worker2Introduced = false;
@@ -137,11 +143,11 @@ class Factory {
       inventory:     [],
       targetStation: null,   // station the worker is walking to (claims it)
       _producedTowerType: null,
-      // ── Posted workers (Milestone 5) ──────────────────────────────
-      route:      [],        // station keys of the cycle being learned / run
-      looping:    false,     // true once the worker repeats the route alone
-      routePos:   0,         // index in route of the station last worked
-      waitingFor: null       // next route station, while it's blocked
+      // ── Jobs (see jobStep) ─────────────────────────────────────────
+      job:        null,      // { type: 'haul', from, to } | { type: 'operate', at }
+      at:         null,      // station the worker is standing at
+      dest:       null,      // station they're walking to, just to wait there
+      waitingFor: null       // why they're waiting (station key or 'destination')
     };
   }
 
@@ -195,11 +201,14 @@ class Factory {
         if (!w || !saved) return;
         if (Array.isArray(saved.inventory)) w.inventory = saved.inventory.slice();
         w._producedTowerType = saved.producedTowerType || null;
-        if (Array.isArray(saved.route)) w.route = saved.route.slice();
-        w.looping  = !!saved.looping && w.route.length >= 2;
-        w.routePos = saved.routePos || 0;
+        if (saved.job && (saved.job.type === 'haul' || saved.job.type === 'operate')) w.job = Object.assign({}, saved.job);
+        else if (saved.looping && Array.isArray(saved.route) && saved.route.length >= 2) {
+          // Pre-jobs saves: a learned route becomes a haul from its first stop to its second
+          w.job = { type: 'haul', from: saved.route[0], to: saved.route[1] };
+        }
       });
     }
+    this.lostFound = f.lostFound || null;
     if (typeof f.tutorialStep    === 'number')  this.tutorialStep     = f.tutorialStep;
     if (typeof f.tutorialComplete === 'boolean') this.tutorialComplete = f.tutorialComplete;
 
@@ -211,7 +220,11 @@ class Factory {
     const savedVersion = f.factoryVersion || 1;
     if (savedVersion < 2 && this.tutorialComplete) {
       this.tutorialComplete = false;
-      this.tutorialStep     = 0;
+      // Last item a worker put down to take a new job (1 slot)
+    this.lostFound        = null;
+    // Salvaged Metal (and its store) appears later in the story
+    this.metalUnlocked    = true;
+    this.tutorialStep     = 0;
     }
   }
 
@@ -233,10 +246,9 @@ class Factory {
       workers:          this.workers.map(w => ({
         inventory:         w.inventory.slice(),
         producedTowerType: w._producedTowerType,
-        route:             w.route.slice(),
-        looping:           w.looping,
-        routePos:          w.routePos
+        job:               w.job ? Object.assign({}, w.job) : null
       })),
+      lostFound:        this.lostFound,
       factoryVersion:   2,
       lastRun:          Date.now(),   // for catching up time spent away (M7)
       tutorialStep:     this.tutorialStep,
@@ -289,8 +301,11 @@ class Factory {
   deleteMachine(row, col) {
     if (!this.grid[row] || !this.grid[row][col]) return false;
     const key = row + ',' + col;
-    // A route through a removed machine can't be run any more
-    this.workers.forEach(w => { if (w.route.includes(key)) this.stopLoop(w.id); });
+    // A job through a removed machine can't be done any more
+    this.workers.forEach(w => {
+      const j = w.job;
+      if (j && (j.from === key || j.to === key || j.at === key)) this.stopJob(w.id);
+    });
     this.workers.forEach(w => {
       if (w.station === key && w.state !== 'walking') {
         w.state = 'idle';
@@ -347,69 +362,63 @@ class Factory {
   }
 
   // ── Action system ──────────────────────────────────────────────────────────
+  // What a worker would do if sent to a station, given what they carry and
+  // what's there. null = nothing to do.
 
   getWorkerAction(stationKey, workerId) {
     const w = this.workers[workerId];
     if (!w) return null;
+    const empty = w.inventory.length === 0;
 
     // ── Fixed stations ───────────────────────────────────────────────────────
-
-    // Stores: collect with empty hands, or put a carried material back — the
-    // way out when a worker is holding something nothing else will take.
+    // Stores: collect with empty hands, or put a carried material back.
     if (stationKey === 'store_scrap') {
-      if (w.inventory.length === 0) return this.materials.plasticScrap > 0 ? 'collect_scrap' : null;
+      if (empty) return this.materials.plasticScrap > 0 ? 'collect_scrap' : null;
       if (w.inventory.includes('plasticScrap'))   return 'return_scrap';
       if (w.inventory.includes('refinedPlastic')) return 'return_refined';
       return null;
     }
-
     if (stationKey === 'store_metal') {
-      if (w.inventory.length === 0) return this.materials.salvagedMetal > 0 ? 'collect_metal' : null;
+      if (!this.metalUnlocked) return null;
+      if (empty) return this.materials.salvagedMetal > 0 ? 'collect_metal' : null;
       if (w.inventory.includes('salvagedMetal')) return 'return_metal';
       return null;
     }
-
+    if (stationKey === 'lostfound') {
+      return empty && this.lostFound ? 'collect_lost' : null;
+    }
     if (stationKey === 'depository') {
       return w.inventory.includes('towerComponent') ? 'deliver' : null;
     }
 
     // ── Grid machines ────────────────────────────────────────────────────────
-
     const [r, c] = stationKey.split(',').map(Number);
     const machine = this.getMachineAt(r, c);
     if (!machine) return null;
 
-    // Conveyor: worker can drop their carried item onto the belt if it's empty.
-    // Belt then carries the item along its direction over subsequent ticks.
     if (machine.type === 'conveyor') {
-      if (w.inventory.length > 0 && this.tileItems[r][c] === null) {
-        return 'drop_to_belt';
-      }
-      // Could also support pick-up later: if belt has item and worker empty.
+      return !empty && this.tileItems[r][c] === null ? 'drop_to_belt' : null;
+    }
+
+    // Smelter: load it with scrap, it works by itself, collect the refined
+    // plastic when it's done (or let a belt carry it away).
+    if (machine.type === 'smelter') {
+      if (w.inventory.includes('plasticScrap') && !machine.heldMaterial) return 'deposit';
+      if (empty && machine.autoOutput === 'refinedPlastic') return 'collect_refined';
       return null;
     }
 
-    // Smelter: worker deposits scrap, gets refined plastic out
-    if (machine.type === 'smelter') {
-      return w.inventory.includes('plasticScrap') ? 'smelt' : null;
-    }
-
-    // Assembly: single-deposit per tower type
-    // primaryInput defines what material this assembly needs.
-    // Step 1 — worker has the material AND machine is empty → deposit
-    // Step 2 — machine holds the material AND worker is empty → assemble
     if (this.isAssemblyType(machine.type)) {
       const pri = MACHINE_TYPES[machine.type].primaryInput;
-
-      if (w.inventory.includes(pri) && machine.heldMaterial === null) {
-        return 'deposit';
-      }
-      if (machine.heldMaterial === pri && w.inventory.length === 0) {
-        return 'assemble';
-      }
+      if (w.inventory.includes(pri) && machine.heldMaterial === null) return 'deposit';
+      if (machine.heldMaterial === pri && empty) return 'assemble';
+      // Carrying another load of the same material: build with what's in the
+      // bench and leave the carried one loaded in its place.
+      if (machine.heldMaterial === pri && w.inventory.length === 1 && w.inventory[0] === pri) return 'assemble_swap';
+      // Empty hands at an empty bench: stay here and run it
+      if (empty && machine.heldMaterial === null && !machine.autoOutput) return 'post';
       return null;
     }
-
     return null;
   }
 
@@ -421,16 +430,17 @@ class Factory {
     if (occupant && occupant.id !== workerId) return 'Another worker is here';
     const full = w.inventory.length > 0;
     if (stationKey === 'store_scrap' || stationKey === 'store_metal') return full ? 'Hands full' : 'Store is empty';
+    if (stationKey === 'lostfound') return full ? 'Hands full' : 'Nothing here';
     if (stationKey === 'depository') return 'Not carrying a tower';
     const [r, c] = stationKey.split(',').map(Number);
     const m = this.getMachineAt(r, c);
     if (!m) return '';
     if (m.type === 'conveyor') return full ? 'Belt tile is busy' : 'Nothing to drop';
-    if (m.type === 'smelter') return 'Needs scrap';
+    if (m.type === 'smelter') return m.heldMaterial ? 'Smelting…' : 'Needs scrap';
     if (this.isAssemblyType(m.type)) {
       const pri = MACHINE_TYPES[m.type].primaryInput;
-      if (m.heldMaterial && full) return 'Hands full';
-      if (!m.heldMaterial) return 'Needs ' + ({ plasticScrap: 'scrap', salvagedMetal: 'metal', refinedPlastic: 'refined plastic' }[pri] || pri);
+      if (full && !w.inventory.includes(pri)) return 'Wrong item';
+      if (!m.heldMaterial) return 'Needs ' + ITEM_NAMES[pri];
     }
     return 'Nothing to do here';
   }
@@ -438,108 +448,198 @@ class Factory {
   canWorkerStartAt(stationKey, workerId) {
     const w = this.workers[workerId];
     if (!w || !w.unlocked) return false;
-    const action   = this.getWorkerAction(stationKey, workerId);
+    const action = this.getWorkerAction(stationKey, workerId);
     if (!action) return false;
     const occupant = this.getWorkerAtStation(stationKey);
     if (occupant && occupant.id !== workerId) return false;
     return true;
   }
 
+  // Would the worker be able to act here with empty hands? (Then whatever
+  // they carry can go to Lost & Found to free them up.)
+  canStartIfEmpty(stationKey, workerId) {
+    const w = this.workers[workerId];
+    if (!w || !w.inventory.length) return false;
+    const inv = w.inventory;
+    w.inventory = [];
+    const ok = this.canWorkerStartAt(stationKey, workerId);
+    w.inventory = inv;
+    return ok;
+  }
+
+  // Walking to a station to work there — claims it so nobody else is sent
   markWalking(stationKey, workerId) {
     const w = this.workers[workerId];
     if (!w) return;
     w.state         = 'walking';
     w.progress      = 0;
     w.targetStation = stationKey;
+    w.at            = null;
+    w.waitingFor    = null;
+  }
+
+  // Walking somewhere just to wait there (no claim)
+  markMoving(stationKey, workerId) {
+    const w = this.workers[workerId];
+    if (!w) return;
+    w.state         = 'moving';
+    w.progress      = 0;
+    w.targetStation = null;
+    w.at            = null;
+    w.dest          = stationKey;
+  }
+
+  arrive(workerId, stationKey) {
+    const w = this.workers[workerId];
+    if (!w) return;
+    w.state = 'waiting';
+    w.at    = stationKey;
+    w.dest  = null;
   }
 
   // Re-validates on arrival — stock, bench contents or the machine itself may
-  // have changed during the walk. Returns false (worker goes idle) if so.
+  // have changed during the walk. Returns false (worker waits there) if so.
   startWorkAt(stationKey, workerId) {
     const w = this.workers[workerId];
     if (!w) return false;
+    w.targetStation = null;
+    w.at = stationKey;
     if (!this.canWorkerStartAt(stationKey, workerId)) {
-      w.state         = 'idle';
-      w.progress      = 0;
-      w.targetStation = null;
+      w.state    = 'waiting';
+      w.progress = 0;
       return false;
     }
-    const action = this.getWorkerAction(stationKey, workerId);
-    w.targetStation = null;
     w.station       = stationKey;
     w.state         = 'working';
     w.progress      = 0;
-    w.stationAction = action;
+    w.stationAction = this.getWorkerAction(stationKey, workerId);
+    w.waitingFor    = null;
     return true;
   }
 
-  // ── Posted workers / routes (Milestone 5) ──────────────────────────────────
-  // Workers learn a route by watching the player. A cycle starts whenever the
-  // player sends a worker to collect from a store; every further job is
-  // appended. Sending them back to the same store with the cycle complete
-  // (2+ stops) means "do that again" — the worker starts looping on their own.
-  // While looping, a job that can't be done yet (store empty, bench busy, belt
-  // not delivered) makes them wait in place until it can.
-
-  isSourceAction(action) {
-    return action === 'collect_scrap' || action === 'collect_metal';
-  }
+  // ── Jobs ───────────────────────────────────────────────────────────────────
+  // Each worker remembers ONE job — the last thing you told them to do:
+  //   haul    { from, to }  — fetch from a store (or smelter) and bring it to
+  //                           a bench / smelter / belt, again and again. With
+  //                           nobody posted at that bench they also build the
+  //                           tower and deliver it, so one worker can keep a
+  //                           bench running alone.
+  //   operate { at }        — stay at a bench, build whatever is loaded into
+  //                           it, take each tower to the Depository, come back.
 
   stationExists(key) {
-    if (key === 'store_scrap' || key === 'store_metal' || key === 'depository') return true;
+    if (key === 'store_scrap' || key === 'depository' || key === 'lostfound') return true;
+    if (key === 'store_metal') return !!this.metalUnlocked;
     const [r, c] = key.split(',').map(Number);
     return !!this.getMachineAt(r, c);
   }
 
-  // Call when the player assigns a job. Returns 'learned' when this
-  // assignment completes a route, 'stopped' when it overrides a running one.
-  recordAssignment(stationKey, workerId) {
+  isBenchKey(key) {
+    if (!key || !key.includes(',')) return false;
+    const [r, c] = key.split(',').map(Number);
+    const m = this.getMachineAt(r, c);
+    return !!m && this.isAssemblyType(m.type);
+  }
+
+  hasOperator(key, exceptId) {
+    return this.workers.some(o => o.unlocked && o.id !== exceptId && o.job && o.job.type === 'operate' && o.job.at === key);
+  }
+
+  // Updates the worker's job from a hand-given order. Returns what changed:
+  // 'haul-start' | 'haul' | 'operate' | null.
+  setJobFromAssignment(stationKey, workerId) {
     const w = this.workers[workerId];
     if (!w) return null;
-    const action = this.getWorkerAction(stationKey, workerId);
-    let result = null;
-    if (w.looping) { this.stopLoop(workerId); result = 'stopped'; }
-    if (this.isSourceAction(action)) {
-      if (!result && w.route.length >= 2 && w.route[0] === stationKey) {
-        w.looping = true;
-        w.routePos = 0;
-        w.waitingFor = null;
-        return 'learned';
-      }
-      w.route = [stationKey];
-    } else if (w.route.length > 0) {
-      w.route.push(stationKey);
-      if (w.route.length > 8) w.route = [];   // too long to be a deliberate cycle
+    const a = this.getWorkerAction(stationKey, workerId);
+    if (a === 'collect_scrap' || a === 'collect_metal' || a === 'collect_refined') {
+      w.job = { type: 'haul', from: stationKey, to: null };
+      return 'haul-start';
     }
-    return result;
-  }
-
-  stopLoop(workerId) {
-    const w = this.workers[workerId];
-    if (!w) return;
-    w.looping = false;
-    w.route = [];
-    w.routePos = 0;
-    w.waitingFor = null;
-  }
-
-  // For a looping worker who is free, the next station to go to — or null if
-  // it can't be done yet (sets waitingFor). Returns { stopped: true } if the
-  // route is broken (a machine on it was removed).
-  nextLoopStation(workerId) {
-    const w = this.workers[workerId];
-    if (!w || !w.unlocked || !w.looping || w.route.length < 2) return null;
-    if (w.state === 'walking' || w.state === 'working') return null;
-    const next = w.route[(w.routePos + 1) % w.route.length];
-    if (!this.stationExists(next)) { this.stopLoop(workerId); return { stopped: true }; }
-    if (this.canWorkerStartAt(next, workerId)) { w.waitingFor = null; return next; }
-    w.waitingFor = next;
+    if (a === 'collect_lost') { w.job = null; return null; }   // one-off pick-up
+    if (a === 'deposit' || a === 'drop_to_belt') {
+      if (w.job && w.job.type === 'haul' && w.job.to !== stationKey) { w.job.to = stationKey; return 'haul'; }
+      return null;
+    }
+    if (a === 'assemble' || a === 'post' || a === 'assemble_swap') {
+      w.job = { type: 'operate', at: stationKey };
+      return 'operate';
+    }
     return null;
   }
 
-  advanceLoop(workerId) {
+  stopJob(workerId) {
     const w = this.workers[workerId];
-    if (w && w.route.length) w.routePos = (w.routePos + 1) % w.route.length;
+    if (!w) return;
+    w.job = null;
+    w.waitingFor = null;
+  }
+
+  // What a free worker with a job should do next:
+  //   { station, act: true }  — walk there and work
+  //   { station, act: false } — walk there and wait
+  //   { stopped: true }       — job broke (a machine on it was removed)
+  //   null                    — wait where they are (waitingFor says why)
+  jobStep(workerId) {
+    const w = this.workers[workerId];
+    if (!w || !w.unlocked || !w.job) return null;
+    if (w.state === 'walking' || w.state === 'working' || w.state === 'moving') return null;
+    const j = w.job;
+    const keys = j.type === 'haul' ? [j.from, j.to] : [j.at];
+    if (keys.some(k => k && !this.stationExists(k))) { this.stopJob(workerId); return { stopped: true }; }
+
+    const tryAct = (station, allowed) => {
+      const a = this.getWorkerAction(station, workerId);
+      if (a && allowed.includes(a) && this.canWorkerStartAt(station, workerId)) { w.waitingFor = null; return { station, act: true }; }
+      return null;
+    };
+    const moveOrWait = (station, reason) => {
+      if (w.at !== station) return { station, act: false };
+      w.waitingFor = reason || station;
+      return null;
+    };
+    const holding = w.inventory[0];
+    if (holding === 'towerComponent') return tryAct('depository', ['deliver']) || moveOrWait('depository');
+
+    if (j.type === 'operate') {
+      return tryAct(j.at, holding ? ['assemble_swap'] : ['assemble']) || moveOrWait(j.at);
+    }
+
+    // haul
+    const hasOp = j.to && this.hasOperator(j.to, workerId);
+    if (holding) {
+      if (!j.to) { w.waitingFor = 'destination'; return null; }
+      const allowed = hasOp ? ['deposit', 'drop_to_belt'] : ['deposit', 'drop_to_belt', 'assemble_swap'];
+      return tryAct(j.to, allowed) || moveOrWait(j.to);
+    }
+    if (j.to && !hasOp && this.isBenchKey(j.to)) {
+      const built = tryAct(j.to, ['assemble']);
+      if (built) return built;
+    }
+    return tryAct(j.from, ['collect_scrap', 'collect_metal', 'collect_refined']) || moveOrWait(j.from);
+  }
+
+  // ── Lost & Found ───────────────────────────────────────────────────────────
+  // Holds the last item a worker put down to take a new job. If something is
+  // already there, that older item goes back to stock. A finished tower never
+  // goes here — it goes straight to the Armoury.
+  // Returns { item, displaced, tower } describing what happened.
+  dropToLostFound(workerId) {
+    const w = this.workers[workerId];
+    if (!w || !w.inventory.length) return null;
+    const item = w.inventory.shift();
+    if (item === 'towerComponent') {
+      const t = w._producedTowerType || 'gunner';
+      w._producedTowerType = null;
+      this.deliveries.push(t);
+      return { item, tower: t };
+    }
+    let displaced = null;
+    if (this.lostFound) {
+      displaced = this.lostFound;
+      this.materials[displaced] = (this.materials[displaced] || 0) + 1;
+    }
+    this.lostFound = item;
+    return { item, displaced };
   }
 
   // ── Update loop ────────────────────────────────────────────────────────────
@@ -678,6 +778,7 @@ class Factory {
 
   _feedStores() {
     Object.entries(this.STORE_FEEDS).forEach(([key, base]) => {
+      if (key === 'store_metal' && !this.metalUnlocked) return;
       const f = Object.assign({}, base, this.feedTile(key));
       const m = this.getMachineAt(f.row, f.col);
       if (!m || m.type !== 'conveyor') return;
@@ -701,7 +802,8 @@ class Factory {
         if (out) { this.tileItems[out.row][out.col] = m.autoOutput; m.autoOutput = null; }
         continue;
       }
-      if (!m.heldMaterial || !this.hasOutputBelt(r, c)) { m.autoProgress = 0; continue; }
+      // Smelters always run once loaded; benches need a belt to put towers on
+      if (!m.heldMaterial || (m.type !== 'smelter' && !this.hasOutputBelt(r, c))) { m.autoProgress = 0; continue; }
       const duration = this.machineDuration(m) * this.mods.auto;
       m.autoProgress = (m.autoProgress || 0) + delta / duration;
       if (m.autoProgress < 1) continue;
@@ -760,7 +862,7 @@ class Factory {
   // ── Running while away (Milestone 7: Partial Auto / Full Automation) ──────
   // Fast-forwards the factory by ms. Automated parts (store feeds, belts,
   // self-running machines) always run; workers only when withWorkers, and
-  // then only those on routes (walks take a fixed time off-screen).
+  // then only those with a job (walks take a fixed time off-screen).
   catchUp(ms, withWorkers) {
     const step = 250, OFFSCREEN_WALK_MS = 1500;
     const towersBefore = this.deliveries.length;
@@ -768,28 +870,35 @@ class Factory {
       const done = this.update(step, { workers: withWorkers });
       done.forEach(id => {
         const w = this.workers[id];
-        if (w.station === 'depository') { this.deliveries.push(w._producedTowerType || 'gunner'); w._producedTowerType = null; }
+        if (w.station === 'depository' && w.stationAction === 'deliver') { this.deliveries.push(w._producedTowerType || 'gunner'); w._producedTowerType = null; }
       });
       if (!withWorkers) continue;
       this.workers.forEach(w => {
         if (w._offWalk !== undefined) {
           w._offWalk -= step;
-          if (w._offWalk <= 0) { const k = w._offTarget; delete w._offWalk; delete w._offTarget; this.startWorkAt(k, w.id); }
+          if (w._offWalk <= 0) {
+            const k = w._offTarget, act = w._offAct;
+            delete w._offWalk; delete w._offTarget; delete w._offAct;
+            if (act) this.startWorkAt(k, w.id); else this.arrive(w.id, k);
+          }
           return;
         }
-        const next = this.nextLoopStation(w.id);
-        if (!next || next.stopped) return;
-        this.advanceLoop(w.id);
-        this.markWalking(next, w.id);
-        w._offWalk = OFFSCREEN_WALK_MS; w._offTarget = next;
+        const s = this.jobStep(w.id);
+        if (!s || s.stopped) return;
+        const walk = w.at === s.station ? 0 : OFFSCREEN_WALK_MS;
+        if (s.act) this.markWalking(s.station, w.id); else this.markMoving(s.station, w.id);
+        w._offWalk = walk; w._offTarget = s.station; w._offAct = s.act;
       });
     }
-    // Anyone mid-walk when the catch-up ends goes back to waiting; the scene
-    // picks their route up again.
-    this.workers.forEach(w => { if (w._offWalk !== undefined) { delete w._offWalk; delete w._offTarget; w.state = 'waiting'; w.targetStation = null; w.routePos = (w.routePos - 1 + w.route.length) % (w.route.length || 1); } });
+    // Anyone mid-walk when the catch-up ends just stands still; the scene
+    // picks their job up again.
+    this.workers.forEach(w => {
+      if (w._offWalk === undefined) return;
+      delete w._offWalk; delete w._offTarget; delete w._offAct;
+      w.state = 'waiting'; w.targetStation = null; w.at = null;
+    });
     return this.deliveries.length - towersBefore;
   }
-
   update(delta, opts) {
     const completed = [];
     const runWorkers = !opts || opts.workers !== false;
@@ -814,38 +923,13 @@ class Factory {
 
     this.workers.forEach(w => {
       if (!runWorkers || !w.unlocked || w.state !== 'working') return;
-
-      const station = w.station;
-      let duration;
-
-      if (station === 'store_scrap' || station === 'store_metal') {
-        duration = (/^return_/.test(w.stationAction) ? 1500 : 4000) * this.mods.workerTask;
-      } else if (station === 'depository') {
-        duration = 2500 * this.mods.workerTask;
-      } else {
-        const [r, c] = station.split(',').map(Number);
-        const machine = this.getMachineAt(r, c);
-        if (!machine) { w.state = 'idle'; return; }
-
-        if (machine.type === 'conveyor') {
-          duration = 1500 * this.mods.workerTask;   // quick drop, similar to deposit
-        } else if (machine.type === 'smelter') {
-          duration = this.machineDuration(machine);
-        } else if (this.isAssemblyType(machine.type)) {
-          duration = w.stationAction === 'deposit'
-            ? MACHINE_TYPES[machine.type].depositDuration * this.mods.workerTask
-            : this.machineDuration(machine);
-        } else {
-          duration = 5000;
-        }
-      }
-
+      const duration = this.actionDuration(w);
+      if (duration === null) { w.state = 'waiting'; return; }
       w.progress += delta / duration;
-
       if (w.progress >= 1) {
         w.progress = 1;
         w.state    = 'waiting';
-        this.completeWorkAt(station, w.id);
+        this.completeWorkAt(w.station, w.id);
         completed.push(w.id);
       }
     });
@@ -853,48 +937,59 @@ class Factory {
     return completed;
   }
 
+  // How long a worker's current action takes (ms), scaled by the skill tree.
+  // Handling items is quick; building a tower is the slow part.
+  actionDuration(w) {
+    const t = this.mods.workerTask;
+    const quick = { collect_scrap: 1500, collect_metal: 1500, collect_refined: 900, collect_lost: 700,
+                    return_scrap: 700, return_metal: 700, return_refined: 700,
+                    deliver: 1000, drop_to_belt: 700, post: 250 };
+    if (quick[w.stationAction] !== undefined) return quick[w.stationAction] * t;
+    const [r, c] = (w.station || '').split(',').map(Number);
+    const machine = this.getMachineAt(r, c);
+    if (!machine) return null;
+    if (w.stationAction === 'deposit') {
+      return (MACHINE_TYPES[machine.type].depositDuration || 1000) * t;
+    }
+    return this.machineDuration(machine);   // assemble / assemble_swap
+  }
+
   // ── Work completion ────────────────────────────────────────────────────────
 
   completeWorkAt(station, workerId) {
     const w = this.workers[workerId];
     if (!w) return;
-
-    // ── Fixed station completions ────────────────────────────────────────────
+    const a = w.stationAction;
 
     const RETURNS = { return_scrap: 'plasticScrap', return_refined: 'refinedPlastic', return_metal: 'salvagedMetal' };
-    if (RETURNS[w.stationAction]) {
-      const item = RETURNS[w.stationAction];
+    if (RETURNS[a]) {
+      const item = RETURNS[a];
       const i = w.inventory.indexOf(item);
       if (i >= 0) { w.inventory.splice(i, 1); this.materials[item] = (this.materials[item] || 0) + 1; }
       return;
     }
-
-    if (station === 'store_scrap') {
-      // Deduct 1 unit from the material pool
-      this.materials.plasticScrap = Math.max(0, this.materials.plasticScrap - 1);
-      w.inventory = ['plasticScrap'];
+    if (a === 'collect_scrap' || a === 'collect_metal') {
+      const mat = a === 'collect_scrap' ? 'plasticScrap' : 'salvagedMetal';
+      if ((this.materials[mat] || 0) <= 0 || w.inventory.length) return;   // emptied meanwhile
+      this.materials[mat]--;
+      w.inventory.push(mat);
       return;
     }
-
-    if (station === 'store_metal') {
-      this.materials.salvagedMetal = Math.max(0, this.materials.salvagedMetal - 1);
-      w.inventory = ['salvagedMetal'];
+    if (a === 'collect_lost') {
+      if (this.lostFound && !w.inventory.length) { w.inventory.push(this.lostFound); this.lostFound = null; }
       return;
     }
-
-    if (station === 'depository') {
-      w.inventory = [];
+    if (a === 'deliver') {
+      w.inventory = w.inventory.filter(i => i !== 'towerComponent');
       return;
     }
-
-    // ── Machine completions ──────────────────────────────────────────────────
+    if (a === 'post') return;
 
     const [r, c] = station.split(',').map(Number);
     const machine = this.getMachineAt(r, c);
     if (!machine) return;
 
-    // Conveyor drop: take first item from worker, place on tile.
-    if (machine.type === 'conveyor') {
+    if (a === 'drop_to_belt') {
       if (w.inventory.length > 0 && this.tileItems[r][c] === null) {
         let item = w.inventory.shift();
         // A finished tower dropped on a belt travels as 'tower:<type>' (M6)
@@ -904,35 +999,29 @@ class Factory {
       return;
     }
 
-    // Smelter: consume scrap, output refined plastic
-    if (machine.type === 'smelter') {
-      w.inventory = w.inventory.filter(i => i !== 'plasticScrap');
-      w.inventory.push('refinedPlastic');
+    if (a === 'collect_refined') {
+      if (machine.autoOutput === 'refinedPlastic' && !w.inventory.length) { machine.autoOutput = null; w.inventory.push('refinedPlastic'); }
       return;
     }
 
-    // Assembly — single-deposit flow:
-    // deposit: worker hands over primaryInput to machine
-    // assemble: machine produces towerComponent from held material
-    if (this.isAssemblyType(machine.type)) {
+    if (a === 'deposit') {
+      const want = this.machineInput(machine);
+      if (machine.heldMaterial || !w.inventory.includes(want)) return;   // slot filled meanwhile — keep item
+      w.inventory.splice(w.inventory.indexOf(want), 1);
+      machine.heldMaterial = want;
+      machine.autoProgress = 0;
+      return;
+    }
+
+    if (this.isAssemblyType(machine.type) && (a === 'assemble' || a === 'assemble_swap')) {
       const pri = MACHINE_TYPES[machine.type].primaryInput;
-
-      if (w.stationAction === 'deposit') {
-        if (machine.heldMaterial !== null) return;   // slot filled meanwhile — keep item
-        w.inventory = w.inventory.filter(i => i !== pri);
-        machine.heldMaterial = pri;
-        return;
-      }
-
-      if (w.stationAction === 'assemble') {
-        machine.heldMaterial = null;
-        w.inventory.push('towerComponent');
-        w._producedTowerType = MACHINE_TYPES[machine.type].produces;
-        return;
-      }
+      if (machine.heldMaterial !== pri) return;
+      machine.heldMaterial = null;
+      if (a === 'assemble_swap' && w.inventory[0] === pri) { w.inventory.shift(); machine.heldMaterial = pri; }
+      w.inventory.push('towerComponent');
+      w._producedTowerType = MACHINE_TYPES[machine.type].produces;
     }
   }
-
   // ── Display helpers ────────────────────────────────────────────────────────
 
   getInventoryDisplay(workerId) {

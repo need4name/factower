@@ -41,12 +41,13 @@ create() {
   if (toppedUp) SaveManager.update(s => { s.materials = Object.assign(s.materials || {}, this.saveData.materials); });
 
   // ── Build costs (consumed when placing a machine on a tile) ──────────
+  // Everything available before Salvaged Metal costs scrap only
   this.MACHINE_BUILD_COSTS = {
     smelter:            { plasticScrap: 2, salvagedMetal: 2 },
-    assembly_gunner:    { plasticScrap: 1, salvagedMetal: 1 },
+    assembly_gunner:    { plasticScrap: 2 },
     assembly_bomber:    { plasticScrap: 2, salvagedMetal: 2 },
     assembly_barricade: { plasticScrap: 1, salvagedMetal: 2 },
-    conveyor:           { plasticScrap: 1, salvagedMetal: 1 }
+    conveyor:           { plasticScrap: 1 }
   };
 
   this.factory = new Factory();
@@ -66,13 +67,22 @@ create() {
   this.GX      = (width - this.TILE * this.COLS) / 2;
   this.STORE_H = 66;
   this.STORE_Y = UI.HEADER_H + 14 + this.STORE_H / 2;
+  // Salvaged Metal appears later in the story. Until then the scrap store
+  // fills the whole pick-up strip; afterwards the two share it.
+  this.metalUnlocked = this.isMetalUnlocked();
+  this.factory.metalUnlocked = this.metalUnlocked;
   this.STORE_W = (width - 32 - 10) / 2;
-  this.SCRAP_X = 16 + this.STORE_W / 2;
+  this.SCRAP_W = this.metalUnlocked ? this.STORE_W : width - 32;
+  this.SCRAP_X = 16 + this.SCRAP_W / 2;
   this.METAL_X = width - 16 - this.STORE_W / 2;
   this.GY      = this.STORE_Y + this.STORE_H / 2 + 16;
   this.DEPOT_H = 52;
   this.DEPOT_Y = this.GY + this.ROWS * this.TILE + 14 + this.DEPOT_H / 2;
-  this.STATUS_Y = this.DEPOT_Y + this.DEPOT_H / 2 + 26;
+  this.LF_W    = 112;                                  // Lost & Found sits beside the Depository
+  this.DEPOT_W = width - 32 - 8 - this.LF_W;
+  this.DEPOT_X = 16 + this.DEPOT_W / 2;
+  this.LF_X    = width - 16 - this.LF_W / 2;
+  this.STATUS_Y = this.DEPOT_Y + this.DEPOT_H / 2 + 30;
   this.TOOL_H  = 88;
   this.TOOL_Y  = height - 16 - this.TOOL_H / 2;
   this.WORKER_SPEED = 80 * skillTreeEffects.getWorkerSpeed();
@@ -206,6 +216,11 @@ showTowerUnlockBanner(towerType) {
   });
 }
 
+isMetalUnlocked() {
+  const completed = this.saveData?.completedLevels?.storyline1 || [];
+  return completed.includes(2);
+}
+
 getUnlockedAssemblyTypes() {
   const completed = this.saveData?.completedLevels?.storyline1 || [];
   const types = ['assembly_gunner'];
@@ -229,8 +244,8 @@ checkWorker2Recruitment() {
 // ── Fixed stations ─────────────────────────────────────────────────────────
 drawFixedStations() {
   const { width } = this.scale;
-  const mkStore = (key, x, name, colour, icon) => {
-    const y = this.STORE_Y, w = this.STORE_W, h = this.STORE_H;
+  const mkStore = (key, x, name, colour, icon, w) => {
+    const y = this.STORE_Y, h = this.STORE_H;
     const panel = UI.panel(this, x, y, w, h, { fill: UI.C.surface, stroke: colour, strokeAlpha: 0.55, radius: 14 });
     const lx = x - w / 2 + 14;
     const disc = this.add.graphics();
@@ -246,23 +261,47 @@ drawFixedStations() {
     this.progressBars[key]._maxW = w - 20;
     return count;
   };
-  this.scrapCountTxt = mkStore('store_scrap', this.SCRAP_X, 'PLASTIC SCRAP', UI.C.blue, 'scrap');
-  this.metalCountTxt = mkStore('store_metal', this.METAL_X, 'SALVAGED METAL', UI.C.green, 'metal');
+  this.scrapCountTxt = mkStore('store_scrap', this.SCRAP_X, 'PLASTIC SCRAP', UI.C.blue, 'scrap', this.SCRAP_W);
+  this.metalCountTxt = this.metalUnlocked ? mkStore('store_metal', this.METAL_X, 'SALVAGED METAL', UI.C.green, 'metal', this.STORE_W) : null;
 
   // Depository
-  const dw = width - 32, dy = this.DEPOT_Y;
-  const dPanel = UI.panel(this, width / 2, dy, dw, this.DEPOT_H, { fill: UI.C.surface, stroke: UI.C.red, strokeAlpha: 0.55, radius: 14 });
-  UI.icon(this, 16 + 26, dy, 'shield', 16, UI.C.red);
-  UI.text(this, 16 + 46, dy - 9, 'DEPOSITORY', 'label', { size: 11, origin: [0, 0.5], color: UI.T.red });
-  UI.text(this, 16 + 46, dy + 9, 'Deliver finished towers to the Armoury', 'small', { size: 12, origin: [0, 0.5] });
-  const dz = this.add.zone(width / 2, dy, dw, this.DEPOT_H).setInteractive();
+  const dw = this.DEPOT_W, dy = this.DEPOT_Y, dx = this.DEPOT_X;
+  const dPanel = UI.panel(this, dx, dy, dw, this.DEPOT_H, { fill: UI.C.surface, stroke: UI.C.red, strokeAlpha: 0.55, radius: 14 });
+  UI.icon(this, 16 + 24, dy, 'shield', 16, UI.C.red);
+  UI.text(this, 16 + 42, dy - 9, 'DEPOSITORY', 'label', { size: 11, origin: [0, 0.5], color: UI.T.red });
+  UI.text(this, 16 + 42, dy + 9, 'Towers go to the Armoury', 'small', { size: 11.5, origin: [0, 0.5] });
+  const dz = this.add.zone(dx, dy, dw, this.DEPOT_H).setInteractive();
   dz.on('pointerdown', () => dPanel.setAlpha(0.75));
   dz.on('pointerout',  () => dPanel.setAlpha(1));
   dz.on('pointerup',   () => { dPanel.setAlpha(1); this.stationTapped('depository'); });
   this.progressBars['depository'] = this.add.rectangle(16 + 10, dy + this.DEPOT_H / 2 - 6, 1, 4, UI.C.red).setOrigin(0, 0.5).setAlpha(0);
   this.progressBars['depository']._maxW = dw - 20;
 
+  // Lost & Found: holds the last item a worker put down to take a new job
+  const lx = this.LF_X, lw = this.LF_W;
+  this.lfPanel = UI.panel(this, lx, dy, lw, this.DEPOT_H, { fill: UI.C.surface, stroke: UI.C.steel, strokeAlpha: 0.4, radius: 14 });
+  UI.text(this, lx - lw / 2 + 12, dy - 10, 'LOST & FOUND', 'label', { size: 9.5, origin: [0, 0.5], color: UI.T.dim, ls: 1 });
+  this.lfDot  = this.add.circle(lx - lw / 2 + 19, dy + 10, 6, 0xffffff).setVisible(false);
+  this.lfText = UI.text(this, lx - lw / 2 + 12, dy + 10, 'empty', 'small', { size: 11.5, origin: [0, 0.5], color: UI.T.faint });
+  const lz = this.add.zone(lx, dy, lw, this.DEPOT_H).setInteractive();
+  lz.on('pointerdown', () => this.lfPanel.setAlpha(0.75));
+  lz.on('pointerout',  () => this.lfPanel.setAlpha(1));
+  lz.on('pointerup',   () => { this.lfPanel.setAlpha(1); this.stationTapped('lostfound'); });
+  this.progressBars['lostfound'] = this.add.rectangle(lx - lw / 2 + 10, dy + this.DEPOT_H / 2 - 6, 1, 4, UI.C.steel).setOrigin(0, 0.5).setAlpha(0);
+  this.progressBars['lostfound']._maxW = lw - 20;
+  this._lfSig = undefined;
+  this.updateLostFound();
+
   this.updateMaterialDisplay();
+}
+
+updateLostFound() {
+  if (!this.lfText) return;
+  const item = this.factory.lostFound;
+  this._lfSig = item;
+  const colours = { plasticScrap: UI.C.blue, salvagedMetal: UI.C.green, refinedPlastic: UI.C.amber };
+  this.lfDot.setVisible(!!item).setFillStyle(colours[item] || 0xffffff);
+  this.lfText.setText(item ? this.itemName(item) : 'empty').setX(this.LF_X - this.LF_W / 2 + (item ? 30 : 12)).setColor(item ? UI.T.text : UI.T.faint);
 }
 
 updateMaterialDisplay() {
@@ -345,6 +384,7 @@ drawAutoMarkers() {
   };
   const top = this.GY - 8, bottom = this.GY + this.ROWS * this.TILE + 7;
   Object.keys(this.factory.STORE_FEEDS).forEach(key => {
+    if (key === 'store_metal' && !this.metalUnlocked) return;
     const f = this.factory.feedTile(key);
     const x = this.tileCentre(f.row, f.col).x;
     chevron(x, top, key === 'store_scrap' ? UI.C.blue : UI.C.green, 0.9);
@@ -361,7 +401,8 @@ showBeltGuide() {
   UI.modal(this, {
     title: 'How belts work', icon: 'chevron', accent: UI.C.steel,
     body: 'Items move along the arrows. Hold a belt to turn it.\n\n' +
-          '• A belt on the top-left tile is fed scrap by the store above it; top-right is fed metal.\n' +
+          (this.metalUnlocked ? '• A belt on the top-left tile is fed scrap by the store above it; top-right is fed metal.\n'
+                              : '• A belt on the top-left tile is fed scrap by the store above it.\n') +
           '• A belt pointing into a bench or smelter loads it.\n' +
           '• A loaded machine with a belt leading away works by itself and puts its output on that belt.\n' +
           '• A bottom-row belt pointing down delivers towers to the Depository.\n\n' +
@@ -511,7 +552,7 @@ openWorkerMenu(stationKey) {
   items.push(UI.text(this, width / 2, menuY - menuH / 2 + 18, 'WHO SHOULD GO?', 'label', { size: 11, origin: 0.5, depth: D + 2 }));
   const dismiss = () => { items.forEach(e => e && e.destroy && e.destroy()); this.workerMenuActive = false; };
   // When nobody can act here, say how to get unstuck instead of a dead menu
-  const anyCan = unlocked.some(w => this.factory.canWorkerStartAt(stationKey, w.id));
+  const anyCan = unlocked.some(w => this.factory.canWorkerStartAt(stationKey, w.id) || this.factory.canStartIfEmpty(stationKey, w.id));
   const fullHands = !anyCan && unlocked.some(w => this.factory.whyCantWork(stationKey, w.id) === 'Hands full');
   items.push(UI.text(this, width / 2, menuY + menuH / 2 - 12,
     fullHands ? 'Tip: tap a store to put a carried item back' : 'Tap outside to close', 'small',
@@ -521,13 +562,16 @@ openWorkerMenu(stationKey) {
   unlocked.forEach((w, i) => {
     const bx = width / 2 + (i === 0 ? -1 : 1) * (bw / 2 + 6);
     const by = menuY + 6;
-    const canWork = this.factory.canWorkerStartAt(stationKey, w.id);
+    const direct  = this.factory.canWorkerStartAt(stationKey, w.id);
+    const canWork = direct || this.factory.canStartIfEmpty(stationKey, w.id);
     const wc = WORKER_COLOURS[w.id];
     const p = UI.panel(this, bx, by, bw, 62, { fill: canWork ? UI.C.surface2 : 0x10151c, stroke: canWork ? wc : UI.C.lineSoft, radius: 12, depth: D + 2 });
     const dot = this.add.circle(bx - bw / 2 + 24, by, 13, canWork ? wc : UI.C.line).setDepth(D + 3);
     const lbl = UI.text(this, bx - bw / 2 + 24, by, WORKER_LABELS[w.id], 'tag', { size: 10, origin: 0.5, color: UI.T.dark, depth: D + 4 });
-    const st  = UI.text(this, bx - bw / 2 + 46, by - 10, (w.looping ? 'On a route' : this.workerStateLabel(w)), 'bodyB', { size: 13, origin: [0, 0.5], depth: D + 3, color: canWork ? UI.T.text : UI.T.faint });
-    const sub = canWork ? this.factory.getInventoryDisplay(w.id) : this.factory.whyCantWork(stationKey, w.id);
+    const st  = UI.text(this, bx - bw / 2 + 46, by - 10, this.workerStateLabel(w, true), 'bodyB', { size: 13, origin: [0, 0.5], depth: D + 3, color: canWork ? UI.T.text : UI.T.faint });
+    const sub = direct ? this.factory.getInventoryDisplay(w.id)
+              : canWork ? (w.inventory[0] === 'towerComponent' ? 'Tower → Armoury first' : 'Drops ' + this.itemName(w.inventory[0]) + ' in Lost & Found')
+              : this.factory.whyCantWork(stationKey, w.id);
     const inv = UI.text(this, bx - bw / 2 + 46, by + 10, sub, 'small', { size: 11, origin: [0, 0.5], depth: D + 3, wrap: bw - 54, color: canWork ? UI.T.mute : UI.T.amber });
     items.push(p, dot, lbl, st, inv);
     if (canWork) {
@@ -539,82 +583,104 @@ openWorkerMenu(stationKey) {
   dismissZone.on('pointerup', dismiss);
 }
 
-workerStateLabel(w) {
-  if (w.looping) {
-    if (w.waitingFor && w.state !== 'walking' && w.state !== 'working') return 'Waiting: ' + this.stationName(w.waitingFor);
-    return 'On route';
-  }
-  return { working: 'Busy', walking: 'On the way', waiting: 'Idle', idle: 'Idle' }[w.state] || 'Idle';
+workerStateLabel(w, short) {
+  if (w.state === 'working') return 'Busy';
+  if (w.state === 'walking' || w.state === 'moving') return 'On the way';
+  if (w.waitingFor === 'destination') return short ? 'Holding ' + this.itemName(w.inventory[0]) : 'Holding ' + this.itemName(w.inventory[0]) + ' — tap where it goes';
+  if (w.job && w.waitingFor) return 'Waiting: ' + this.stationName(w.waitingFor);
+  return w.job ? 'Ready' : 'Idle';
 }
+
+// One line saying what a worker's remembered job is
+jobLabel(w) {
+  const j = w.job;
+  if (!j) return null;
+  if (j.type === 'operate') return 'Runs the ' + this.stationName(j.at);
+  const from = { store_scrap: 'scrap', store_metal: 'metal' }[j.from] || 'refined plastic';
+  return j.to ? 'Hauls ' + from + ' → ' + this.stationName(j.to) : 'Fetching ' + from;
+}
+
+itemName(item) { return ITEM_NAMES[item] || 'item'; }
 
 stationName(key) {
   if (key === 'store_scrap') return this.factory.getMaterialCount('plasticScrap') > 0 ? 'scrap store' : 'out of scrap';
   if (key === 'store_metal') return this.factory.getMaterialCount('salvagedMetal') > 0 ? 'metal store' : 'out of metal';
   if (key === 'depository')  return 'depository';
+  if (key === 'lostfound')   return 'lost & found';
+  if (!key || !key.includes(',')) return 'station';
   const [r, c] = key.split(',').map(Number);
   const m = this.factory.getMachineAt(r, c);
   return m ? this.machineLabel(m.type).toLowerCase() + (this.factory.isAssemblyType(m.type) ? ' bench' : '') : 'missing machine';
 }
 
-// ── Posted workers (M5) ────────────────────────────────────────────────────
-// A looping worker who is free walks to the next stop on their route.
-runRoutes() {
+// ── Jobs ───────────────────────────────────────────────────────────────────
+// Each worker remembers one job (see Factory.jobStep). A free worker with a
+// job walks to their next stop on their own.
+runJobs() {
   this.factory.getUnlockedWorkers().forEach(w => {
-    if (!w.looping) return;
-    const next = this.factory.nextLoopStation(w.id);
-    if (!next) return;
-    if (next.stopped) {
-      this.showMessage(WORKER_LABELS[w.id] + ': route broken — a machine on it was removed', 'warn');
+    const step = this.factory.jobStep(w.id);
+    if (!step) return;
+    if (step.stopped) {
+      this.showMessage(WORKER_LABELS[w.id] + ': job stopped — a machine on it was removed', 'warn');
       this.factory.save();
+      this.updateStatus();
       return;
     }
-    this.factory.advanceLoop(w.id);
-    this.walkWorkerTo(w.id, next, () => {
-      this.factory.startWorkAt(next, w.id);
-      this.updateStatus();
-    });
+    if (step.act) {
+      this.walkWorkerTo(w.id, step.station, () => {
+        this.factory.startWorkAt(step.station, w.id);
+        this.updateStatus();
+      });
+    } else {
+      this.factory.markMoving(step.station, w.id);
+      this.moveSpriteTo(w.id, step.station, () => { this.factory.arrive(w.id, step.station); this.updateStatus(); });
+    }
   });
 }
 
-// Faint dotted line through each looping worker's stops, in their colour
-drawRoutes() {
-  const sig = this.factory.workers.map(w => w.looping ? w.route.join('>') : '').join('|');
+// Faint dotted line along each haul job, in the worker's colour
+drawJobs() {
+  const sig = this.factory.workers.map(w => w.job ? JSON.stringify(w.job) : '').join('|');
   if (sig === this._routeSig) return;
   this._routeSig = sig;
   if (!this.routeGfx) this.routeGfx = this.add.graphics().setDepth(6);
   const g = this.routeGfx;
   g.clear();
-  this.factory.workers.forEach(w => {
-    if (!w.looping || w.route.length < 2) return;
-    const pts = w.route.map(k => this.getStationPos(k));
+  this.factory.getUnlockedWorkers().forEach(w => {
+    const j = w.job;
+    if (!j || j.type !== 'haul' || !j.to) return;
+    const a = this.getStationPos(j.from), b = this.getStationPos(j.to);
     const col = WORKER_COLOURS[w.id];
-    for (let i = 0; i < pts.length; i++) {
-      const a = pts[i], b = pts[(i + 1) % pts.length];
-      const L = Math.hypot(b.x - a.x, b.y - a.y);
-      for (let d = 0; d < L; d += 10) {
-        const t = d / (L || 1);
-        g.fillStyle(col, 0.45);
-        g.fillCircle(a.x + (b.x - a.x) * t + w.id * 3, a.y + (b.y - a.y) * t + w.id * 3, 1.6);
-      }
+    const d = Phaser.Math.Distance.Between(a.x, a.y, b.x, b.y), n = Math.floor(d / 12);
+    for (let i = 1; i < n; i++) {
+      const t = i / n;
+      g.fillStyle(col, 0.55); g.fillCircle(a.x + (b.x - a.x) * t + w.id * 3, a.y + (b.y - a.y) * t + w.id * 3, 2.5);
     }
-    pts.forEach(pt => { g.fillStyle(col, 0.9); g.fillCircle(pt.x + w.id * 3, pt.y + w.id * 3, 3.5); });
   });
 }
 
-confirmStopRoute(workerId) {
+confirmStopJob(workerId) {
   const w = this.factory.workers[workerId];
-  if (!w || !w.looping) return;
+  if (!w || !w.job) return;
   UI.modal(this, {
-    title: 'Stop ' + WORKER_LABELS[workerId] + '\u2019s route?', icon: 'pause', accent: UI.C.amber,
-    body: WORKER_LABELS[workerId] + ' is repeating a ' + w.route.length + '-stop route on their own. Stopping it lets you give them jobs by hand again.',
-    buttons: [{ label: 'KEEP GOING' }, { label: 'STOP ROUTE', variant: 'primary', onTap: () => {
-      this.factory.stopLoop(workerId); this.factory.save(); this.updateStatus();
+    title: 'Stop ' + WORKER_LABELS[workerId] + '’s job?', icon: 'pause', accent: UI.C.amber,
+    body: WORKER_LABELS[workerId] + ': ' + this.jobLabel(w) + '.\n\nStopped workers finish what they’re doing and wait for orders. Giving them any new order also replaces their job.',
+    buttons: [{ label: 'KEEP GOING' }, { label: 'STOP JOB', variant: 'primary', onTap: () => {
+      this.factory.stopJob(workerId); this.factory.save(); this.updateStatus();
     } }]
   });
 }
 
 tryAssignWorker(workerId, stationKey) {
   const W = 'W' + (workerId + 1) + ': ';
+  // Carrying something that gets in the way of this order? Put it down in
+  // Lost & Found (finished towers go straight to the Armoury).
+  if (!this.factory.canWorkerStartAt(stationKey, workerId) && this.factory.canStartIfEmpty(stationKey, workerId)) {
+    const d = this.factory.dropToLostFound(workerId);
+    if (d && d.tower) this.showMessage(W + 'sent the finished ' + d.tower + ' to the Armoury first', 'good');
+    else if (d) this.showMessage(W + 'put the ' + this.itemName(d.item) + ' in Lost & Found' + (d.displaced ? ' (the ' + this.itemName(d.displaced) + ' there went back to stock)' : ''), 'info');
+    this.updateLostFound();
+  }
   if (!this.factory.canWorkerStartAt(stationKey, workerId)) {
     const w = this.factory.workers[workerId];
     if (stationKey === 'store_scrap' || stationKey === 'store_metal') {
@@ -647,14 +713,10 @@ tryAssignWorker(workerId, stationKey) {
     return;
   }
 
-  // Posted workers: repeating the start of a finished cycle teaches the route
-  const learned = this.factory.recordAssignment(stationKey, workerId);
-  const L = WORKER_LABELS[workerId];
-  if (learned === 'learned') {
-    this.showMessage(L + ' learned the route — they\u2019ll repeat it on their own', 'good');
-  } else if (learned === 'stopped') {
-    this.showMessage(L + ' stopped their route to do this job', 'info');
-  }
+  const change = this.factory.setJobFromAssignment(stationKey, workerId);
+  const w = this.factory.workers[workerId];
+  if (change === 'haul' && !this.tutorialActive) this.showMessage(WORKER_LABELS[workerId] + ' will keep this up: ' + this.jobLabel(w).toLowerCase(), 'good');
+  else if (change === 'operate' && !this.tutorialActive) this.showMessage(WORKER_LABELS[workerId] + ' now runs this bench — they’ll build whatever is brought to it', 'good');
 
   this.walkWorkerTo(workerId, stationKey, () => {
     if (!this.factory.startWorkAt(stationKey, workerId)) {
@@ -789,7 +851,7 @@ drawToolbar() {
   const tools = [
     { key: 'assembly', name: 'BENCH',    sub: 'builds towers', icon: 'factory', colour: UI.C.green },
     { key: 'conveyor', name: 'BELT',     sub: this.formatShort(this.MACHINE_BUILD_COSTS.conveyor), icon: 'chevron', colour: UI.C.steel },
-    { key: 'smelter',  name: 'SMELTER',  sub: this.formatShort(this.MACHINE_BUILD_COSTS.smelter), icon: 'gear', colour: UI.C.amber },
+    { key: 'smelter',  name: 'SMELTER',  sub: this.metalUnlocked ? this.formatShort(this.MACHINE_BUILD_COSTS.smelter) : 'after Level 2', icon: this.metalUnlocked ? 'gear' : 'lock', colour: this.metalUnlocked ? UI.C.amber : 0x465163, locked: !this.metalUnlocked },
     { key: 'delete',   name: 'REMOVE',   sub: 'refunds cost', icon: 'trash', colour: UI.C.red }
   ];
   this.toolButtons = {};
@@ -814,6 +876,7 @@ drawToolbar() {
     zone.on('pointerout',  () => c.setScale(1));
     zone.on('pointerup',   () => {
       c.setScale(1);
+      if (t.locked) { this.showMessage('Smelters unlock after Level 2, along with Bombers', 'info'); return; }
       if (t.key === 'delete') this.toggleDeleteMode();
       else this.setPlacing(this.placingMachine === t.key ? null : t.key);
     });
@@ -929,18 +992,21 @@ updateStatus() {
   const w = (width - 32 - (workers.length - 1) * 8) / workers.length;
   workers.forEach((wk, i) => {
     const x = 16 + w / 2 + i * (w + 8), y = this.STATUS_Y;
-    const loop = wk.looping;
-    const p = UI.panel(this, x, y, w, 36, { fill: UI.C.surface, stroke: loop ? WORKER_COLOURS[wk.id] : UI.C.lineSoft, strokeAlpha: loop ? 0.6 : 1, radius: 10 });
-    const dot = this.add.circle(x - w / 2 + 18, y, 8, WORKER_COLOURS[wk.id]);
-    const info = loop ? this.workerStateLabel(wk) : this.workerStateLabel(wk) + '  ·  ' + this.factory.getInventoryDisplay(wk.id).toLowerCase();
-    const t = UI.text(this, x - w / 2 + 32, y, WORKER_LABELS[wk.id] + '  ' + info,
-      'small', { size: 12, origin: [0, 0.5], color: loop ? UI.T.text : UI.T.dim, wrap: w - 70 });
-    this.statusItems.push(p, dot, t);
-    if (loop) {
-      // Tap a looping worker's status to stop their route
-      this.statusItems.push(UI.text(this, x + w / 2 - 12, y, 'STOP', 'tag', { size: 10, origin: [1, 0.5], color: UI.T.amber }));
-      const z = this.add.zone(x, y, w, 36).setInteractive();
-      z.on('pointerup', () => this.confirmStopRoute(wk.id));
+    const job = this.jobLabel(wk);
+    const p = UI.panel(this, x, y, w, 44, { fill: UI.C.surface, stroke: job ? WORKER_COLOURS[wk.id] : UI.C.lineSoft, strokeAlpha: job ? 0.6 : 1, radius: 10 });
+    const dot = this.add.circle(x - w / 2 + 16, y, 8, WORKER_COLOURS[wk.id]);
+    const carry = wk.inventory.length && wk.waitingFor !== 'destination' ? '  ·  ' + this.factory.getInventoryDisplay(wk.id).toLowerCase() : '';
+    const t1 = UI.text(this, x - w / 2 + 30, y - 8, WORKER_LABELS[wk.id] + '  ' + this.workerStateLabel(wk, true) + carry,
+      'small', { size: 11.5, origin: [0, 0.5], color: UI.T.text });
+    const t2 = UI.text(this, x - w / 2 + 30, y + 9, job || 'No job — tap a station', 'small',
+      { size: 10.5, origin: [0, 0.5], color: job ? UI.T.mute : UI.T.faint });
+    [t1, t2].forEach(t => { if (t.width > w - (job ? 70 : 38)) t.setScale((w - (job ? 70 : 38)) / t.width, 1); });
+    this.statusItems.push(p, dot, t1, t2);
+    if (job) {
+      // Tap a worker's status to stop their job
+      this.statusItems.push(UI.text(this, x + w / 2 - 10, y, 'STOP', 'tag', { size: 10, origin: [1, 0.5], color: UI.T.amber }));
+      const z = this.add.zone(x, y, w, 44).setInteractive();
+      z.on('pointerup', () => this.confirmStopJob(wk.id));
       this.statusItems.push(z);
     }
   });
@@ -954,14 +1020,15 @@ showMessage(text, kind) {
 }
 
 // Where a worker stands to use a station — beside its label, not on top of it
-getStationPos(stationKey) {
-  const { width } = this.scale;
-  if (stationKey === 'store_scrap') return { x: this.SCRAP_X + this.STORE_W / 2 - 26, y: this.STORE_Y };
-  if (stationKey === 'store_metal') return { x: this.METAL_X + this.STORE_W / 2 - 26, y: this.STORE_Y };
-  if (stationKey === 'depository')  return { x: width - 16 - 30, y: this.DEPOT_Y };
+getStationPos(stationKey, workerId) {
+  const off = workerId === 1 ? -26 : 0;     // W2 stands beside W1, never on top
+  if (stationKey === 'store_scrap') return { x: 16 + this.STORE_W - 26 + off, y: this.STORE_Y };
+  if (stationKey === 'store_metal') return { x: this.METAL_X + this.STORE_W / 2 - 26 + off, y: this.STORE_Y };
+  if (stationKey === 'depository')  return { x: this.DEPOT_X + this.DEPOT_W / 2 - 30 + off, y: this.DEPOT_Y };
+  if (stationKey === 'lostfound')   return { x: this.LF_X + this.LF_W / 2 - 22 + off, y: this.DEPOT_Y };
   const [r, c] = stationKey.split(',').map(Number);
   const t = this.tileCentre(r, c);
-  return { x: t.x + this.TILE / 2 - 20, y: t.y + this.TILE / 2 - 20 };
+  return { x: t.x + this.TILE / 2 - 20 + off * 0.7, y: t.y + this.TILE / 2 - 20 };
 }
 
 // ── Navigation ─────────────────────────────────────────────────────────────
@@ -970,11 +1037,19 @@ walkWorkerTo(workerId, stationKey, onComplete) {
   const label  = this.workerLabels[workerId];
   if (!sprite) return;
 
-  const target = this.getStationPos(stationKey);
-  const dist   = Phaser.Math.Distance.Between(sprite.x, sprite.y, target.x, target.y);
-
   this.factory.markWalking(stationKey, workerId);
   this.updateStatus();
+  this.moveSpriteTo(workerId, stationKey, onComplete);
+}
+
+// Tween a worker's sprite to a station (no claim — used for walking over to
+// wait somewhere, and by walkWorkerTo)
+moveSpriteTo(workerId, stationKey, onComplete) {
+  const sprite = this.workerSprites[workerId];
+  const label  = this.workerLabels[workerId];
+  if (!sprite) return;
+  const target = this.getStationPos(stationKey, workerId);
+  const dist   = Phaser.Math.Distance.Between(sprite.x, sprite.y, target.x, target.y);
 
   this.tweens.killTweensOf(sprite);
   this.tweens.killTweensOf(label);
@@ -1017,7 +1092,7 @@ updateTutorial() {
   const hintBottom = this.TOOL_Y - this.TOOL_H / 2 - 22;
   const w      = this.factory.workers[0];
   const tag    = guided ? null : 'TOWER ' + (stock + 1) + ' OF ' + need;
-  const step   = (n) => guided ? { step: n, total: 6 } : { tag, cardBottom: hintBottom, finger: false };
+  const step   = (n) => guided ? { step: n, total: 5 } : { tag, cardBottom: hintBottom, finger: false };
 
   // Find the first assembly bench
   let bench = null, benchKey = null;
@@ -1039,9 +1114,6 @@ updateTutorial() {
     return;
   }
 
-  const holding = w.inventory.includes('towerComponent');
-  const busy    = w.state === 'walking' || w.state === 'working';
-
   if (!bench) {
     if (this._asmMenuOpen && this._asmGunnerRect) {
       this.coach.show(Object.assign({ key: 'pick', mode: 'block', target: this._asmGunnerRect, title: 'Choose Gunner',
@@ -1057,42 +1129,44 @@ updateTutorial() {
     return;
   }
 
-  // Posted workers (M5): once W1 runs the route alone, just explain it
-  if (!guided && w.looping) {
-    this.coach.show({ key: 'looping', mode: 'hint', tag, cardBottom: hintBottom, title: 'W1 learned the route',
-      body: 'They\u2019ll repeat it on their own. Tap W1\u2019s status bar to stop them.' });
-    return;
-  }
+  const busy = w.state === 'walking' || w.state === 'working' || w.state === 'moving';
+  const total = 5;
+  const stepN = (n) => guided ? { step: n, total } : { tag, cardBottom: hintBottom, finger: false };
 
-  if (holding && !busy) {
-    this.coach.show(Object.assign({ key: 'deliver', mode, target: { x: this.scale.width / 2, y: this.DEPOT_Y, w: this.scale.width - 32, h: this.DEPOT_H },
-      title: 'Deliver the tower',
-      body: 'The finished Gunner goes through the Depository into your Armoury. From there you deploy it in battle.' }, step(6)));
+  // W1 has the job: explain it and let them work
+  if (w.job && w.job.type === 'haul' && w.job.to === benchKey) {
+    this.coach.show({ key: 'job', mode: 'hint', tag: guided ? 'STEP 5 / 5' : tag, cardBottom: hintBottom,
+      title: 'W1 remembers the job',
+      body: 'They\u2019ll keep fetching scrap, building each Gunner and delivering it. Watch them go.' });
     return;
   }
-  if (bench.heldMaterial && !w.inventory.length && !busy) {
-    this.coach.show(Object.assign({ key: 'assemble', mode, target: benchRect(), title: 'Assemble the tower',
-      body: 'The scrap is loaded. Tap the bench again and W1 will put the Gunner together.' }, step(5)));
+  if (w.inventory.includes('towerComponent') && !busy) {
+    this.coach.show(Object.assign({ key: 'deliver', mode, target: { x: this.DEPOT_X, y: this.DEPOT_Y, w: this.DEPOT_W, h: this.DEPOT_H },
+      title: 'Deliver the tower',
+      body: 'Finished towers go through the Depository into your Armoury. From there you deploy them in battle.' }, stepN(5)));
     return;
   }
   if (w.inventory.includes('plasticScrap') && !busy) {
-    this.coach.show(Object.assign({ key: 'deposit', mode, target: benchRect(), title: 'Load the bench',
-      body: 'W1 is carrying scrap. Tap the Gunner bench to load it in.' }, step(4)));
+    this.coach.show(Object.assign({ key: 'deposit', mode, target: benchRect(), title: 'Bring it to the bench',
+      body: 'Tap the Gunner bench. W1 loads the scrap \u2014 and remembers the trip, so they\u2019ll keep doing it on their own.' }, stepN(4)));
     return;
   }
-  if (!busy && !w.inventory.length && !bench.heldMaterial) {
-    this.coach.show(Object.assign({ key: 'collect', mode, target: { x: this.SCRAP_X, y: this.STORE_Y, w: this.STORE_W, h: this.STORE_H },
-      title: 'Collect Plastic Scrap',
-      body: guided ? 'Every tower is made from materials. Tap the scrap store and W1 will walk over and pick one up.'
-                   : 'Tap the scrap store again — repeating a job teaches W1 the whole route.' }, step(3)));
+  if (bench.heldMaterial && !w.inventory.length && !busy && !w.job) {
+    this.coach.show(Object.assign({ key: 'assemble', mode, target: benchRect(), title: 'Build the tower',
+      body: 'The bench is loaded. Tap it and W1 will put the Gunner together.' }, stepN(4)));
+    return;
+  }
+  if (!busy && !w.inventory.length) {
+    this.coach.show(Object.assign({ key: 'collect', mode, target: { x: this.SCRAP_X, y: this.STORE_Y, w: this.SCRAP_W, h: this.STORE_H },
+      title: 'Fetch Plastic Scrap',
+      body: 'Every tower is made from materials. Tap the scrap store and W1 will walk over and pick some up.' }, stepN(3)));
     return;
   }
 
   // Worker is walking or working — explain what's happening, block nothing
-  const doing = {
-    store_scrap: 'W1 is collecting Plastic Scrap…', depository: 'W1 is delivering the tower…'
-  }[w.station] || (w.stationAction === 'deposit' ? 'W1 is loading the bench…' : w.stationAction === 'assemble' ? 'W1 is assembling the Gunner…' : 'W1 is on the way…');
-  const label = w.state === 'walking' ? 'W1 is on the way…' : doing;
+  const doing = { collect_scrap: 'W1 is picking up scrap\u2026', deposit: 'W1 is loading the bench\u2026',
+    assemble: 'W1 is building the Gunner\u2026', deliver: 'W1 is delivering the tower\u2026' }[w.stationAction] || 'W1 is on the way\u2026';
+  const label = w.state === 'working' ? doing : 'W1 is on the way\u2026';
   this.coach.show({ key: 'wait:' + label, mode: 'hint', tag: tag || 'WORKING', title: label,
     body: 'Watch the progress bar fill.', cardBottom: hintBottom });
 }
@@ -1113,7 +1187,7 @@ finishTutorial() {
   const need = this.towersNeeded();
   UI.modal(this, {
     title: 'Ready for the first raid', icon: 'check', accent: UI.C.green,
-    body: 'You have ' + need + ' Gunners in the Armoury. W1 keeps building more on their route while you\u2019re in the Factory — tap their status bar to stop them.\n\nHead to the Dock to defend the island.',
+    body: 'You have ' + need + ' Gunners in the Armoury. W1 keeps building more while you\u2019re in the Factory \u2014 tap their status bar to stop them.\n\nHead to the Dock to defend the island.',
     buttons: [
       { label: 'STAY HERE', variant: 'secondary' },
       { label: 'TO THE DOCK', variant: 'primary', colour: UI.C.red, onTap: () => this.leave('DockScene') }
@@ -1152,10 +1226,11 @@ update(time, delta) {
   // Automated lines change state without worker events, so save every few seconds
   this._autosaveAcc = (this._autosaveAcc || 0) + delta;
   if (this._autosaveAcc > 4000) { this._autosaveAcc = 0; if (running) this.factory.save(); }
-  if (running) this.runRoutes();
-  const statusSig = this.factory.workers.map(w => w.state + (w.looping ? 'L' : '') + (w.waitingFor || '')).join('|');
+  if (running) this.runJobs();
+  const statusSig = this.factory.workers.map(w => w.state + JSON.stringify(w.job) + (w.waitingFor || '') + w.inventory.join()).join('|');
   if (statusSig !== this._statusSig) { this._statusSig = statusSig; this.updateStatus(); }
-  this.drawRoutes();
+  this.drawJobs();
+  if (this.factory.lostFound !== this._lfSig) this.updateLostFound();
 
   this.factory.getUnlockedWorkers().forEach(w => {
     const sprite = this.workerSprites[w.id], label = this.workerLabels[w.id];
@@ -1178,6 +1253,7 @@ update(time, delta) {
   updateBar('store_scrap');
   updateBar('store_metal');
   updateBar('depository');
+  updateBar('lostfound');
 
   for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) {
     const key = r + ',' + c;
@@ -1189,9 +1265,11 @@ update(time, delta) {
       // AUTO = loaded with a belt to output onto (M6); FULL = output belt blocked
       const jam  = this.factory.getBenchJam(r, c);
       const auto = this.factory.hasOutputBelt(r, c);
-      const text = jam ? 'WRONG ITEM' : machine.autoOutput ? 'OUTPUT FULL'
-                 : machine.heldMaterial ? (auto ? 'AUTO' : 'LOADED') : '';
-      if (statusTxt.text !== text) statusTxt.setText(text).setColor(jam || machine.autoOutput ? UI.T.red : UI.T.green);
+      const smelter = machine.type === 'smelter';
+      const ready = machine.autoOutput && smelter && !auto;     // refined plastic waiting to be collected
+      const text = jam ? 'WRONG ITEM' : ready ? 'READY' : machine.autoOutput ? 'OUTPUT FULL'
+                 : machine.heldMaterial ? (smelter ? 'SMELTING' : auto ? 'AUTO' : 'LOADED') : '';
+      if (statusTxt.text !== text) statusTxt.setText(text).setColor(jam || (machine.autoOutput && !ready) ? UI.T.red : ready ? UI.T.amber : UI.T.green);
     }
   }
 

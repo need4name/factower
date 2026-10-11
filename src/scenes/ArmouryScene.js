@@ -19,7 +19,7 @@ class ArmouryScene extends Phaser.Scene {
 
   create() {
     const { width, height } = this.scale;
-    this.saveData = SaveManager.load() || {};
+    this.saveData = applyTestStock() || SaveManager.load() || {};
     if (this.saveData.nuts === undefined) this.saveData.nuts = 0;
     UI.backdrop(this);
     UI.fadeIn(this);

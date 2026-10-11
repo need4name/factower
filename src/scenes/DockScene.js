@@ -4,7 +4,7 @@ class DockScene extends Phaser.Scene {
   }
 
   create() {
-    this.saveData = SaveManager.load() || {};
+    this.saveData = applyTestStock() || SaveManager.load() || {};
     UI.backdrop(this);
     UI.fadeIn(this);
 
@@ -84,7 +84,7 @@ class DockScene extends Phaser.Scene {
       unlocked: true, onTap: () => this.showLevelList(s1)
     });
 
-    const anyDone = done.length > 0;
+    const anyDone = done.length > 0 || (BUILD.test && BUILD.allLevels);
     this.addCampaignCard(y + 14, {
       tag: 'ENDLESS', title: 'Endless Raids', colour: UI.C.blue,
       body: anyDone ? 'Waves keep coming on a map you have cleared. Power zones change every run. How long can you hold?'
@@ -147,7 +147,7 @@ class DockScene extends Phaser.Scene {
     let y = UI.HEADER_H + 16;
     storyline.levels.forEach((level, i) => {
       const isDone     = done.includes(level.id);
-      const isUnlocked = i === 0 || done.includes(storyline.levels[i - 1].id);
+      const isUnlocked = i === 0 || done.includes(storyline.levels[i - 1].id) || (BUILD.test && BUILD.allLevels);
       const isNext     = isUnlocked && !isDone;
       y = this.addLevelCard(level, y, isUnlocked, isDone, isNext) + 10;
     });
@@ -233,7 +233,8 @@ class DockScene extends Phaser.Scene {
 
   launch(level, endless) {
     if (endless) {
-      const ids = this.completedS1();
+      let ids = this.completedS1();
+      if (ids.length === 0 && BUILD.test && BUILD.allLevels) ids = LEVEL_DATA.storylines[0].levels.map(l => l.id);
       if (ids.length === 0) return;
       const base = LEVEL_DATA.storylines[0].levels.find(l => l.id === ids[Math.floor(Math.random() * ids.length)]);
       if (!base) return;

@@ -96,7 +96,8 @@ class SaveScene extends Phaser.Scene {
         // Player must visit the factory before the first level.
         materials: { plasticScrap: 2, refinedPlastic: 0, salvagedMetal: 0 },
         // ── Starting stockpile: empty — towers are built, never given ─────
-        stockpile: { gunner: 0, bomber: 0, barricade: 0 },
+        // (test builds hand out plenty so combat can be tested straight away)
+        stockpile: BUILD.test ? Object.assign({}, BUILD.testStock) : { gunner: 0, bomber: 0, barricade: 0 },
         nuts:            0,
         bolts:           0,
         parts:           0,

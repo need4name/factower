@@ -458,7 +458,7 @@ if (tower.powerMult && Math.abs(tower.powerMult - 1) > 0.04) info += '   ·   po
 items.push(UI.text(this, lx, top + 44, info, 'small', { size: 12, origin: [0, 0.5], depth: D + 1 }));
 
 const completed = (this.saveData && this.saveData.completedLevels && this.saveData.completedLevels.storyline1) || [];
-const unlocked  = completed.includes(3) || this.isEndless || this.storylineId !== 1;
+const unlocked  = completed.includes(3) || this.isEndless || this.storylineId !== 1 || (BUILD.test && BUILD.allUpgrades);
 const by = top + h - 34;
 if (!unlocked) {
   items.push(UI.text(this, lx, top + 76, 'Upgrades unlock after Level 3. Then you can spend PARTS — earned from every kill — to power up towers mid-battle.', 'small',
@@ -915,7 +915,9 @@ const sub = UI.text(this, width / 2, this.H / 2 - 18, 'INCOMING', 'label', { siz
 this.tweens.add({ targets: [banner, sub], alpha: 1, duration: 220,
   onComplete: () => this.tweens.add({ targets: [banner, sub], alpha: 0, duration: 450, delay: 650, onComplete: () => { banner.destroy(); sub.destroy(); } }) });
 
-this.time.delayedCall(waveData.preWaveDelay || 2000, () => {
+// The player pressed START, so raiders arrive as the banner fades — no
+// long silent wait (preWaveDelay in the level data is ignored)
+this.time.delayedCall(500, () => {
   if (this.gameOver) return;
   this.waveText.setText('Wave ' + (this.currentWave + 1) + ' of ' + total + ' — hold the line').setColor(UI.T.dim);
   this.spawnWave(waveData);

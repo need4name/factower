@@ -103,6 +103,7 @@ create() {
   this.tutorialActive     = false;
   this._introDone         = false;
   this.routeGfx           = null;
+  this._workerMenu        = null;
   this._routeSig          = null;
   this._statusSig         = null;
   this._matSig            = null;
@@ -550,7 +551,9 @@ openWorkerMenu(stationKey) {
   items.push(dismissZone);
   items.push(UI.panel(this, width / 2, menuY, menuW, menuH, { fill: UI.C.surface, stroke: UI.C.line, radius: 16, depth: D + 1 }));
   items.push(UI.text(this, width / 2, menuY - menuH / 2 + 18, 'WHO SHOULD GO?', 'label', { size: 11, origin: 0.5, depth: D + 2 }));
-  const dismiss = () => { items.forEach(e => e && e.destroy && e.destroy()); this.workerMenuActive = false; };
+  const dismiss = () => { items.forEach(e => e && e.destroy && e.destroy()); this.workerMenuActive = false; this._workerMenu = null; };
+  // Remembered so update() can rebuild the menu the moment a worker frees up
+  this._workerMenu = { key: stationKey, sig: this.workerMenuSig(stationKey), dismiss };
   // When nobody can act here, say how to get unstuck instead of a dead menu
   const anyCan = unlocked.some(w => this.factory.canWorkerStartAt(stationKey, w.id) || this.factory.canStartIfEmpty(stationKey, w.id));
   const fullHands = !anyCan && unlocked.some(w => this.factory.whyCantWork(stationKey, w.id) === 'Hands full');
@@ -583,6 +586,13 @@ openWorkerMenu(stationKey) {
   dismissZone.on('pointerup', dismiss);
 }
 
+// What the worker menu shows for a station; when this changes, the open menu is redrawn
+workerMenuSig(stationKey) {
+  return this.factory.getUnlockedWorkers().map(w =>
+    (this.factory.canWorkerStartAt(stationKey, w.id) ? 'a' : this.factory.canStartIfEmpty(stationKey, w.id) ? 'd' : 'n') +
+    this.workerStateLabel(w, true) + w.inventory.join()).join('|');
+}
+
 workerStateLabel(w, short) {
   if (w.state === 'working') return 'Busy';
   if (w.state === 'walking' || w.state === 'moving') return 'On the way';
@@ -591,13 +601,27 @@ workerStateLabel(w, short) {
   return w.job ? 'Ready' : 'Idle';
 }
 
-// One line saying what a worker's remembered job is
+// One line describing a worker's remembered route
 jobLabel(w) {
   const j = w.job;
-  if (!j) return null;
-  if (j.type === 'operate') return 'Runs the ' + this.stationName(j.at);
-  const from = { store_scrap: 'scrap', store_metal: 'metal' }[j.from] || 'refined plastic';
-  return j.to ? 'Hauls ' + from + ' → ' + this.stationName(j.to) : 'Fetching ' + from;
+  if (!j || !j.stops.length) return null;
+  const st = j.stops;
+  if (st.length === 2 && st[0].action === 'assemble' && st[1].action === 'deliver') return 'Runs the ' + this.stationName(st[0].station);
+  const parts = st.map(x => this.stopLabel(x));
+  return (st.length < 2 ? 'Next stop? ' : '') + parts.join(' → ');
+}
+
+stopLabel(stop) {
+  switch (stop.action) {
+    case 'collect_scrap':   return 'scrap';
+    case 'collect_metal':   return 'metal';
+    case 'collect_refined': return 'smelter';
+    case 'deposit':         return 'load ' + this.stationName(stop.station).replace(' bench', '');
+    case 'drop_to_belt':    return 'belt';
+    case 'assemble':        return 'build';
+    case 'deliver':         return 'deliver';
+  }
+  return stop.action;
 }
 
 itemName(item) { return ITEM_NAMES[item] || 'item'; }
@@ -648,14 +672,17 @@ drawJobs() {
   g.clear();
   this.factory.getUnlockedWorkers().forEach(w => {
     const j = w.job;
-    if (!j || j.type !== 'haul' || !j.to) return;
-    const a = this.getStationPos(j.from), b = this.getStationPos(j.to);
+    if (!j || j.stops.length < 2) return;
     const col = WORKER_COLOURS[w.id];
-    const d = Phaser.Math.Distance.Between(a.x, a.y, b.x, b.y), n = Math.floor(d / 12);
-    for (let i = 1; i < n; i++) {
-      const t = i / n;
-      g.fillStyle(col, 0.55); g.fillCircle(a.x + (b.x - a.x) * t + w.id * 3, a.y + (b.y - a.y) * t + w.id * 3, 2.5);
-    }
+    const pts = j.stops.map(x => this.getStationPos(x.station, w.id));
+    pts.forEach((a, i) => {
+      const b = pts[(i + 1) % pts.length];
+      const d = Phaser.Math.Distance.Between(a.x, a.y, b.x, b.y), n = Math.floor(d / 12);
+      for (let k = 1; k < n; k++) {
+        const t = k / n;
+        g.fillStyle(col, 0.55); g.fillCircle(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, 2.5);
+      }
+    });
   });
 }
 
@@ -715,8 +742,12 @@ tryAssignWorker(workerId, stationKey) {
 
   const change = this.factory.setJobFromAssignment(stationKey, workerId);
   const w = this.factory.workers[workerId];
-  if (change === 'haul' && !this.tutorialActive) this.showMessage(WORKER_LABELS[workerId] + ' will keep this up: ' + this.jobLabel(w).toLowerCase(), 'good');
-  else if (change === 'operate' && !this.tutorialActive) this.showMessage(WORKER_LABELS[workerId] + ' now runs this bench — they’ll build whatever is brought to it', 'good');
+  const L = WORKER_LABELS[workerId];
+  if (!this.tutorialActive) {
+    if (change === 'loop' || change === 'extend') this.showMessage(L + ' remembers: ' + this.jobLabel(w), 'good');
+    else if (change === 'operate') this.showMessage(L + ' now runs this bench — they’ll build whatever is brought to it', 'good');
+    else if (change === 'full') this.showMessage(L + ' can only remember ' + this.factory.routeLength + ' stops — this starts a new route', 'info');
+  }
 
   this.walkWorkerTo(workerId, stationKey, () => {
     if (!this.factory.startWorkAt(stationKey, workerId)) {
@@ -1092,7 +1123,7 @@ updateTutorial() {
   const hintBottom = this.TOOL_Y - this.TOOL_H / 2 - 22;
   const w      = this.factory.workers[0];
   const tag    = guided ? null : 'TOWER ' + (stock + 1) + ' OF ' + need;
-  const step   = (n) => guided ? { step: n, total: 5 } : { tag, cardBottom: hintBottom, finger: false };
+  const step   = (n) => guided ? { step: n, total: 6 } : { tag, cardBottom: hintBottom, finger: false };
 
   // Find the first assembly bench
   let bench = null, benchKey = null;
@@ -1130,30 +1161,48 @@ updateTutorial() {
   }
 
   const busy = w.state === 'walking' || w.state === 'working' || w.state === 'moving';
-  const total = 5;
+  const total = 6;
   const stepN = (n) => guided ? { step: n, total } : { tag, cardBottom: hintBottom, finger: false };
 
-  // W1 has the job: explain it and let them work
-  if (w.job && w.job.type === 'haul' && w.job.to === benchKey) {
-    this.coach.show({ key: 'job', mode: 'hint', tag: guided ? 'STEP 5 / 5' : tag, cardBottom: hintBottom,
-      title: 'W1 remembers the job',
-      body: 'They\u2019ll keep fetching scrap, building each Gunner and delivering it. Watch them go.' });
+  const st = (w.job && w.job.stops) || [];
+  const isHaul = st.length === 2 && st[0].action === 'collect_scrap' && st[1].station === benchKey;
+  const runsBench = st.length >= 2 && st.some(x => x.action === 'assemble' && x.station === benchKey) && st.some(x => x.action === 'deliver');
+  const holdingTower = w.inventory.includes('towerComponent');
+  const holdingScrap = w.inventory.includes('plasticScrap');
+
+  // W1 now runs the bench (build → deliver): let them work
+  if (runsBench) {
+    this.coach.show({ key: 'runs', mode: 'hint', tag: tag || 'NICE', cardBottom: hintBottom,
+      title: 'W1 runs the bench now',
+      body: 'They build whatever is loaded and deliver it. Later, W2 can fetch scrap for them.' });
     return;
   }
-  if (w.inventory.includes('towerComponent') && !busy) {
+  if (holdingTower && !busy) {
     this.coach.show(Object.assign({ key: 'deliver', mode, target: { x: this.DEPOT_X, y: this.DEPOT_Y, w: this.DEPOT_W, h: this.DEPOT_H },
       title: 'Deliver the tower',
-      body: 'Finished towers go through the Depository into your Armoury. From there you deploy them in battle.' }, stepN(5)));
+      body: 'Tap the Depository. Towers go from there to your Armoury \u2014 and W1 will remember build \u2192 deliver, so they keep running the bench.' }, stepN(6)));
     return;
   }
-  if (w.inventory.includes('plasticScrap') && !busy) {
+  // Remembered A → B: back with more scrap, but the bench is still full
+  if (isHaul && bench.heldMaterial && holdingScrap && !busy) {
+    this.coach.show(Object.assign({ key: 'build', mode, target: benchRect(), title: 'Now build it',
+      body: 'W1 remembered the trip and fetched more scrap \u2014 but nobody is building. Tap the bench: W1 builds the Gunner and loads the new scrap.' }, stepN(5)));
+    return;
+  }
+  if (isHaul) {
+    this.coach.show({ key: 'haul', mode: 'hint', tag: guided ? 'STEP 4 / 6' : tag, cardBottom: hintBottom,
+      title: 'W1 remembers: scrap \u2192 bench',
+      body: 'Workers repeat the last two stops you give them. W1 will keep fetching scrap for the bench.' });
+    return;
+  }
+  if (holdingScrap && !busy) {
     this.coach.show(Object.assign({ key: 'deposit', mode, target: benchRect(), title: 'Bring it to the bench',
-      body: 'Tap the Gunner bench. W1 loads the scrap \u2014 and remembers the trip, so they\u2019ll keep doing it on their own.' }, stepN(4)));
+      body: 'Tap the Gunner bench to load the scrap.' }, stepN(4)));
     return;
   }
-  if (bench.heldMaterial && !w.inventory.length && !busy && !w.job) {
+  if (bench.heldMaterial && !w.inventory.length && !busy) {
     this.coach.show(Object.assign({ key: 'assemble', mode, target: benchRect(), title: 'Build the tower',
-      body: 'The bench is loaded. Tap it and W1 will put the Gunner together.' }, stepN(4)));
+      body: 'The bench is loaded. Tap it and W1 will put the Gunner together.' }, stepN(5)));
     return;
   }
   if (!busy && !w.inventory.length) {
@@ -1187,7 +1236,7 @@ finishTutorial() {
   const need = this.towersNeeded();
   UI.modal(this, {
     title: 'Ready for the first raid', icon: 'check', accent: UI.C.green,
-    body: 'You have ' + need + ' Gunners in the Armoury. W1 keeps building more while you\u2019re in the Factory \u2014 tap their status bar to stop them.\n\nHead to the Dock to defend the island.',
+    body: 'You have ' + need + ' Gunners in the Armoury. W1 keeps running the bench while you\u2019re here \u2014 keep it fed with scrap and it keeps building.\n\nHead to the Dock to defend the island.',
     buttons: [
       { label: 'STAY HERE', variant: 'secondary' },
       { label: 'TO THE DOCK', variant: 'primary', colour: UI.C.red, onTap: () => this.leave('DockScene') }
@@ -1274,6 +1323,10 @@ update(time, delta) {
   }
 
   this._renderTileItems();
+  if (this._workerMenu && this.workerMenuActive) {
+    const m = this._workerMenu;
+    if (this.workerMenuSig(m.key) !== m.sig) { m.dismiss(); this.openWorkerMenu(m.key); }
+  }
   this.updateTutorial();
 }
 

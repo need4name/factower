@@ -37,6 +37,7 @@ this.waveActive        = false;
 this.gameOver          = false;
 this.placedTowers      = [];
 this.activeEnemies     = [];
+this.projectiles       = [];   // shots in flight (see updateProjectiles)
 this.selectedTowerType = null;
 this.killStats         = {};
 this.towersUsed        = {};
@@ -54,6 +55,7 @@ this._pausedTweens     = null;
 this._uiToast          = null;
 this.towerTapped       = false;
 this.tutorial         = null;
+this._upTut           = null;   // one-time 'how to upgrade' lesson (see updateUpgradeTutorial)
 this.coach             = null;
 this.simNow            = 0;      // tower fire-rate clock (scaled by speed, stops when paused)
 this.speed             = 1;
@@ -410,7 +412,10 @@ if (this.loadout[type] === 0) this.selectedTowerType = null;
 this.refreshTowerButtons();
 this.towersUsed[type] = (this.towersUsed[type] || 0) + 1;
 
-const tower = { type, x, y, data: towerData, lastFired: -1e9, upgradeTier: 0, towerCircle, towerLabel, tierBadge: null, hitZone, powerMult: mult };
+// A barrel that turns to face whatever the tower is shooting at
+const barrel = type === 'barricade' ? null
+  : this.add.rectangle(x, y, type === 'bomber' ? 17 : 19, type === 'bomber' ? 8 : 5, 0xeef2f8, 0.95).setOrigin(0, 0.5).setDepth(4.5).setRotation(-Math.PI / 2);
+const tower = { type, x, y, data: towerData, lastFired: -1e9, upgradeTier: 0, towerCircle, towerLabel, tierBadge: null, hitZone, powerMult: mult, barrel };
 this.placedTowers.push(tower);
 
 hitZone.on('pointerup', () => {
@@ -434,6 +439,58 @@ this.tutorialTowerPlaced();
 }
 
 // ── Upgrade panel ─────────────────────────────────────────────────────
+upgradesUnlocked() {
+const completed = (this.saveData && this.saveData.completedLevels && this.saveData.completedLevels.storyline1) || [];
+return completed.includes(3) || this.isEndless || this.storylineId !== 1 || (BUILD.test && BUILD.allUpgrades);
+}
+
+// ── Upgrade lesson ────────────────────────────────────────────────────
+// The first time upgrades are available and the player can afford one, the
+// battle pauses and the Coach walks them through it: tap a tower → spend
+// Parts → see what changed.
+updateUpgradeTutorial() {
+if (this.gameOver || this.tutorial || !this.upgradesUnlocked()) return;
+const tuts = (this.saveData && this.saveData.tutorials) || {};
+if (tuts.upgrades) return;
+this.coach = this.coach || new Coach(this, { depth: 300 });
+const ut = this._upTut || (this._upTut = { step: 'wait' });
+if (ut.step === 'wait') {
+  if (this._modalOpen || this.upgradePanel) return;
+  const tower = this.placedTowers.find(t => {
+    const next = TOWER_DATA[t.type].upgrades.pathA.tiers[t.upgradeTier];
+    return next && this.parts >= next.cost;
+  });
+  if (!tower) return;
+  ut.step = 'tap'; ut.tower = tower;
+  this.setPaused(true);
+  this.coach.show({ key: 'up-tap', tag: 'NEW: UPGRADES', target: { x: tower.x, y: tower.y, w: 44, h: 44 }, pad: 6, dim: 0.6,
+    title: 'Patch up a tower',
+    body: 'You\u2019ve salvaged ' + this.parts + ' Parts from wrecked raiders. Bolt them onto a tower to make it stronger. Tap this ' + this.titleCase(tower.data.name) + '.' });
+} else if (ut.step === 'tap' && this.upgradePanel && this._upgradeBtn && this._upgradeBtn.isEnabled()) {
+  // Any tower they can afford to upgrade will do
+  ut.step = 'buy'; ut.tower = this.activeTower;
+  const b = this._upgradeBtn;
+  this.coach.show({ key: 'up-buy', target: { x: b.x, y: b.y, w: b.bw, h: b.bh }, placement: 'above',
+    title: 'Spend the Parts',
+    body: 'Each tower takes 3 upgrades, one after another. The panel shows what the next one does and what it costs.' });
+} else if (ut.step === 'buy' && ut.tower.upgradeTier > 0) {
+  ut.step = 'done';
+  this.dismissUpgradePanel();
+  this.coach.show({ key: 'up-done', tag: 'UPGRADED',
+    title: 'Stronger already',
+    body: 'Upgrades only last for this battle. Keep salvaging Parts and spend them on the towers doing the most work.',
+    button: { label: 'BACK TO THE FIGHT', onTap: () => {
+      this.coach.hide();
+      this.setPaused(false);
+      if (this.saveData) { if (!this.saveData.tutorials) this.saveData.tutorials = {}; this.saveData.tutorials.upgrades = true; }
+      SaveManager.update(s => { if (!s.tutorials) s.tutorials = {}; s.tutorials.upgrades = true; });
+    } } });
+} else if (ut.step === 'buy' && !this.upgradePanel) {
+  // Closed the panel without buying: point back at the tower
+  ut.step = 'wait'; this.coach.hide(); this.setPaused(false);
+}
+}
+
 showUpgradePanel(tower) {
 this.dismissUpgradePanel();
 this.activeTower = tower;
@@ -457,9 +514,9 @@ let info = 'Path: ' + this.titleCase(path.name);
 if (tower.powerMult && Math.abs(tower.powerMult - 1) > 0.04) info += '   ·   power zone ' + (tower.powerMult > 1 ? '+' : '') + Math.round((tower.powerMult - 1) * 100) + '%';
 items.push(UI.text(this, lx, top + 44, info, 'small', { size: 12, origin: [0, 0.5], depth: D + 1 }));
 
-const completed = (this.saveData && this.saveData.completedLevels && this.saveData.completedLevels.storyline1) || [];
-const unlocked  = completed.includes(3) || this.isEndless || this.storylineId !== 1 || (BUILD.test && BUILD.allUpgrades);
+const unlocked  = this.upgradesUnlocked();
 const by = top + h - 34;
+this._upgradeBtn = null;
 if (!unlocked) {
   items.push(UI.text(this, lx, top + 76, 'Upgrades unlock after Level 3. Then you can spend PARTS — earned from every kill — to power up towers mid-battle.', 'small',
     { size: 12, wrap: width - 64, depth: D + 1 }));
@@ -467,11 +524,12 @@ if (!unlocked) {
   const next = path.tiers[tier];
   const afford = this.parts >= next.cost;
   items.push(UI.text(this, lx, top + 72, 'Next: ' + next.label, 'bodyB', { size: 14, origin: [0, 0.5], depth: D + 1, wrap: width - 64 }));
-  items.push(UI.button(this, width / 2, by, width - 64, 46, {
+  this._upgradeBtn = UI.button(this, width / 2, by, width - 64, 46, {
     label: afford ? 'UPGRADE · ' + next.cost + ' PARTS' : 'NEED ' + next.cost + ' PARTS (HAVE ' + this.parts + ')',
     variant: 'primary', colour: UI.C.amber, disabled: !afford, depth: D + 2, size: afford ? 15 : 13,
     onTap: () => this.applyUpgrade(tower)
-  }));
+  });
+  items.push(this._upgradeBtn);
 } else {
   items.push(UI.text(this, width / 2, top + 84, 'Fully upgraded', 'heading', { size: 16, origin: 0.5, depth: D + 1, color: UI.hex(colour) }));
 }
@@ -821,26 +879,67 @@ if (inRange.length === 0) return;
 const target = inRange.reduce((best, e) => e.pathProgress > best.pathProgress ? e : best, inRange[0]);
 tower.lastFired = this.simNow;
 
-const bullet = this.add.circle(tower.x, tower.y, tower.type === 'bomber' ? 7 : 5, tower.data.colour).setDepth(7);
-this.tweens.add({
-  targets: bullet, x: target.sprite.x, y: target.sprite.y, duration: 160,
-  onComplete: () => {
-    bullet.destroy();
-    if (!target.alive) return;
-    if (tower.type === 'bomber') {
-      const splashR = tower.data.splashRadius || 80;
-      this.activeEnemies.filter(e => {
-        if (!e.alive || !e.sprite || !e.sprite.active) return false;
-        return Phaser.Math.Distance.Between(target.sprite.x, target.sprite.y, e.sprite.x, e.sprite.y) <= splashR;
-      }).forEach(e => this.dealDamage(e, tower.data.damage, 'bomber'));
-      const flash = this.add.circle(target.sprite.x, target.sprite.y, splashR, 0xe8a020, 0.28).setDepth(6);
-      this.tweens.add({ targets: flash, alpha: 0, scaleX: 1.5, scaleY: 1.5, duration: 280, onComplete: () => flash.destroy() });
-    } else {
-      this.dealDamage(target, tower.data.damage, tower.type);
-    }
-  }
-});
+// Aim the barrel and kick it back a little
+const ang = Phaser.Math.Angle.Between(tower.x, tower.y, target.sprite.x, target.sprite.y);
+if (tower.barrel) {
+  tower.barrel.setRotation(ang);
+  const bx = tower.x - Math.cos(ang) * 3, by = tower.y - Math.sin(ang) * 3;
+  this.tweens.add({ targets: tower.barrel, x: { from: bx, to: tower.x }, y: { from: by, to: tower.y }, duration: 90 });
+}
+// Shots home in on the raider's current position, so they never land
+// behind a moving target. If it dies mid-flight the shot picks the
+// nearest other raider, or fizzles.
+const mx = tower.x + Math.cos(ang) * 16, my = tower.y + Math.sin(ang) * 16;
+const bullet = this.add.circle(mx, my, tower.type === 'bomber' ? 6 : 3.5, tower.type === 'bomber' ? tower.data.colour : 0xfff2c4).setDepth(7);
+this.projectiles.push({ bullet, target, tower, speed: tower.type === 'bomber' ? 340 : 700 });
+}
 
+updateProjectiles(dt) {
+if (!this.projectiles.length) return;
+this.projectiles = this.projectiles.filter(p => {
+  if (!p.bullet.active) return false;
+  if (!p.target.alive || !p.target.sprite || !p.target.sprite.active) {
+    const near = this.activeEnemies.filter(e => e.alive && e.sprite && e.sprite.active)
+      .map(e => ({ e, d: Phaser.Math.Distance.Between(p.bullet.x, p.bullet.y, e.sprite.x, e.sprite.y) }))
+      .filter(o => o.d < 90).sort((a, b) => a.d - b.d)[0];
+    if (!near) { this.fizzle(p.bullet); return false; }
+    p.target = near.e;
+  }
+  const tx = p.target.sprite.x, ty = p.target.sprite.y;
+  const d = Phaser.Math.Distance.Between(p.bullet.x, p.bullet.y, tx, ty);
+  const step = p.speed * dt / 1000;
+  if (d <= step + (p.target.data.size || 8) * 0.5) {
+    p.bullet.destroy();
+    this.projectileHit(p.tower, p.target);
+    return false;
+  }
+  p.bullet.x += (tx - p.bullet.x) / d * step;
+  p.bullet.y += (ty - p.bullet.y) / d * step;
+  return true;
+});
+}
+
+fizzle(bullet) {
+this.tweens.add({ targets: bullet, alpha: 0, scale: 0.3, duration: 120, onComplete: () => bullet.destroy() });
+}
+
+projectileHit(tower, target) {
+if (!target.alive) return;
+const tx = target.sprite.x, ty = target.sprite.y;
+if (tower.type === 'bomber') {
+  const splashR = tower.data.splashRadius || 80;
+  this.activeEnemies.filter(e => {
+    if (!e.alive || !e.sprite || !e.sprite.active) return false;
+    return Phaser.Math.Distance.Between(tx, ty, e.sprite.x, e.sprite.y) <= splashR;
+  }).forEach(e => this.dealDamage(e, tower.data.damage, 'bomber'));
+  const flash = this.add.circle(tx, ty, splashR, 0xe8a020, 0.28).setDepth(6);
+  this.tweens.add({ targets: flash, alpha: 0, scaleX: 1.5, scaleY: 1.5, duration: 280, onComplete: () => flash.destroy() });
+} else {
+  // Small spark where the round lands
+  const spark = this.add.circle(tx, ty, 5, 0xfff2c4, 0.9).setDepth(8);
+  this.tweens.add({ targets: spark, alpha: 0, scale: 2, duration: 140, onComplete: () => spark.destroy() });
+  this.dealDamage(target, tower.data.damage, tower.type);
+}
 }
 
 dealDamage(enemy, damage, sourceType) {
@@ -1118,6 +1217,7 @@ if (victory) {
   if (m.plasticScrap)  got.push('+' + m.plasticScrap + ' Plastic Scrap');
   if (m.salvagedMetal) got.push('+' + m.salvagedMetal + ' Salvaged Metal');
   got.push('+' + this.parts + ' Parts');
+  if (this.boltsEarned) got.push('+' + this.boltsEarned + ' Bolt' + (this.boltsEarned === 1 ? '' : 's') + ' for the Uplink');
   card('REWARDS', got.join('\n') + '\nTowers placed this battle are used up.', UI.C.green);
 
   const unlocks = [];
@@ -1197,6 +1297,10 @@ this.firstClear = !save.completedLevels[key].includes(this.levelId);
 if (this.firstClear) save.completedLevels[key].push(this.levelId);
 
 save.parts = (save.parts || 0) + this.parts;
+// Bolts for winning — the main way to afford Uplink upgrades. A first clear
+// pays more; replays and endless runs pay a little.
+this.boltsEarned = (this.firstClear && !this.isEndless) ? 2 + this.levelId : 1;
+save.bolts = (save.bolts || 0) + this.boltsEarned;
 save.level = Math.max(save.level || 1, this.levelId + 1);
 
 if (save.stockpile) {
@@ -1251,7 +1355,10 @@ SaveManager.write(save);
 }
 
 update(time, delta) {
-if (!this.paused && !this.gameOver) this.simNow += delta * (this.speed || 1);
+if (!this.paused && !this.gameOver) {
+  this.simNow += delta * (this.speed || 1);
+  this.updateProjectiles(delta * (this.speed || 1));
+}
 this._slowTick = ((this._slowTick || 0) + 1);
 
 this.activeEnemies.forEach(enemy => {
@@ -1274,6 +1381,7 @@ this.activeEnemies.forEach(enemy => {
 });
 
 this.updateTutorial();
+this.updateUpgradeTutorial();
 }
 
 }

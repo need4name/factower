@@ -125,6 +125,9 @@ class Factory {
     this.materials = { plasticScrap: 0, refinedPlastic: 0, salvagedMetal: 0 };
     // Last item a worker put down to take a new job (1 slot)
     this.lostFound        = null;
+    // How many stops a worker can remember (2 = A → B; Uplink adds more)
+    this.routeLength      = 2;
+    this.clock            = 0;      // ms of simulated time (for route waits)
     // Salvaged Metal (and its store) appears later in the story
     this.metalUnlocked    = true;
     this.tutorialStep     = 0;
@@ -144,11 +147,27 @@ class Factory {
       targetStation: null,   // station the worker is walking to (claims it)
       _producedTowerType: null,
       // ── Jobs (see jobStep) ─────────────────────────────────────────
-      job:        null,      // { type: 'haul', from, to } | { type: 'operate', at }
+      job:        null,      // { type: 'route', stops: [{ station, action }], pos }
       at:         null,      // station the worker is standing at
       dest:       null,      // station they're walking to, just to wait there
       waitingFor: null       // why they're waiting (station key or 'destination')
     };
+  }
+
+  // Older saves stored haul/operate jobs or M5 learned routes; all become routes
+  migrateJob(saved) {
+    const j = saved && saved.job;
+    if (j && j.type === 'route' && Array.isArray(j.stops)) return { type: 'route', stops: j.stops.map(x => ({ station: x.station, action: x.action })), pos: j.pos || 0 };
+    const collectFor = k => k === 'store_metal' ? 'collect_metal' : k === 'store_scrap' ? 'collect_scrap' : 'collect_refined';
+    const dropFor = k => { const m = k && k.includes(',') ? this.getMachineAt(...k.split(',').map(Number)) : null; return m && m.type === 'conveyor' ? 'drop_to_belt' : 'deposit'; };
+    let from = null, to = null;
+    if (j && j.type === 'haul') { from = j.from; to = j.to; }
+    else if (j && j.type === 'operate') return { type: 'route', stops: [{ station: j.at, action: 'assemble' }, { station: 'depository', action: 'deliver' }], pos: 0 };
+    else if (saved && saved.looping && Array.isArray(saved.route) && saved.route.length >= 2) { from = saved.route[0]; to = saved.route[1]; }
+    if (!from) return null;
+    const stops = [{ station: from, action: collectFor(from) }];
+    if (to) stops.push({ station: to, action: dropFor(to) });
+    return { type: 'route', stops, pos: 0 };
   }
 
   // ── Persistence ────────────────────────────────────────────────────────────
@@ -201,11 +220,7 @@ class Factory {
         if (!w || !saved) return;
         if (Array.isArray(saved.inventory)) w.inventory = saved.inventory.slice();
         w._producedTowerType = saved.producedTowerType || null;
-        if (saved.job && (saved.job.type === 'haul' || saved.job.type === 'operate')) w.job = Object.assign({}, saved.job);
-        else if (saved.looping && Array.isArray(saved.route) && saved.route.length >= 2) {
-          // Pre-jobs saves: a learned route becomes a haul from its first stop to its second
-          w.job = { type: 'haul', from: saved.route[0], to: saved.route[1] };
-        }
+        w.job = this.migrateJob(saved);
       });
     }
     this.lostFound = f.lostFound || null;
@@ -246,7 +261,7 @@ class Factory {
       workers:          this.workers.map(w => ({
         inventory:         w.inventory.slice(),
         producedTowerType: w._producedTowerType,
-        job:               w.job ? Object.assign({}, w.job) : null
+        job:               w.job ? { type: 'route', stops: w.job.stops.map(x => ({ station: x.station, action: x.action })), pos: w.job.pos } : null
       })),
       lostFound:        this.lostFound,
       factoryVersion:   2,
@@ -303,8 +318,7 @@ class Factory {
     const key = row + ',' + col;
     // A job through a removed machine can't be done any more
     this.workers.forEach(w => {
-      const j = w.job;
-      if (j && (j.from === key || j.to === key || j.at === key)) this.stopJob(w.id);
+      if (w.job && w.job.stops.some(s => s.station === key)) this.stopJob(w.id);
     });
     this.workers.forEach(w => {
       if (w.station === key && w.state !== 'walking') {
@@ -517,15 +531,16 @@ class Factory {
     return true;
   }
 
-  // ── Jobs ───────────────────────────────────────────────────────────────────
-  // Each worker remembers ONE job — the last thing you told them to do:
-  //   haul    { from, to }  — fetch from a store (or smelter) and bring it to
-  //                           a bench / smelter / belt, again and again. With
-  //                           nobody posted at that bench they also build the
-  //                           tower and deliver it, so one worker can keep a
-  //                           bench running alone.
-  //   operate { at }        — stay at a bench, build whatever is loaded into
-  //                           it, take each tower to the Depository, come back.
+  // ── Routes ─────────────────────────────────────────────────────────────────
+  // Each worker remembers ONE route: the stops you send them to in a row,
+  // each with the job they did there. Two stops is enough to loop, so
+  // "fetch scrap → load the bench" repeats on its own. Workers start out
+  // remembering 2 stops (A → B); Uplink upgrades let them remember more
+  // (A → B → C → D: fetch, load, build, deliver).
+  //   job = { type: 'route', stops: [{ station, action }], pos }
+  // pos is the stop they're doing now / will do next.
+  // Ordering a worker onto an empty bench posts them there: the route
+  // "build at the bench → deliver", i.e. they run that bench.
 
   stationExists(key) {
     if (key === 'store_scrap' || key === 'depository' || key === 'lostfound') return true;
@@ -534,37 +549,56 @@ class Factory {
     return !!this.getMachineAt(r, c);
   }
 
-  isBenchKey(key) {
-    if (!key || !key.includes(',')) return false;
-    const [r, c] = key.split(',').map(Number);
-    const m = this.getMachineAt(r, c);
-    return !!m && this.isAssemblyType(m.type);
+  isSourceAction(a) { return a === 'collect_scrap' || a === 'collect_metal' || a === 'collect_refined'; }
+
+  // The stop-action a worker action counts as (a swap-build is still a build)
+  stopAction(a) { return a === 'assemble_swap' ? 'assemble' : a; }
+
+  // Can the worker do this stop with what they're carrying right now?
+  meetsStop(w, stop) {
+    const inv = w.inventory, item = inv[0];
+    switch (stop.action) {
+      case 'collect_scrap': case 'collect_metal': case 'collect_refined': return inv.length === 0;
+      case 'deliver':      return item === 'towerComponent';
+      case 'drop_to_belt': return inv.length > 0;
+      case 'assemble': {
+        if (!inv.length) return true;
+        const m = this.getMachineAt(...stop.station.split(',').map(Number));
+        return !!m && this.isAssemblyType(m.type) && inv.length === 1 && item === MACHINE_TYPES[m.type].primaryInput;
+      }
+      case 'deposit': {
+        const m = this.getMachineAt(...stop.station.split(',').map(Number));
+        return !!m && inv.includes(this.machineInput(m));
+      }
+    }
+    return false;
   }
 
-  hasOperator(key, exceptId) {
-    return this.workers.some(o => o.unlocked && o.id !== exceptId && o.job && o.job.type === 'operate' && o.job.at === key);
-  }
+  allowedFor(stopAction) { return stopAction === 'assemble' ? ['assemble', 'assemble_swap'] : [stopAction]; }
 
-  // Updates the worker's job from a hand-given order. Returns what changed:
-  // 'haul-start' | 'haul' | 'operate' | null.
+  // Updates the worker's route from a hand-given order. Returns what changed:
+  // 'start' (first stop of a new route) | 'loop' (now repeats) | 'extend' |
+  // 'operate' | 'full' (route was full, so this starts a new one) | null.
   setJobFromAssignment(stationKey, workerId) {
     const w = this.workers[workerId];
     if (!w) return null;
     const a = this.getWorkerAction(stationKey, workerId);
-    if (a === 'collect_scrap' || a === 'collect_metal' || a === 'collect_refined') {
-      w.job = { type: 'haul', from: stationKey, to: null };
-      return 'haul-start';
-    }
-    if (a === 'collect_lost') { w.job = null; return null; }   // one-off pick-up
-    if (a === 'deposit' || a === 'drop_to_belt') {
-      if (w.job && w.job.type === 'haul' && w.job.to !== stationKey) { w.job.to = stationKey; return 'haul'; }
-      return null;
-    }
-    if (a === 'assemble' || a === 'post' || a === 'assemble_swap') {
-      w.job = { type: 'operate', at: stationKey };
+    if (!a) return null;
+    if (a === 'collect_lost' || /^return_/.test(a)) { w.job = null; return null; }   // one-offs
+    if (a === 'post') {
+      w.job = { type: 'route', stops: [{ station: stationKey, action: 'assemble' }, { station: 'depository', action: 'deliver' }], pos: 0 };
       return 'operate';
     }
-    return null;
+    const stop = { station: stationKey, action: this.stopAction(a) };
+    const j = w.job;
+    const full = j && j.stops.length >= this.routeLength;
+    if (this.isSourceAction(stop.action) || !j || full) {
+      w.job = { type: 'route', stops: [stop], pos: 0 };
+      return full && !this.isSourceAction(stop.action) ? 'full' : 'start';
+    }
+    j.stops.push(stop);
+    j.pos = j.stops.length - 1;
+    return j.stops.length === 2 ? 'loop' : 'extend';
   }
 
   stopJob(workerId) {
@@ -574,48 +608,68 @@ class Factory {
     w.waitingFor = null;
   }
 
-  // What a free worker with a job should do next:
+  // Finishing a stop moves the route on to the next one
+  advanceRoute(w, station, action) {
+    const j = w.job;
+    if (!j || !j.stops.length) return;
+    const cur = j.stops[j.pos];
+    if (cur && cur.station === station && cur.action === this.stopAction(action)) j.pos = (j.pos + 1) % j.stops.length;
+  }
+
+  // What a free worker with a route should do next:
   //   { station, act: true }  — walk there and work
   //   { station, act: false } — walk there and wait
-  //   { stopped: true }       — job broke (a machine on it was removed)
+  //   { stopped: true }       — route broke (a machine on it was removed)
   //   null                    — wait where they are (waitingFor says why)
   jobStep(workerId) {
     const w = this.workers[workerId];
     if (!w || !w.unlocked || !w.job) return null;
     if (w.state === 'walking' || w.state === 'working' || w.state === 'moving') return null;
     const j = w.job;
-    const keys = j.type === 'haul' ? [j.from, j.to] : [j.at];
-    if (keys.some(k => k && !this.stationExists(k))) { this.stopJob(workerId); return { stopped: true }; }
-
+    if (j.stops.some(s => !this.stationExists(s.station))) { this.stopJob(workerId); return { stopped: true }; }
+    if (j.stops.length < 2) {
+      w.waitingFor = w.inventory.length ? 'destination' : null;
+      return null;
+    }
     const tryAct = (station, allowed) => {
       const a = this.getWorkerAction(station, workerId);
-      if (a && allowed.includes(a) && this.canWorkerStartAt(station, workerId)) { w.waitingFor = null; return { station, act: true }; }
+      if (a && allowed.includes(a) && this.canWorkerStartAt(station, workerId)) { w.waitingFor = null; w._waitKey = null; return { station, act: true }; }
       return null;
     };
-    const moveOrWait = (station, reason) => {
+    const moveOrWait = (station) => {
       if (w.at !== station) return { station, act: false };
-      w.waitingFor = reason || station;
+      if (w._waitKey !== station) { w._waitKey = station; w._waitSince = this.clock; }
+      w.waitingFor = station;
       return null;
     };
-    const holding = w.inventory[0];
-    if (holding === 'towerComponent') return tryAct('depository', ['deliver']) || moveOrWait('depository');
-
-    if (j.type === 'operate') {
-      return tryAct(j.at, holding ? ['assemble_swap'] : ['assemble']) || moveOrWait(j.at);
+    // A finished tower always goes to the Depository, on the route or not
+    if (w.inventory[0] === 'towerComponent' && !j.stops.some(s => s.action === 'deliver')) {
+      return tryAct('depository', ['deliver']) || moveOrWait('depository');
     }
-
-    // haul
-    const hasOp = j.to && this.hasOperator(j.to, workerId);
-    if (holding) {
-      if (!j.to) { w.waitingFor = 'destination'; return null; }
-      const allowed = hasOp ? ['deposit', 'drop_to_belt'] : ['deposit', 'drop_to_belt', 'assemble_swap'];
-      return tryAct(j.to, allowed) || moveOrWait(j.to);
+    const n = j.stops.length;
+    for (let k = 0; k < n; k++) {
+      const idx = (j.pos + k) % n, st = j.stops[idx];
+      if (!this.meetsStop(w, st)) continue;          // can't do this one with what they hold — skip it
+      j.pos = idx;
+      const go = tryAct(st.station, this.allowedFor(st.action));
+      if (go) return go;
+      // Not ready yet (store empty, bench busy). Wait — but empty-handed
+      // workers who've waited a few seconds move on to a stop they can do.
+      if (w.at === st.station && w._waitKey === st.station && this.clock - w._waitSince > 4000 && !w.inventory.length) {
+        for (let q = 1; q < n; q++) {
+          const alt = j.stops[(idx + q) % n];
+          if (alt.station === st.station || !this.meetsStop(w, alt)) continue;
+          const a = this.getWorkerAction(alt.station, workerId);
+          if (a && this.allowedFor(alt.action).includes(a) && this.canWorkerStartAt(alt.station, workerId)) {
+            j.pos = (idx + q) % n; w._waitKey = null;
+            return { station: alt.station, act: true };
+          }
+        }
+      }
+      return moveOrWait(st.station);
     }
-    if (j.to && !hasOp && this.isBenchKey(j.to)) {
-      const built = tryAct(j.to, ['assemble']);
-      if (built) return built;
-    }
-    return tryAct(j.from, ['collect_scrap', 'collect_metal', 'collect_refined']) || moveOrWait(j.from);
+    w.waitingFor = 'stuck';
+    return null;
   }
 
   // ── Lost & Found ───────────────────────────────────────────────────────────
@@ -835,6 +889,7 @@ class Factory {
       feed:       fx.getStoreFeedSpeed(),
       auto:       fx.getAutoSpeed()
     };
+    this.routeLength = 2 + (fx.getRouteBonus ? fx.getRouteBonus() : 0);
     const g = fx.getFactoryGrid();
     this.setSize(g.rows, g.cols);
   }
@@ -901,6 +956,7 @@ class Factory {
   }
   update(delta, opts) {
     const completed = [];
+    this.clock += delta;
     const runWorkers = !opts || opts.workers !== false;
 
     this._feedAccumulator += delta;
@@ -959,7 +1015,11 @@ class Factory {
   completeWorkAt(station, workerId) {
     const w = this.workers[workerId];
     if (!w) return;
-    const a = w.stationAction;
+    this._complete(station, w, w.stationAction);
+    this.advanceRoute(w, station, w.stationAction);
+  }
+
+  _complete(station, w, a) {
 
     const RETURNS = { return_scrap: 'plasticScrap', return_refined: 'refinedPlastic', return_metal: 'salvagedMetal' };
     if (RETURNS[a]) {

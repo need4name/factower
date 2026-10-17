@@ -50,7 +50,8 @@ class SkillTreeEffects {
       storageCapacity:        1.00,   // multiplier on storage drum capacity
       automationLevel:        0,      // 0=frozen, 1=partial, 2=full
       beltSpeed:              1.00,   // multiplier on belt tick interval (lower = faster)
-      workerTaskSpeed:        1.00,   // multiplier on worker task durations at stores/depot/belts
+      workerTaskSpeed:        1.00,
+      routeBonus:             0,      // extra stops a worker can remember (base 2)   // multiplier on worker task durations at stores/depot/belts
       storeFeedSpeed:         1.00,   // multiplier on store → belt feed interval
       autoSpeed:              1.00,   // multiplier on self-running machine durations
 
@@ -150,6 +151,7 @@ class SkillTreeEffects {
       case 'automation_level':        s.automationLevel = Math.max(s.automationLevel, m.value); break;
       case 'belt_speed':              s.beltSpeed *= m.value; break;
       case 'worker_task_speed':       s.workerTaskSpeed *= m.value; break;
+      case 'worker_route_length':     s.routeBonus += m.value; break;
       case 'store_feed_speed':        s.storeFeedSpeed *= m.value; break;
       case 'auto_speed':              s.autoSpeed *= m.value; break;
 
@@ -282,6 +284,7 @@ class SkillTreeEffects {
   getAutomationLevel()        { return this.state.automationLevel; }
   getBeltSpeed()              { return this.state.beltSpeed; }
   getWorkerTaskSpeed()        { return this.state.workerTaskSpeed; }
+  getRouteBonus()             { return this.state.routeBonus; }
   getStoreFeedSpeed()         { return this.state.storeFeedSpeed; }
   getAutoSpeed()              { return this.state.autoSpeed; }
   isAutomationUnlocked()      { return this.state.automationLevel >= 1; }
@@ -346,7 +349,7 @@ class SkillTreeEffects {
 SkillTreeEffects.IMPLEMENTED = new Set([
   // Factory branch (M7)
   'machine_speed', 'machine_speed_smelter', 'machine_speed_assembly', 'worker_speed',
-  'belt_speed', 'worker_task_speed', 'store_feed_speed', 'auto_speed', 'automation_level',
+  'belt_speed', 'worker_task_speed', 'worker_route_length', 'store_feed_speed', 'auto_speed', 'automation_level',
   // Base branch: grid + defence (M7)
   'factory_grid', 'base_hp_multiplier', 'base_damage_reduction', 'fatal_save',
   // Gambling branch (M8)

@@ -38,6 +38,9 @@ this.gameOver          = false;
 this.placedTowers      = [];
 this.activeEnemies     = [];
 this.projectiles       = [];   // shots in flight (see updateProjectiles)
+this.pickups           = [];   // salvage lying on the road (see dropSalvage)
+this.rare              = { plate: 0, engine: 0 };   // rare salvage collected this battle
+this.pickupTapped      = false;
 this.selectedTowerType = null;
 this.killStats         = {};
 this.towersUsed        = {};
@@ -282,6 +285,7 @@ this.input.on('pointerup', (pointer) => {
   // These are scene-wide listeners, so the tutorial's dimmer can't swallow
   // them — ask the coach whether this point is blocked.
   if (this.coach && this.coach.blocks(pointer.x, pointer.y)) return;
+  if (this.pickupTapped) { this.pickupTapped = false; return; }   // that tap collected salvage
 
   if (this.upgradePanel) {
     if (!this.towerTapped) this.dismissUpgradePanel();
@@ -415,7 +419,7 @@ this.towersUsed[type] = (this.towersUsed[type] || 0) + 1;
 // A barrel that turns to face whatever the tower is shooting at
 const barrel = type === 'barricade' ? null
   : this.add.rectangle(x, y, type === 'bomber' ? 17 : 19, type === 'bomber' ? 8 : 5, 0xeef2f8, 0.95).setOrigin(0, 0.5).setDepth(4.5).setRotation(-Math.PI / 2);
-const tower = { type, x, y, data: towerData, lastFired: -1e9, upgradeTier: 0, towerCircle, towerLabel, tierBadge: null, hitZone, powerMult: mult, barrel };
+const tower = { type, x, y, data: towerData, lastFired: -1e9, upgradeTier: 0, mods: [0, 0, 0], towerCircle, towerLabel, tierBadge: null, hitZone, powerMult: mult, barrel };
 this.placedTowers.push(tower);
 
 hitZone.on('pointerup', () => {
@@ -457,8 +461,7 @@ const ut = this._upTut || (this._upTut = { step: 'wait' });
 if (ut.step === 'wait') {
   if (this._modalOpen || this.upgradePanel) return;
   const tower = this.placedTowers.find(t => {
-    const next = TOWER_DATA[t.type].upgrades.pathA.tiers[t.upgradeTier];
-    return next && this.parts >= next.cost;
+    return [0, 1, 2].some(i => this.canTakePath(t, i) && this.canAffordMod(this.nextMod(t, i)));
   });
   if (!tower) return;
   ut.step = 'tap'; ut.tower = tower;
@@ -472,7 +475,7 @@ if (ut.step === 'wait') {
   const b = this._upgradeBtn;
   this.coach.show({ key: 'up-buy', target: { x: b.x, y: b.y, w: b.bw, h: b.bh }, placement: 'above',
     title: 'Spend the Parts',
-    body: 'Each tower takes 3 upgrades, one after another. The panel shows what the next one does and what it costs.' });
+    body: 'Each tower has three mod paths and can use any two. Tier-3 mods also need a rare part from an elite wreck.' });
 } else if (ut.step === 'buy' && ut.tower.upgradeTier > 0) {
   ut.step = 'done';
   this.dismissUpgradePanel();
@@ -491,47 +494,61 @@ if (ut.step === 'wait') {
 }
 }
 
+// A tower can take mods from any two of its three paths
+modPathsUsed(tower) { return tower.mods.filter(t => t > 0).length; }
+canTakePath(tower, i) { return tower.mods[i] > 0 || this.modPathsUsed(tower) < 2; }
+nextMod(tower, i) { return TOWER_DATA[tower.type].mods[i].tiers[tower.mods[i]] || null; }
+canAffordMod(m) { return !!m && this.parts >= m.cost && (!m.rare || this.rare[m.rare] > 0); }
+
 showUpgradePanel(tower) {
 this.dismissUpgradePanel();
 this.activeTower = tower;
 const width = this.scale.width;
 const colour = tower.data.colour;
-const path = TOWER_DATA[tower.type].upgrades.pathA;
-const tier = tower.upgradeTier, maxTier = path.tiers.length;
+const paths = TOWER_DATA[tower.type].mods;
 const items = [];
 const D = 18;
 
 items.push(this.add.circle(tower.x, tower.y, tower.data.range, colour, 0.10).setDepth(3));
 items.push(this.add.circle(tower.x, tower.y, tower.data.range).setStrokeStyle(2, colour, 0.6).setDepth(3));
 
-const h = 150, cy = this.HP_STRIP_Y - 28 - h / 2, lx = 12 + 20;
+const unlocked = this.upgradesUnlocked();
+const rowH = 58, h = unlocked ? 64 + paths.length * rowH + 8 : 120;
+const cy = this.HP_STRIP_Y - 24 - h / 2, lx = 12 + 18;
 items.push(UI.panel(this, width / 2, cy, width - 24, h, { fill: UI.C.surface, stroke: colour, strokeAlpha: 0.7, radius: 16, depth: D }));
 const top = cy - h / 2;
-items.push(UI.text(this, lx, top + 22, this.titleCase(tower.data.name), 'heading', { size: 18, origin: [0, 0.5], depth: D + 1, color: UI.hex(colour) }));
-items.push(UI.text(this, width - 12 - 20, top + 22, tier === 0 ? 'BASE' : 'TIER ' + tier + ' / ' + maxTier, 'tag',
-  { size: 11, origin: [1, 0.5], depth: D + 1, color: tier > 0 ? UI.T.amber : UI.T.mute }));
-let info = 'Path: ' + this.titleCase(path.name);
-if (tower.powerMult && Math.abs(tower.powerMult - 1) > 0.04) info += '   ·   power zone ' + (tower.powerMult > 1 ? '+' : '') + Math.round((tower.powerMult - 1) * 100) + '%';
-items.push(UI.text(this, lx, top + 44, info, 'small', { size: 12, origin: [0, 0.5], depth: D + 1 }));
+items.push(UI.text(this, lx, top + 20, this.titleCase(tower.data.name), 'heading', { size: 17, origin: [0, 0.5], depth: D + 1, color: UI.hex(colour) }));
+const rareTxt = Object.keys(this.rare).filter(k => this.rare[k] > 0).map(k => this.rare[k] + ' ' + RARE_PARTS[k].name).join(' \u00b7 ');
+items.push(UI.text(this, width - 12 - 18, top + 20, this.parts + ' Parts' + (rareTxt ? ' \u00b7 ' + rareTxt : ''), 'small',
+  { size: 11, origin: [1, 0.5], depth: D + 1, color: UI.T.amber }));
+let info = 'Scavenger mods \u2014 pick any two paths';
+if (tower.powerMult && Math.abs(tower.powerMult - 1) > 0.04) info += '  \u00b7  power zone ' + (tower.powerMult > 1 ? '+' : '') + Math.round((tower.powerMult - 1) * 100) + '%';
+items.push(UI.text(this, lx, top + 40, info, 'small', { size: 11, origin: [0, 0.5], depth: D + 1 }));
 
-const unlocked  = this.upgradesUnlocked();
-const by = top + h - 34;
 this._upgradeBtn = null;
 if (!unlocked) {
-  items.push(UI.text(this, lx, top + 76, 'Upgrades unlock after Level 3. Then you can spend PARTS — earned from every kill — to power up towers mid-battle.', 'small',
+  items.push(UI.text(this, lx, top + 74, 'Mods unlock after Level 3. Then you can bolt salvaged Parts onto towers mid-battle.', 'small',
     { size: 12, wrap: width - 64, depth: D + 1 }));
-} else if (tier < maxTier) {
-  const next = path.tiers[tier];
-  const afford = this.parts >= next.cost;
-  items.push(UI.text(this, lx, top + 72, 'Next: ' + next.label, 'bodyB', { size: 14, origin: [0, 0.5], depth: D + 1, wrap: width - 64 }));
-  this._upgradeBtn = UI.button(this, width / 2, by, width - 64, 46, {
-    label: afford ? 'UPGRADE · ' + next.cost + ' PARTS' : 'NEED ' + next.cost + ' PARTS (HAVE ' + this.parts + ')',
-    variant: 'primary', colour: UI.C.amber, disabled: !afford, depth: D + 2, size: afford ? 15 : 13,
-    onTap: () => this.applyUpgrade(tower)
-  });
-  items.push(this._upgradeBtn);
 } else {
-  items.push(UI.text(this, width / 2, top + 84, 'Fully upgraded', 'heading', { size: 16, origin: 0.5, depth: D + 1, color: UI.hex(colour) }));
+  paths.forEach((path, i) => {
+    const ry = top + 64 + i * rowH + rowH / 2;
+    const tier = tower.mods[i], next = this.nextMod(tower, i);
+    const open = this.canTakePath(tower, i);
+    if (i > 0) items.push(this.add.rectangle(width / 2, ry - rowH / 2, width - 56, 1, UI.C.lineSoft).setDepth(D + 1));
+    items.push(UI.text(this, lx, ry - 11, path.name, 'tag', { size: 10.5, origin: [0, 0.5], depth: D + 1, color: open ? UI.T.dim : UI.T.faint }));
+    for (let k = 0; k < 3; k++) items.push(this.add.circle(lx + 104 + k * 11, ry - 11, 3.5, k < tier ? colour : UI.C.line).setDepth(D + 1));
+    const desc = !next ? 'Fully modded' : !open ? 'Two paths already in use' : next.name + ': ' + next.label + (next.rare ? '  (needs ' + RARE_PARTS[next.rare].name + ')' : '');
+    items.push(UI.text(this, lx, ry + 9, desc, 'small', { size: 11, origin: [0, 0.5], depth: D + 1, wrap: width - 150, color: open && next ? UI.T.text : UI.T.faint }));
+    if (next && open) {
+      const ok = this.canAffordMod(next);
+      const btn = UI.button(this, width - 12 - 16 - 44, ry, 88, 40, {
+        label: next.cost + ' P' + (next.rare ? ' +\u2605' : ''), variant: ok ? 'primary' : 'secondary', colour: UI.C.amber,
+        disabled: !ok, depth: D + 2, size: 13, onTap: () => this.applyUpgrade(tower, i)
+      });
+      items.push(btn);
+      if (ok && !this._upgradeBtn) this._upgradeBtn = btn;
+    }
+  });
 }
 // Panel swallows taps so they don't fall through to the map
 const shield = this.add.zone(width / 2, cy, width - 24, h).setInteractive().setDepth(D);
@@ -548,51 +565,58 @@ this.upgradePanel = null;
 this.activeTower = null;
 }
 
-applyUpgrade(tower) {
+applyUpgrade(tower, pathIdx) {
 if (!tower) return;
-const path = TOWER_DATA[tower.type].upgrades.pathA;
-if (tower.upgradeTier >= path.tiers.length) return;
-const upgrade = path.tiers[tower.upgradeTier];
-if (this.parts < upgrade.cost) return;
+const i = pathIdx || 0;
+const m = this.nextMod(tower, i);
+if (!m || !this.canTakePath(tower, i) || !this.canAffordMod(m)) return;
 
-this.parts -= upgrade.cost;
+this.parts -= m.cost;
+if (m.rare) this.rare[m.rare]--;
 this.partsText.setText('' + this.parts);
+tower.mods[i]++;
 tower.upgradeTier++;
 
-if (upgrade.fireRate     !== undefined) tower.data.fireRate     = upgrade.fireRate;
-if (upgrade.damageBonus  !== undefined) tower.data.damage      += upgrade.damageBonus;
-if (upgrade.rangeBonus   !== undefined) tower.data.range       += upgrade.rangeBonus;
-if (upgrade.splashRadius !== undefined) tower.data.splashRadius = upgrade.splashRadius;
-if (upgrade.slowAmount   !== undefined) tower.data.slowAmount   = upgrade.slowAmount;
+const d = tower.data;
+if (m.fireRate     !== undefined) d.fireRate     = m.fireRate;
+if (m.damageBonus  !== undefined) d.damage      += m.damageBonus;
+if (m.rangeBonus   !== undefined) d.range       += m.rangeBonus;
+if (m.splashRadius !== undefined) d.splashRadius = m.splashRadius;
+if (m.slowAmount   !== undefined) d.slowAmount   = m.slowAmount;
+if (m.pierce)      d.pierce      = (d.pierce || 0) + m.pierce;
+if (m.scatter)     d.scatter     = m.scatter;
+if (m.doubleShot)  d.doubleShot  = true;
+if (m.napalm)      d.napalm      = m.napalm;
+if (m.armourBonus) d.armourBonus = m.armourBonus;
 
-if (upgrade.burnDps) {
-  tower.data.burnDps = upgrade.burnDps;
-  const bt = this.time.addEvent({
-    delay: 500,
-    callback: () => {
-      if (!this.waveActive || this.gameOver) return;
-      this.activeEnemies.forEach(enemy => {
-        if (!enemy.alive || !enemy.sprite || !enemy.sprite.active) return;
-        if (Phaser.Math.Distance.Between(tower.x, tower.y, enemy.sprite.x, enemy.sprite.y) <= tower.data.range) {
-          this.dealDamage(enemy, upgrade.burnDps * 0.5, 'barricade');
-        }
-      });
-    },
-    loop: true
-  });
-  this.towerTimerEvents.push(bt);
+if (m.burnDps) {
+  d.burnDps = m.burnDps;
+  if (!tower.burnEvent) {
+    // Spike strip: damage everything in the field twice a second (ignores armour)
+    tower.burnEvent = this.time.addEvent({
+      delay: 500, loop: true,
+      callback: () => {
+        if (!this.waveActive || this.gameOver) return;
+        this.activeEnemies.forEach(enemy => {
+          if (!enemy.alive || !enemy.sprite || !enemy.sprite.active) return;
+          if (Phaser.Math.Distance.Between(tower.x, tower.y, enemy.sprite.x, enemy.sprite.y) <= d.range) {
+            this.dealDamage(enemy, d.burnDps * 0.5, 'barricade', { trueDamage: true });
+          }
+        });
+      }
+    });
+    this.towerTimerEvents.push(tower.burnEvent);
+  }
 }
 
 if (tower.tierBadge) tower.tierBadge.destroy();
-tower.tierBadge = this.add.text(tower.x + 12, tower.y - 18, 'T' + tower.upgradeTier, {
-  fontFamily: 'monospace', fontSize: '9px', color: '#ffffff', fontStyle: 'bold'
-}).setDepth(6);
+tower.tierBadge = UI.text(this, tower.x + 13, tower.y - 19, '+' + tower.upgradeTier, 'tag', { size: 10, color: UI.T.amber, depth: 6 });
 
-const flash = this.add.circle(tower.x, tower.y, 28, tower.data.colour, 0.45).setDepth(6);
+const flash = this.add.circle(tower.x, tower.y, 28, d.colour, 0.45).setDepth(6);
 this.tweens.add({ targets: flash, alpha: 0, scaleX: 2, scaleY: 2, duration: 380, onComplete: () => flash.destroy() });
+UI.toast(this, m.name + ' fitted', 'good', { y: this.PLAY_TOP + 22, duration: 1400 });
 
 this.showUpgradePanel(tower);
-
 }
 
 // ── Level 1 tutorial system (REQ 9) ──────────────────────────────────
@@ -892,6 +916,12 @@ if (tower.barrel) {
 const mx = tower.x + Math.cos(ang) * 16, my = tower.y + Math.sin(ang) * 16;
 const bullet = this.add.circle(mx, my, tower.type === 'bomber' ? 6 : 3.5, tower.type === 'bomber' ? tower.data.colour : 0xfff2c4).setDepth(7);
 this.projectiles.push({ bullet, target, tower, speed: tower.type === 'bomber' ? 340 : 700 });
+if (tower.data.doubleShot) {
+  // Double barrel: a second round at the next raider in range (or the same one)
+  const second = inRange.find(e => e !== target) || target;
+  const b2 = this.add.circle(mx, my, 3.5, 0xfff2c4).setDepth(7);
+  this.time.delayedCall(70, () => this.projectiles.push({ bullet: b2, target: second, tower, speed: 700 }));
+}
 }
 
 updateProjectiles(dt) {
@@ -925,25 +955,147 @@ this.tweens.add({ targets: bullet, alpha: 0, scale: 0.3, duration: 120, onComple
 
 projectileHit(tower, target) {
 if (!target.alive) return;
+const d = tower.data;
 const tx = target.sprite.x, ty = target.sprite.y;
+const hitOpts = { pierce: d.pierce || 0 };
+const dmgFor = (e) => d.damage + ((d.armourBonus && e.data.armour) ? d.armourBonus : 0);
 if (tower.type === 'bomber') {
-  const splashR = tower.data.splashRadius || 80;
+  const splashR = d.splashRadius || 80;
   this.activeEnemies.filter(e => {
     if (!e.alive || !e.sprite || !e.sprite.active) return false;
     return Phaser.Math.Distance.Between(tx, ty, e.sprite.x, e.sprite.y) <= splashR;
-  }).forEach(e => this.dealDamage(e, tower.data.damage, 'bomber'));
-  const flash = this.add.circle(tx, ty, splashR, 0xe8a020, 0.28).setDepth(6);
+  }).forEach(e => {
+    if (d.napalm) { e.burnDps = Math.max(e.burnDps, d.napalm); e.burnUntil = this.simNow + 3000; }
+    this.dealDamage(e, dmgFor(e), 'bomber', hitOpts);
+  });
+  const flash = this.add.circle(tx, ty, splashR, d.napalm ? 0xe5534b : 0xe8a020, 0.28).setDepth(6);
   this.tweens.add({ targets: flash, alpha: 0, scaleX: 1.5, scaleY: 1.5, duration: 280, onComplete: () => flash.destroy() });
 } else {
   // Small spark where the round lands
   const spark = this.add.circle(tx, ty, 5, 0xfff2c4, 0.9).setDepth(8);
   this.tweens.add({ targets: spark, alpha: 0, scale: 2, duration: 140, onComplete: () => spark.destroy() });
-  this.dealDamage(target, tower.data.damage, tower.type);
+  if (d.scatter) {
+    // Shrapnel: the nearest other raider takes a share
+    const other = this.activeEnemies.filter(e => e !== target && e.alive && e.sprite && e.sprite.active)
+      .map(e => ({ e, dd: Phaser.Math.Distance.Between(tx, ty, e.sprite.x, e.sprite.y) })).filter(o => o.dd < 60)
+      .sort((a, b) => a.dd - b.dd)[0];
+    if (other) this.dealDamage(other.e, Math.round(dmgFor(other.e) * d.scatter), tower.type, hitOpts);
+  }
+  this.dealDamage(target, dmgFor(target), tower.type, hitOpts);
 }
 }
 
-dealDamage(enemy, damage, sourceType) {
+// One card per new raider: what it does and what beats it
+introduceRaiders(types, done) {
+const type = types[0], d = ENEMY_DATA[type];
+if (!this.saveData.seenEnemies) this.saveData.seenEnemies = {};
+this.saveData.seenEnemies[type] = true;
+SaveManager.update(s => { if (!s.seenEnemies) s.seenEnemies = {}; s.seenEnemies[type] = true; });
+this._modalOpen = true;
+this.hidePreview();
+UI.modal(this, {
+  title: 'New raider: ' + d.card.title, icon: 'shield', accent: d.colour,
+  body: d.card.trait + '\n\n' + d.card.body,
+  buttons: [{ label: types.length > 1 ? 'NEXT' : 'GOT IT', variant: 'primary', colour: UI.C.red, onTap: () => {
+    this._modalOpen = false;
+    if (types.length > 1) this.time.delayedCall(120, () => this.introduceRaiders(types.slice(1), done));
+    else done();
+  } }]
+});
+}
+
+// ── Salvage ───────────────────────────────────────────────────────────
+// Wrecked raiders leave salvage on the road. Tap it to collect Parts before
+// it sinks. Elites also drop a rare part (needed for tier-3 mods).
+dropSalvage(enemy) {
+const x = enemy.sprite.x, y = enemy.sprite.y;
+this.spawnPickup(x, y, { parts: enemy.data.partsReward });
+const rare = enemy.data.rareDrop || (Math.random() < 0.03 ? (Math.random() < 0.5 ? 'plate' : 'engine') : null);
+if (rare) this.spawnPickup(x + 18, y - 10, { rare });
+if (!this.salvageHintShown && !(this.saveData && this.saveData.tutorials && this.saveData.tutorials.salvage) && !this.tutorial) {
+  this.salvageHintShown = true;
+  UI.toast(this, 'Tap the salvage on the road to collect Parts before it sinks', 'info', { y: this.PLAY_TOP + 22, duration: 3500 });
+}
+}
+
+spawnPickup(x, y, what) {
+const isRare = !!what.rare;
+const col = isRare ? RARE_PARTS[what.rare].colour : UI.C.amber;
+const c = this.add.container(x, y).setDepth(9);
+const g = this.add.graphics();
+g.fillStyle(0x0a0d12, 0.85); g.fillCircle(0, 0, isRare ? 11 : 9);
+g.lineStyle(2, col, 1); g.strokeCircle(0, 0, isRare ? 11 : 9);
+const ic = UI.icon(this, 0, 0, isRare ? 'star' : 'gear', isRare ? 11 : 10, col);
+c.add([g, ic]);
+const zone = this.add.zone(x, y, 48, 48).setInteractive().setDepth(11);
+const p = { c, zone, born: this.simNow, life: isRare ? 10000 : 7000, what, x, y };
+zone.on('pointerdown', () => { this.pickupTapped = true; this.collectPickup(p); });
+this.tweens.add({ targets: c, y: y - 3, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+c.setScale(0.2); this.tweens.add({ targets: c, scale: 1, duration: 180, ease: 'Back.easeOut' });
+this.pickups.push(p);
+}
+
+collectPickup(p) {
+if (p.done) return;
+p.done = true;
+p.zone.destroy();
+let label;
+if (p.what.rare) { this.rare[p.what.rare]++; label = '+1 ' + RARE_PARTS[p.what.rare].name; }
+else { this.parts += p.what.parts; this.partsText.setText('' + this.parts); label = '+' + p.what.parts; }
+const t = UI.text(this, p.c.x, p.c.y - 12, label, 'tag', { size: 12, origin: 0.5, color: p.what.rare ? UI.hex(RARE_PARTS[p.what.rare].colour) : UI.T.amber, depth: 12 });
+this.tweens.add({ targets: t, y: t.y - 26, alpha: 0, duration: 650, onComplete: () => t.destroy() });
+this.tweens.killTweensOf(p.c);
+this.tweens.add({ targets: p.c, scale: 1.5, alpha: 0, duration: 160, onComplete: () => p.c.destroy() });
+if (this.saveData && (!this.saveData.tutorials || !this.saveData.tutorials.salvage)) {
+  if (!this.saveData.tutorials) this.saveData.tutorials = {};
+  this.saveData.tutorials.salvage = true;
+  SaveManager.update(s => { if (!s.tutorials) s.tutorials = {}; s.tutorials.salvage = true; });
+}
+if (this.upgradePanel && this.activeTower) this.showUpgradePanel(this.activeTower);
+}
+
+// Uncollected salvage sinks; healers patch up raiders; burning raiders burn
+updateBattleTicks() {
+this.pickups = this.pickups.filter(p => {
+  if (p.done) return false;
+  const age = this.simNow - p.born;
+  if (age > p.life) {
+    p.zone.destroy(); this.tweens.killTweensOf(p.c);
+    this.tweens.add({ targets: p.c, alpha: 0, scale: 0.4, duration: 250, onComplete: () => p.c.destroy() });
+    return false;
+  }
+  if (age > p.life - 2000) p.c.setAlpha(0.35 + 0.65 * Math.abs(Math.sin(age / 120)));   // blinking: about to sink
+  return true;
+});
+this.activeEnemies.forEach(e => {
+  if (!e.alive || !e.sprite || !e.sprite.active) return;
+  if (e.sprite.aura) e.sprite.aura.setPosition(e.sprite.x, e.sprite.y);
+  const h = e.data.heal;
+  if (h && this.simNow - e.lastHeal >= h.every) {
+    e.lastHeal = this.simNow;
+    let healed = false;
+    this.activeEnemies.forEach(o => {
+      if (!o.alive || o === e || o.hp >= o.maxHp || !o.sprite) return;
+      if (Phaser.Math.Distance.Between(e.sprite.x, e.sprite.y, o.sprite.x, o.sprite.y) > h.radius) return;
+      o.hp = Math.min(o.maxHp, o.hp + h.amount); healed = true;
+      const plus = UI.text(this, o.sprite.x, o.sprite.y - 14, '+', 'title', { size: 16, origin: 0.5, color: UI.T.green, depth: 12 });
+      this.tweens.add({ targets: plus, y: plus.y - 14, alpha: 0, duration: 500, onComplete: () => plus.destroy() });
+    });
+    if (healed && e.sprite.aura) this.tweens.add({ targets: e.sprite.aura, alpha: { from: 1, to: 0.4 }, duration: 300 });
+  }
+  if (e.burnUntil > this.simNow && e.burnDps > 0) {
+    e._burnAcc = (e._burnAcc || 0) + this._tickDt;
+    if (e._burnAcc >= 500) { e._burnAcc -= 500; this.dealDamage(e, e.burnDps * 0.5, 'bomber', { trueDamage: true }); }
+  }
+});
+}
+
+// opts.pierce ignores that much armour; opts.trueDamage ignores it all (burns)
+dealDamage(enemy, damage, sourceType, opts) {
 if (!enemy.alive) return;
+const o = opts || {};
+const armour = o.trueDamage ? 0 : Math.max(0, (enemy.data.armour || 0) - (o.pierce || 0));
+if (armour > 0) damage = Math.max(1, damage - armour);
 enemy.hp -= damage;
 if (sourceType && this.towerStats[sourceType] && this.towerStats[sourceType].damageDealt !== undefined) {
 this.towerStats[sourceType].damageDealt += damage;
@@ -958,12 +1110,12 @@ killEnemy(enemy, sourceType) {
 if (!enemy.alive) return;
 enemy.alive = false;
 this.activeEnemies = this.activeEnemies.filter(e => e !== enemy);
-this.parts += enemy.data.partsReward;
-this.partsText.setText('' + this.parts);
+this.dropSalvage(enemy);
 this.killStats[enemy.type] = (this.killStats[enemy.type] || 0) + 1;
 if (sourceType && this.towerStats[sourceType] && this.towerStats[sourceType].kills !== undefined) {
 this.towerStats[sourceType].kills++;
 }
+if (enemy.sprite && enemy.sprite.aura) { enemy.sprite.aura.destroy(); enemy.sprite.aura = null; }
 if (enemy.hpBg)   { enemy.hpBg.destroy();   enemy.hpBg   = null; }
 if (enemy.hpFill) { enemy.hpFill.destroy();  enemy.hpFill = null; }
 if (enemy.sprite && enemy.sprite.active) {
@@ -991,6 +1143,13 @@ if (this.placedTowers.length === 0 && this.currentWave === 0 && !this._confirmed
   });
   return;
 }
+
+// First time a raider with a trait shows up, introduce it before the wave
+const upcoming = this.levelData.waves[this.currentWave];
+const seen = (this.saveData && this.saveData.seenEnemies) || {};
+const fresh = [...new Set(upcoming.enemies.map(g => g.type))]
+  .filter(t => !seen[t] && ENEMY_DATA[t] && (ENEMY_DATA[t].traits || []).length && ENEMY_DATA[t].card);
+if (fresh.length) { this.introduceRaiders(fresh, () => this.startNextWave()); return; }
 
 if (this.tutorial) this.tutorialWaveStarted();
 
@@ -1069,7 +1228,14 @@ const barW   = Math.max(data.size * 2.5, 22);
 const hpBg   = this.add.rectangle(start.x, start.y - data.size - 7, barW, 4, 0x2a3a4a).setDepth(8);
 const hpFill = this.add.rectangle(start.x - barW / 2, start.y - data.size - 7, barW, 4, 0x5eba7d).setOrigin(0, 0.5).setDepth(8);
 
-const enemy = { type, data: { ...data }, sprite, hp: data.hp, maxHp: data.hp, alive: true, pathProgress: 0, hpBg, hpFill };
+const traits = data.traits || [];
+if (traits.includes('armoured')) sprite.setStrokeStyle(3, 0xdfe6ee, 0.9);
+if (traits.includes('healer')) {
+  const aura = this.add.circle(start.x, start.y, data.heal.radius, 0x52c47f, 0.06).setStrokeStyle(1, 0x52c47f, 0.35).setDepth(5);
+  sprite.aura = aura;
+}
+const enemy = { type, data: { ...data }, sprite, hp: data.hp, maxHp: data.hp, alive: true, pathProgress: 0, hpBg, hpFill,
+  lastHeal: this.simNow, burnDps: 0, burnUntil: 0 };
 this.activeEnemies.push(enemy);
 this.moveToWaypoint(enemy, 1);
 
@@ -1357,7 +1523,9 @@ SaveManager.write(save);
 update(time, delta) {
 if (!this.paused && !this.gameOver) {
   this.simNow += delta * (this.speed || 1);
-  this.updateProjectiles(delta * (this.speed || 1));
+  this._tickDt = delta * (this.speed || 1);
+  this.updateProjectiles(this._tickDt);
+  this.updateBattleTicks();
 }
 this._slowTick = ((this._slowTick || 0) + 1);
 

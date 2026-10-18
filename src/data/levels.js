@@ -343,3 +343,9 @@ const LEVEL_DATA = {
     _buildTestStoryline(6, 'PRESSURE TEST E', 4.0, 5.0)
   ]
 };
+
+// Bilge Rat swarms join the later Salt & Plastic levels (wave 2 onward)
+LEVEL_DATA.storylines[0].levels.forEach(l => {
+  if (l.id < 6) return;
+  l.waves.forEach((w, i) => { if (i >= 1) w.enemies.push({ type: 'bilgeRat', count: 4 + l.id, interval: 220 }); });
+});

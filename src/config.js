@@ -7,7 +7,8 @@ const BUILD = {
   // Every time you open the Dock or Armoury, stock is topped up to this
   testStock: { gunner: 40, bomber: 20, barricade: 20 },
   allLevels: true,        // every level in the Dock is playable
-  allUpgrades: true       // mid-battle tower upgrades without clearing Level 3
+  allUpgrades: true,      // mid-battle tower mods without reaching their story unlock
+  unlockAll: false        // every feature (Market, Uplink, belts, towers…) open from the start
 };
 
 // Tops the stockpile up to BUILD.testStock (test builds only). Returns the save.

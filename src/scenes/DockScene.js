@@ -44,9 +44,6 @@ class DockScene extends Phaser.Scene {
     return Object.values(this.saveData.stockpile || {}).reduce((a, b) => a + b, 0);
   }
 
-  completedS1() {
-    return (this.saveData.completedLevels && this.saveData.completedLevels.storyline1) || [];
-  }
 
   titleCase(str) { return str.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()); }
 
@@ -66,32 +63,48 @@ class DockScene extends Phaser.Scene {
   }
 
   // ── Campaign list ──────────────────────────────────────────────────────
+  // One card per storyline. Stories open as the story progresses; within a
+  // story, levels unlock in order plus any cross-story requirements.
   showCampaignSelect() {
     this.clearContent();
     this.currentView = 'campaigns';
     this.hdr.title.setText('DOCK');
     this.hdr.sub.setText('CHOOSE A MISSION');
     this.contentContainer = this.add.container(0, 0).setDepth(5);
-
-    const done = this.completedS1();
-    const s1 = LEVEL_DATA.storylines[0];
-    let y = UI.HEADER_H + 24;
-
-    y = this.addCampaignCard(y, {
-      tag: 'CAMPAIGN 1  ·  ' + s1.levels.length + ' LEVELS', title: 'Salt & Plastic', colour: UI.C.amber,
-      body: s1.description + ' Enemy: ' + s1.faction + '.',
-      progress: done.length / s1.levels.length, progressLabel: done.length + ' / ' + s1.levels.length + ' cleared',
-      unlocked: true, onTap: () => this.showLevelList(s1)
+    const { height } = this.scale;
+    const colours = { 1: UI.C.amber, 2: UI.C.green, 3: UI.C.purple, 4: UI.C.red };
+    let y = UI.HEADER_H + 18;
+    LEVEL_DATA.storylines.forEach(st => {
+      const open = Progress.storylineOpen(this.saveData, st.id);
+      const built = st.levels.filter(l => !l.soon);
+      const doneN = st.levels.filter(l => Progress.done(this.saveData, Progress.key(st.id, l.id))).length;
+      const gate = (STORYLINE_GATES[st.id] || [])[0];
+      y = this.addCampaignCard(y, {
+        tag: st.short.toUpperCase() + '  \u00b7  ' + st.levels.length + ' LEVELS', title: st.title, colour: colours[st.id] || UI.C.amber,
+        body: open ? st.description + '  Enemy: ' + st.faction + '.' : 'Opens after ' + Progress.levelName(gate) + '.',
+        progress: doneN / st.levels.length,
+        progressLabel: open ? doneN + ' / ' + st.levels.length + ' cleared' + (built.length < st.levels.length ? '  \u00b7  ' + (st.levels.length - built.length) + ' coming soon' : '') : null,
+        unlocked: open, onTap: () => this.showLevelList(st)
+      }) + 12;
     });
-
-    const anyDone = done.length > 0 || (BUILD.test && BUILD.allLevels);
-    this.addCampaignCard(y + 14, {
+    const anyDone = this.endlessPool().length > 0;
+    y = this.addCampaignCard(y, {
       tag: 'ENDLESS', title: 'Endless Raids', colour: UI.C.blue,
       body: anyDone ? 'Waves keep coming on a map you have cleared. Power zones change every run. How long can you hold?'
-                    : 'Clear Level 1 of Salt & Plastic to unlock.',
-      progressLabel: anyDone ? done.length + ' map' + (done.length === 1 ? '' : 's') + ' in the pool' : null,
+                    : 'Clear a defence level to unlock.',
       unlocked: anyDone, onTap: anyDone ? () => this.launch(null, true) : null
-    });
+    }) + 12;
+    this.scrollMinY = Math.min(0, height - (y + 20));
+    this.enableScroll();
+  }
+
+  endlessPool() {
+    let pool = [];
+    LEVEL_DATA.storylines.forEach(st => st.levels.forEach(l => {
+      if (l.soon || l.type === 'raid' || !l.waves) return;
+      if (Progress.done(this.saveData, Progress.key(st.id, l.id)) || (BUILD.test && BUILD.allLevels)) pool.push(l);
+    }));
+    return pool;
   }
 
   addCampaignCard(top, c) {
@@ -139,24 +152,25 @@ class DockScene extends Phaser.Scene {
     this.clearContent();
     this.currentView = 'levels';
     const { height } = this.scale;
-    this.hdr.title.setText(storyline.name);
-    this.hdr.sub.setText('VS ' + storyline.faction.toUpperCase());
+    this.hdr.title.setText(storyline.title.toUpperCase());
+    this.hdr.sub.setText(storyline.short.toUpperCase() + '  \u00b7  VS ' + storyline.faction.toUpperCase());
     this.contentContainer = this.add.container(0, 0).setDepth(5);
 
-    const done = this.completedS1();
     let y = UI.HEADER_H + 16;
-    storyline.levels.forEach((level, i) => {
-      const isDone     = done.includes(level.id);
-      const isUnlocked = i === 0 || done.includes(storyline.levels[i - 1].id) || (BUILD.test && BUILD.allLevels);
-      const isNext     = isUnlocked && !isDone;
-      y = this.addLevelCard(level, y, isUnlocked, isDone, isNext) + 10;
+    let nextMarked = false;
+    storyline.levels.forEach(level => {
+      const isDone = Progress.done(this.saveData, Progress.key(storyline.id, level.id));
+      const lock   = Progress.levelLock(this.saveData, storyline.id, level);
+      const isNext = !lock && !isDone && !nextMarked;
+      if (isNext) nextMarked = true;
+      y = this.addLevelCard(storyline, level, y, !lock, isDone, isNext, lock) + 10;
     });
     this.scrollMinY = Math.min(0, height - (y + 20));
     this.enableScroll();
   }
 
 
-  addLevelCard(level, top, unlocked, done, isNext) {
+  addLevelCard(storyline, level, top, unlocked, done, isNext, lock) {
     const { width } = this.scale;
     const w = width - 32;
     const colour = done ? UI.C.green : unlocked ? UI.C.amber : UI.C.line;
@@ -164,13 +178,16 @@ class DockScene extends Phaser.Scene {
     const bx = 16 + 34, lx = bx + 34, textW = w - (lx - 16) - 40;
 
     // Text first, so the card can grow to fit the description
+    const raid   = level.type === 'raid';
     const waves  = level.waves ? level.waves.length : 1;
     const enemyN = (level.waves || []).reduce((s, wv) => s + wv.enemies.reduce((a, g) => a + g.count, 0), 0);
+    const meta   = level.soon ? 'COMING SOON' : raid ? 'RAID  \u00b7  ' + (level.turrets || []).length + ' enemy turrets'
+                 : waves + ' wave' + (waves === 1 ? '' : 's') + '  \u00b7  ' + enemyN + ' raiders' + (level.boss ? '  \u00b7  BOSS' : '');
     const titleT = UI.text(this, lx, top + 16, this.titleCase(level.name), 'heading', { size: 17, color: unlocked ? UI.T.text : UI.T.faint });
-    const descT  = UI.text(this, lx, top + 40, unlocked ? level.description : 'Clear the previous level to unlock.', 'small',
+    const descT  = UI.text(this, lx, top + 40, level.description + (lock && !level.soon ? '\n' + lock + '.' : ''), 'small',
       { size: 12, wrap: textW, color: unlocked ? UI.T.mute : UI.T.faint });
-    const metaT  = UI.text(this, lx, top + 46 + descT.height, waves + ' wave' + (waves === 1 ? '' : 's') + '  ·  ' + enemyN + ' raiders', 'label',
-      { size: 11, color: unlocked ? UI.T.dim : UI.T.faint });
+    const metaT  = UI.text(this, lx, top + 46 + descT.height, meta, 'label',
+      { size: 11, color: raid && unlocked ? UI.T.red : unlocked ? UI.T.dim : UI.T.faint });
     const h = Math.max(92, 46 + descT.height + 16 + 16);
     const cy = top + h / 2;
 
@@ -185,6 +202,7 @@ class DockScene extends Phaser.Scene {
     items.push(badge);
     if (done)            items.push(UI.icon(this, bx, cy, 'check', 16, UI.C.green));
     else if (!unlocked)  items.push(UI.icon(this, bx, cy, 'lock', 15, 0x465163));
+    else if (raid)       items.push(UI.icon(this, bx, cy, 'anchor', 16, UI.C.red));
     else                 items.push(UI.text(this, bx, cy, String(level.id), 'number', { size: 20, origin: 0.5, color: UI.T.amber }));
 
     items.push(titleT, descT, metaT);
@@ -196,7 +214,7 @@ class DockScene extends Phaser.Scene {
       let pressed = false;
       zone.on('pointerdown', () => { pressed = true; });
       zone.on('pointerout',  () => { pressed = false; });
-      zone.on('pointerup',   () => { if (pressed && !this._dragging) this.showBriefing(level); pressed = false; });
+      zone.on('pointerup',   () => { if (pressed && !this._dragging) this.showBriefing(storyline, level); pressed = false; });
       items.push(zone);
     }
     this.contentContainer.add(items);
@@ -206,7 +224,8 @@ class DockScene extends Phaser.Scene {
   // ── Mission briefing ───────────────────────────────────────────────────
   // Shows who is coming and what you're bringing, so the player can make an
   // informed choice — and can't launch into a fight with zero towers.
-  showBriefing(level) {
+  showBriefing(storyline, level) {
+    if (level.type === 'raid') return this.showRaidBriefing(storyline, level);
     const stock = this.saveData.stockpile || {};
     const total = this.stockTotal();
     const counts = {};
@@ -220,31 +239,54 @@ class DockScene extends Phaser.Scene {
     if (rec && total < rec) body += '\n\nRecommended: at least ' + rec + ' towers.';
 
     const buttons = total > 0
-      ? [{ label: 'CANCEL', variant: 'secondary' }, { label: 'LAUNCH', variant: 'primary', colour: UI.C.red, onTap: () => this.launch(level, false) }]
+      ? [{ label: 'CANCEL', variant: 'secondary' }, { label: 'LAUNCH', variant: 'primary', colour: UI.C.red, onTap: () => this.launch(level, false, storyline) }]
       : [{ label: 'CANCEL', variant: 'secondary' }, { label: 'BUILD TOWERS', variant: 'primary', colour: UI.C.blue, onTap: () => UI.go(this, 'FactoryScene') }];
     if (total === 0) body += '\n\nYou have no towers. Build some in the Factory first.';
 
     UI.modal(this, {
-      title: 'Level ' + level.id + ' — ' + this.titleCase(level.name),
+      title: (storyline.id === 1 ? 'Level ' : storyline.short + '.') + level.id + ' — ' + this.titleCase(level.name),
       body, icon: 'anchor', accent: total > 0 ? UI.C.red : UI.C.blue,
       buttons, dismissOnBackdrop: true
     });
   }
 
-  launch(level, endless) {
+  showRaidBriefing(storyline, level) {
+    const stock = this.saveData.stockpile || {};
+    const total = this.stockTotal();
+    const kinds = {};
+    (level.turrets || []).forEach(t => { kinds[t.kind] = (kinds[t.kind] || 0) + 1; });
+    const towers = ['gunner', 'bomber', 'barricade'].filter(t => stock[t] > 0)
+      .map(t => stock[t] + ' ' + this.titleCase(TOWER_DATA[t].name)).join(',  ') || 'none';
+    const loot = level.loot ? '+' + (level.loot.plasticScrap || 0) + ' scrap, +' + (level.loot.salvagedMetal || 0) + ' metal' : '';
+    const body = 'An attack. Your towers ride out on carts along the road \u2014 they fire as they go. Wreck the core at the end.\n\n' +
+      'Defences: ' + Object.entries(kinds).map(([k, n]) => n + ' ' + (RAID_TURRETS[k] || {}).name + (n === 1 ? '' : 's')).join(', ') + '\n' +
+      'Loot: ' + loot + '\nYour towers: ' + towers + '\n\nTowers that get wrecked are lost. The rest come home.';
+    UI.modal(this, {
+      title: 'Raid \u2014 ' + this.titleCase(level.name), body, icon: 'anchor', accent: UI.C.red,
+      buttons: total > 0 ? [{ label: 'CANCEL', variant: 'secondary' }, { label: 'RAID', variant: 'primary', colour: UI.C.red, onTap: () => this.launch(level, false, storyline) }]
+                         : [{ label: 'CANCEL', variant: 'secondary' }, { label: 'BUILD TOWERS', variant: 'primary', colour: UI.C.blue, onTap: () => UI.go(this, 'FactoryScene') }],
+      dismissOnBackdrop: true
+    });
+  }
+
+  launch(level, endless, storyline) {
     if (endless) {
-      let ids = this.completedS1();
-      if (ids.length === 0 && BUILD.test && BUILD.allLevels) ids = LEVEL_DATA.storylines[0].levels.map(l => l.id);
-      if (ids.length === 0) return;
-      const base = LEVEL_DATA.storylines[0].levels.find(l => l.id === ids[Math.floor(Math.random() * ids.length)]);
-      if (!base) return;
+      const pool = this.endlessPool();
+      if (!pool.length) return;
+      const base = pool[Math.floor(Math.random() * pool.length)];
+      const sid = LEVEL_DATA.storylines.find(st => st.levels.includes(base)).id;
       const data = Object.assign({}, base, {
         name: base.name + '  —  ENDLESS', baseHp: 10, tutorial: null, waves: this.buildEndlessWaves(6)
       });
-      UI.go(this, 'CombatScene', { storylineId: 1, levelId: base.id, levelData: data, isEndless: true });
+      UI.go(this, 'CombatScene', { storylineId: sid, levelId: base.id, levelData: data, isEndless: true });
       return;
     }
-    UI.go(this, 'CombatScene', { storylineId: 1, levelId: level.id, levelData: level });
+    const sid = (storyline && storyline.id) || 1;
+    const scene = level.type === 'raid' ? 'RaidScene' : 'CombatScene';
+    const go = () => UI.go(this, scene, { storylineId: sid, levelId: level.id, levelData: level });
+    // The story scene leading into this level (once)
+    const bkey = Progress.key(sid, level.id) + '.before';
+    if (Story.has(bkey)) Story.play(this, bkey, go); else go();
   }
 
   buildEndlessWaves(startDiff) {

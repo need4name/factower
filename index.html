@@ -78,11 +78,14 @@ canvas { display: block; }
 <script src="src/config.js"></script>
 <script src="src/ui/UI.js"></script>
 <script src="src/ui/Coach.js"></script>
+<script src="src/ui/Story.js"></script>
 <script src="src/systems/SaveManager.js"></script>
 <script src="src/systems/Factory.js"></script>
 <script src="src/data/towers.js"></script>
 <script src="src/data/enemies.js"></script>
 <script src="src/data/levels.js"></script>
+<script src="src/data/progression.js"></script>
+<script src="src/data/story.js"></script>
 <script src="src/data/skillTree.js"></script>
 <script src="src/systems/SkillTreeEffects.js"></script>
 <script src="src/systems/Merchants.js"></script>
@@ -93,6 +96,7 @@ canvas { display: block; }
 <script src="src/scenes/ArmouryScene.js"></script>
 <script src="src/scenes/DockScene.js"></script>
 <script src="src/scenes/CombatScene.js"></script>
+<script src="src/scenes/RaidScene.js"></script>
 <script src="src/scenes/SkillTreeScene.js"></script>
 <script src="src/scenes/MarketplaceScene.js"></script>
 <script src="src/scenes/ChromeScene.js"></script>
@@ -106,7 +110,7 @@ const config = {
   height: 844,
   backgroundColor: '#0a0c0f',
   scene: [BootScene, SaveScene, BaseScene, FactoryScene, ArmouryScene, DockScene,
-          CombatScene, SkillTreeScene, MarketplaceScene, ChromeScene, RicochetScene, DoubleDownScene],
+          CombatScene, RaidScene, SkillTreeScene, MarketplaceScene, ChromeScene, RicochetScene, DoubleDownScene],
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH

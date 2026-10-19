@@ -21,7 +21,7 @@
 // When only touching a few fields, prefer update(), which re-reads the latest
 // save before applying the change.
 
-const SAVE_VERSION = 1;
+const SAVE_VERSION = 2;
 
 const SAVE_MIGRATIONS = [
   // 0 → 1: fill in fields added before versioning existed (formerly the
@@ -39,6 +39,23 @@ const SAVE_MIGRATIONS = [
     if (save.flags           === undefined) save.flags           = { armouryUnlocked: false, skillTreeUnlocked: false, baseTutDone: false };
     if (save.materials       === undefined) save.materials       = { plasticScrap: 2, refinedPlastic: 0, salvagedMetal: 0 };
     if (save.factoryActive   === undefined) save.factoryActive   = true;
+  },
+  // 1 → 2: the campaign became Prologue (7 levels incl. a raid) + stories.
+  // Old Salt & Plastic numbering: 1-3 stay, 4 (Hulk) → 6, 5 (Commander) → 7,
+  // 6 (Drift Wall) → 5; anything past level 3 counts the new raid (4) as done.
+  // The old test storylines (2-6) are dropped. Story scenes for levels
+  // already cleared are marked seen.
+  save => {
+    const old = (save.completedLevels && save.completedLevels.storyline1) || [];
+    const map = { 1: 1, 2: 2, 3: 3, 4: 6, 5: 7, 6: 5 };
+    const next = new Set();
+    old.forEach(id => { if (map[id]) next.add(map[id]); if (id >= 4) next.add(4); });
+    const endless = save.completedLevels && save.completedLevels.endless;
+    save.completedLevels = { storyline1: [...next].sort((a, b) => a - b) };
+    if (endless) save.completedLevels.endless = endless;
+    if (!save.storySeen) save.storySeen = {};
+    if (next.size || (save.factory && save.factory.tutorialComplete)) save.storySeen.intro = true;
+    next.forEach(id => { save.storySeen['p' + id + '.before'] = true; save.storySeen['p' + id + '.after'] = true; });
   }
 ];
 

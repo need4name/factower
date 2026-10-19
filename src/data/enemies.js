@@ -32,6 +32,19 @@ const ENEMY_DATA = {
     colour: 0x6a7585, size: 18, traits: ['armoured'], rareDrop: 'plate',
     card: { title: 'Driftwood Hulk', trait: 'ARMOURED', body: 'Bolted-on planks knock 6 off every hit. Gunner rounds barely dent it — Bombers and armour-piercing mods do. Wrecks leave a Hull Plate.' }
   },
+  // ── SALV Collective ───────────────────────────────────────────────────
+  salvSkiff: {
+    key: 'salvSkiff', name: 'SALV SKIFF',
+    hp: 60, speed: 170, partsReward: 3, baseDamage: 2,
+    colour: 0x3fae8e, size: 10, traits: ['fast'],
+    card: { title: 'SALV Skiff', trait: 'FAST', body: 'Quick SALV boarders — tougher than Front runners. Slow them with Barricades and let the Gunners work.' }
+  },
+  salvCutter: {
+    key: 'salvCutter', name: 'SALV CUTTER',
+    hp: 170, speed: 70, partsReward: 8, baseDamage: 3, armour: 4,
+    colour: 0x2f7d6a, size: 15, traits: ['armoured'], rareDrop: 'plate',
+    card: { title: 'SALV Cutter', trait: 'ARMOURED', body: 'Plated SALV boats that shrug off 4 damage per hit. Bombers and armour-piercing mods break them open.' }
+  },
   frontCommander: {
     key: 'frontCommander', name: 'FRONT COMMANDER',
     hp: 650, speed: 55, partsReward: 40, baseDamage: 6, armour: 3,

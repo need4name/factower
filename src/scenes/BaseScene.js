@@ -24,8 +24,9 @@ create() {
   const hasCompletedAny = allCompleted.length > 0;
 
   const armouryUnlocked     = s.flags.armouryUnlocked     || hasBuiltTower;
-  const uplinkUnlocked      = s.flags.skillTreeUnlocked   || hasCompletedAny;
-  const marketplaceUnlocked = s.flags.marketplaceUnlocked || hasCompletedAny;
+  // Uplink and Market open with the story (see progression.js)
+  const uplinkUnlocked      = Progress.has(s, 'uplink');
+  const marketplaceUnlocked = Progress.has(s, 'market');
 
   let flagsDirty = false;
   if (armouryUnlocked     && !s.flags.armouryUnlocked)     { s.flags.armouryUnlocked     = true; flagsDirty = true; }
@@ -46,20 +47,20 @@ create() {
   this.drawGoalCard(goal, 116);
 
   // ── Zones ─────────────────────────────────────────────────────────────────
-  const nextLevel = LEVEL_DATA.storylines[0].levels.find(l => !completed.includes(l.id));
+  const nextLevel = this.nextPlayable();
   const scrap = (s.materials && s.materials.plasticScrap) || 0;
   const metal = (s.materials && s.materials.salvagedMetal) || 0;
   const zones = [
     { key: 'FactoryScene', name: 'Factory', icon: 'factory', colour: UI.C.blue, unlocked: true,
       info: scrap + ' scrap  ·  ' + metal + ' metal' },
     { key: 'DockScene', name: 'Dock', icon: 'anchor', colour: UI.C.red, unlocked: armouryUnlocked,
-      info: nextLevel ? 'Next: ' + this.titleCase(nextLevel.name) : 'Campaign clear', lock: 'Build a tower first' },
+      info: nextLevel ? 'Next: ' + this.titleCase(nextLevel.level.name) : 'More story soon', lock: 'Build a tower first' },
     { key: 'ArmouryScene', name: 'Armoury', icon: 'shield', colour: UI.C.green, unlocked: armouryUnlocked,
       info: stockTotal + ' tower' + (stockTotal === 1 ? '' : 's') + ' ready', lock: 'Build a tower first' },
     { key: 'SkillTreeScene', name: 'Uplink', icon: 'signal', colour: UI.C.amber, unlocked: uplinkUnlocked,
-      info: (s.bolts || 0) + ' bolts to spend', lock: 'Win a battle first' },
+      info: (s.bolts || 0) + ' bolts to spend', lock: 'After ' + Progress.levelName(UNLOCKS.uplink.at) },
     { key: 'MarketplaceScene', name: 'Market', icon: 'coins', colour: UI.C.purple, unlocked: marketplaceUnlocked,
-      info: this.marketInfo(s), lock: 'Win a battle first' },
+      info: this.marketInfo(s), lock: 'After ' + Progress.levelName(UNLOCKS.market.at) },
     { key: null, name: 'Housing', icon: 'house', colour: UI.C.steel, unlocked: false,
       info: '', lock: 'Later in the story' }
   ];
@@ -73,6 +74,9 @@ create() {
     const y = gridTop + 8 + tileH / 2 + row * (tileH + gap);
     this.drawZoneTile(z, x, y, tileW, tileH, goal.scene === z.key);
   });
+
+  // First visit to a new save: how you washed up here
+  if (Story.has('intro')) this.time.delayedCall(250, () => Story.play(this, 'intro'));
 }
 
 marketInfo(s) {
@@ -80,6 +84,19 @@ marketInfo(s) {
   const here = Merchants.list().filter(m => Merchants.isRecruited(s, m.id));
   if (here.some(m => !met[m.id])) return 'New merchant in town!';
   return here.length + ' merchant' + (here.length === 1 ? '' : 's') + '  ·  sell towers for nuts';
+}
+
+// The first level, across all storylines in order, that can be played and
+// hasn't been won yet: { storylineId, level, key }
+nextPlayable() {
+  for (const st of LEVEL_DATA.storylines) {
+    for (const l of st.levels) {
+      const key = Progress.key(st.id, l.id);
+      if (Progress.done(this.saveData, key)) continue;
+      if (!Progress.levelLock(this.saveData, st.id, l)) return { storylineId: st.id, level: l, key };
+    }
+  }
+  return null;
 }
 
 titleCase(str) {
@@ -90,8 +107,8 @@ titleCase(str) {
 // new player is never left guessing.
 nextGoal(stockTotal, completed) {
   const factoryDone = this.saveData.factory && this.saveData.factory.tutorialComplete;
-  const levels = LEVEL_DATA.storylines[0].levels;
-  const next   = levels.find(l => !completed.includes(l.id));
+  const np   = this.nextPlayable();
+  const next = np && np.level;
 
   if (!factoryDone && stockTotal === 0 && completed.length === 0) {
     return { tag: 'START HERE', title: 'Build your first towers',
@@ -111,12 +128,13 @@ nextGoal(stockTotal, completed) {
       scene: 'FactoryScene', cta: 'GO TO FACTORY', colour: UI.C.blue };
   }
   if (next) {
-    return { tag: 'LEVEL ' + next.id, title: this.titleCase(next.name),
+    return { tag: (np.storylineId === 1 ? 'PROLOGUE' : Progress.storyline(np.storylineId).short.toUpperCase()) + ' \u00b7 ' + (next.type === 'raid' ? 'RAID' : 'LEVEL ' + next.id),
+      title: this.titleCase(next.name),
       body: next.description + '  You have ' + stockTotal + ' tower' + (stockTotal === 1 ? '' : 's') + ' ready.',
       scene: 'DockScene', cta: 'TO THE DOCK', colour: UI.C.red };
   }
-  return { tag: 'CAMPAIGN CLEAR', title: 'Endless waves await',
-    body: 'Test your defences against endless raids at the Dock.',
+  return { tag: 'TO BE CONTINUED', title: 'More story is on its way',
+    body: 'You\u2019ve played everything built so far. Endless raids at the Dock keep your defences sharp.',
     scene: 'DockScene', cta: 'TO THE DOCK', colour: UI.C.red };
 }
 

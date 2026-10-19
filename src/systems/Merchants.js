@@ -11,15 +11,15 @@ const MERCHANT_BASE_EDGE  = 0.30;  // house edge baked into base payouts
 
 const MERCHANTS = [
   { id: 'chrome', fx: 'chrome', name: 'Chrome', tag: 'THE SLOTS', colour: 0xf2a93b, scene: 'ChromeScene',
-    baseCost: 2, recruitLevel: 1, unit: 'SPIN',
+    baseCost: 2, recruitKey: 'p5', unit: 'SPIN',
     desc: 'Spin three reels. Match symbols to win bolts.',
-    bio: 'A chrome-plated slot cabinet that talks back. Turned up on your dock the night you won your first battle.' },
+    bio: 'A chrome-plated slot cabinet that talks back \u2014 Uncle Bet\u2019s \u201cfella\u201d. Bet still owes it forty nuts.' },
   { id: 'ricochet', fx: 'ricochet', name: 'Ricochet', tag: 'THE BOARD', colour: 0x52c47f, scene: 'RicochetScene',
-    baseCost: 3, recruitLevel: 2, unit: 'SHOT',
+    baseCost: 3, recruitKey: 's1-2', unit: 'SHOT',
     desc: 'Aim a ball through the pegs. More hits, more bolts.',
     bio: 'Ex-Tianxia engineer. Built a peg board out of the company logo and charges you to knock it down.' },
   { id: 'doubleDown', fx: 'doubledown', name: 'Double-Down', tag: 'PRESS YOUR LUCK', colour: 0xe5534b, scene: 'DoubleDownScene',
-    baseCost: 4, recruitLevel: 3, unit: 'ROUND',
+    baseCost: 4, recruitKey: 's1-3', unit: 'ROUND',
     desc: 'Roll dice, bank points — or push your luck and lose it all.',
     bio: 'A dice shark who follows the winning side. Shows up once your island looks like it might survive.' }
 ];
@@ -36,11 +36,11 @@ const Merchants = {
   // old saves pick them up automatically).
   isRecruited(save, id) {
     const m = Merchants.get(id);
-    return !!m && Merchants.completed(save).includes(m.recruitLevel);
+    return !!m && (Progress.done(save, m.recruitKey) || (BUILD.test && BUILD.unlockAll));
   },
 
   // Merchants who join by clearing this level (for the victory screen).
-  recruitedBy(levelId) { return MERCHANTS.filter(m => m.recruitLevel === levelId); },
+  recruitedBy(key) { return MERCHANTS.filter(m => m.recruitKey === key); },
 
   // Fresh Gambling-branch effects for this save.
   effects(save) {

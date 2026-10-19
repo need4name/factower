@@ -45,8 +45,7 @@ class MarketplaceScene extends Phaser.Scene {
       UI.panel(this, width / 2, cy, w, h, { fill: 0x10151c, stroke: UI.C.lineSoft, radius: 16 });
       UI.icon(this, lx + 10, cy - 14, 'lock', 16, 0x465163);
       UI.text(this, lx + 30, cy - 14, '???', 'title', { size: 20, origin: [0, 0.5], color: UI.T.faint });
-      const lvl = LEVEL_DATA.storylines[0].levels.find(l => l.id === m.recruitLevel);
-      UI.text(this, lx, cy + 18, 'A new merchant arrives after Level ' + m.recruitLevel + (lvl ? ' — ' + this.titleCase(lvl.name) : '') + '.',
+      UI.text(this, lx, cy + 18, 'A new merchant arrives after ' + Progress.levelName(m.recruitKey) + '.',
         'small', { size: 12, origin: [0, 0.5], wrap: w - 40, color: UI.T.faint });
       return;
     }
@@ -82,7 +81,7 @@ class MarketplaceScene extends Phaser.Scene {
     const add = (o) => { this.tradeItems.push(o); return o; };
     const stock = this.saveData.stockpile || {};
     const types = ['gunner', 'bomber', 'barricade'].filter(t => t === 'gunner' || (stock[t] || 0) > 0 ||
-      Merchants.completed(this.saveData).includes(2));
+      Progress.has(this.saveData, 'barricade'));
     const top = this.tradeTop, rowH = 50, w = width - 32;
     const h = 44 + types.length * rowH + 6;
 

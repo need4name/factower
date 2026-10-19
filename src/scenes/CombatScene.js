@@ -444,8 +444,7 @@ this.tutorialTowerPlaced();
 
 // ── Upgrade panel ─────────────────────────────────────────────────────
 upgradesUnlocked() {
-const completed = (this.saveData && this.saveData.completedLevels && this.saveData.completedLevels.storyline1) || [];
-return completed.includes(3) || this.isEndless || this.storylineId !== 1 || (BUILD.test && BUILD.allUpgrades);
+return Progress.has(this.saveData, 'mods') || this.isEndless || (BUILD.test && BUILD.allUpgrades);
 }
 
 // ── Upgrade lesson ────────────────────────────────────────────────────
@@ -513,6 +512,7 @@ items.push(this.add.circle(tower.x, tower.y, tower.data.range, colour, 0.10).set
 items.push(this.add.circle(tower.x, tower.y, tower.data.range).setStrokeStyle(2, colour, 0.6).setDepth(3));
 
 const unlocked = this.upgradesUnlocked();
+const modsAt   = Progress.levelName(UNLOCKS.mods.at);
 const rowH = 58, h = unlocked ? 64 + paths.length * rowH + 8 : 120;
 const cy = this.HP_STRIP_Y - 24 - h / 2, lx = 12 + 18;
 items.push(UI.panel(this, width / 2, cy, width - 24, h, { fill: UI.C.surface, stroke: colour, strokeAlpha: 0.7, radius: 16, depth: D }));
@@ -527,7 +527,7 @@ items.push(UI.text(this, lx, top + 40, info, 'small', { size: 11, origin: [0, 0.
 
 this._upgradeBtn = null;
 if (!unlocked) {
-  items.push(UI.text(this, lx, top + 74, 'Mods unlock after Level 3. Then you can bolt salvaged Parts onto towers mid-battle.', 'small',
+  items.push(UI.text(this, lx, top + 74, 'Mods unlock after ' + modsAt + '. Then you can bolt salvaged Parts onto towers mid-battle.', 'small',
     { size: 12, wrap: width - 64, depth: D + 1 }));
 } else {
   paths.forEach((path, i) => {
@@ -1387,12 +1387,13 @@ if (victory) {
   card('REWARDS', got.join('\n') + '\nTowers placed this battle are used up.', UI.C.green);
 
   const unlocks = [];
-  if (this.storylineId === 1 && this.levelId === 1) unlocks.push('New recruit — W2 joins the Factory.', 'The Market and Uplink are open.');
-  if (this.storylineId === 1 && this.levelId === 2) unlocks.push('Bomber and Barricade benches are available in the Factory.');
-  if (this.storylineId === 1 && this.levelId === 3) unlocks.push('Tower upgrades — tap a placed tower mid-battle to spend Parts.');
-  if (this.levelId === 8) unlocks.push('A new threat stirs: the Limbic Cartel has taken notice.');
-  if (this.storylineId === 1 && !this.isEndless && this.firstClear) {
-    Merchants.recruitedBy(this.levelId).forEach(m => unlocks.push('New merchant — ' + m.name + ' (' + m.tag.toLowerCase() + ') has set up shop in the Market.'));
+  const lkey = Progress.key(this.storylineId, this.levelId);
+  if (!this.isEndless && this.firstClear) {
+    Progress.unlocksAt(lkey).forEach(u => unlocks.push(u.label));
+    Merchants.recruitedBy(lkey).forEach(m => { if (m.id !== 'chrome') unlocks.push('New merchant \u2014 ' + m.name + ' (' + m.tag.toLowerCase() + ') has set up shop in the Market.'); });
+    Object.keys(STORYLINE_GATES).forEach(sid => {
+      if ((STORYLINE_GATES[sid] || []).includes(lkey)) unlocks.push('New story: ' + Progress.storyline(+sid).short + ' \u2014 ' + Progress.storyline(+sid).title + '.');
+    });
   }
   if (this.merchantsRested) unlocks.push('Your merchants have rested — fresh payouts at the Market.');
   if (unlocks.length) card('UNLOCKED', unlocks.join('\n'), UI.C.amber);
@@ -1405,11 +1406,15 @@ const by = height - 46;
 const leave = (key, data) => { this.setFactoryActive(true); UI.go(this, key, data); };
 if (victory) {
   UI.button(this, 16 + 80, by, 160, 54, { label: 'BASE', variant: 'secondary', depth: D + 3, onTap: () => leave('BaseScene') });
-  const next = !this.isEndless && LEVEL_DATA.storylines[0].levels.find(l => l.id === this.levelId + 1);
+  const st = Progress.storyline(this.storylineId);
+  const next = !this.isEndless && st && st.levels.find(l => l.id === this.levelId + 1 && !l.soon);
   UI.button(this, width - 16 - (width - 32 - 172) / 2, by, width - 32 - 172, 54, {
     label: next ? 'NEXT MISSION' : 'TO THE DOCK', variant: 'primary', colour: UI.C.green, depth: D + 3,
     onTap: () => leave('DockScene')
   });
+  // The story moves on: play this level's closing scene over the results
+  const akey = Progress.key(this.storylineId, this.levelId) + '.after';
+  if (!this.isEndless && Story.has(akey)) this.time.delayedCall(700, () => Story.play(this, akey));
 } else {
   UI.button(this, 16 + 80, by, 160, 54, { label: 'BASE', variant: 'secondary', depth: D + 3, onTap: () => leave('BaseScene') });
   UI.button(this, width - 16 - (width - 32 - 172) / 2, by, width - 32 - 172, 54, {

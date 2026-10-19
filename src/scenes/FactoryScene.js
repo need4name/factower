@@ -71,6 +71,8 @@ create() {
   // fills the whole pick-up strip; afterwards the two share it.
   this.metalUnlocked = this.isMetalUnlocked();
   this.factory.metalUnlocked = this.metalUnlocked;
+  this.beltsUnlocked   = Progress.has(this.saveData, 'belts');
+  this.smelterUnlocked = Progress.has(this.saveData, 'smelter');
   this.STORE_W = (width - 32 - 10) / 2;
   this.SCRAP_W = this.metalUnlocked ? this.STORE_W : width - 32;
   this.SCRAP_X = 16 + this.SCRAP_W / 2;
@@ -217,15 +219,12 @@ showTowerUnlockBanner(towerType) {
   });
 }
 
-isMetalUnlocked() {
-  const completed = this.saveData?.completedLevels?.storyline1 || [];
-  return completed.includes(2);
-}
+isMetalUnlocked() { return Progress.has(this.saveData, 'metal'); }
 
 getUnlockedAssemblyTypes() {
-  const completed = this.saveData?.completedLevels?.storyline1 || [];
   const types = ['assembly_gunner'];
-  if (completed.includes(2)) types.push('assembly_bomber', 'assembly_barricade');
+  if (Progress.has(this.saveData, 'bomber'))    types.push('assembly_bomber');
+  if (Progress.has(this.saveData, 'barricade')) types.push('assembly_barricade');
   return types;
 }
 
@@ -502,7 +501,7 @@ showAssemblyTypeMenu(targetRow, targetCol) {
     });
     items.push(p,
       UI.text(this, lx, cy - 22, t.name, 'heading', { size: 18, origin: [0, 0.5], depth: D + 3, color: unlocked ? UI.T.text : UI.T.faint }),
-      UI.text(this, lx, cy + 2, unlocked ? t.needs : 'Unlocks after Level 2', 'small', { size: 12, origin: [0, 0.5], depth: D + 3, color: unlocked ? UI.T.mute : UI.T.faint }),
+      UI.text(this, lx, cy + 2, unlocked ? t.needs : 'Unlocks after ' + Progress.levelName(UNLOCKS[t.key.replace('assembly_', '')].at), 'small', { size: 12, origin: [0, 0.5], depth: D + 3, color: unlocked ? UI.T.mute : UI.T.faint }),
       UI.text(this, lx, cy + 24, unlocked ? 'Build: ' + this.formatCost(cost) + (afford ? '' : '  — not enough') : '', 'label',
         { size: 11, origin: [0, 0.5], depth: D + 3, color: afford ? UI.hex(t.colour) : UI.T.red }));
     if (!unlocked) items.push(UI.icon(this, width / 2 + w / 2 - 26, cy, 'lock', 15, 0x465163).setDepth(D + 3));
@@ -881,8 +880,8 @@ drawToolbar() {
   const gap = 8, n = 4, bw = (width - 32 - gap * (n - 1)) / n;
   const tools = [
     { key: 'assembly', name: 'BENCH',    sub: 'builds towers', icon: 'factory', colour: UI.C.green },
-    { key: 'conveyor', name: 'BELT',     sub: this.formatShort(this.MACHINE_BUILD_COSTS.conveyor), icon: 'chevron', colour: UI.C.steel },
-    { key: 'smelter',  name: 'SMELTER',  sub: this.metalUnlocked ? this.formatShort(this.MACHINE_BUILD_COSTS.smelter) : 'after Level 2', icon: this.metalUnlocked ? 'gear' : 'lock', colour: this.metalUnlocked ? UI.C.amber : 0x465163, locked: !this.metalUnlocked },
+    { key: 'conveyor', name: 'BELT',     sub: this.beltsUnlocked ? this.formatShort(this.MACHINE_BUILD_COSTS.conveyor) : 'locked', icon: this.beltsUnlocked ? 'chevron' : 'lock', colour: this.beltsUnlocked ? UI.C.steel : 0x465163, locked: !this.beltsUnlocked, unlock: 'belts' },
+    { key: 'smelter',  name: 'SMELTER',  sub: this.smelterUnlocked ? this.formatShort(this.MACHINE_BUILD_COSTS.smelter) : 'locked', icon: this.smelterUnlocked ? 'gear' : 'lock', colour: this.smelterUnlocked ? UI.C.amber : 0x465163, locked: !this.smelterUnlocked, unlock: 'smelter' },
     { key: 'delete',   name: 'REMOVE',   sub: 'refunds cost', icon: 'trash', colour: UI.C.red }
   ];
   this.toolButtons = {};
@@ -907,7 +906,7 @@ drawToolbar() {
     zone.on('pointerout',  () => c.setScale(1));
     zone.on('pointerup',   () => {
       c.setScale(1);
-      if (t.locked) { this.showMessage('Smelters unlock after Level 2, along with Bombers', 'info'); return; }
+      if (t.locked) { this.showMessage(t.name.charAt(0) + t.name.slice(1).toLowerCase() + 's unlock after ' + Progress.levelName(UNLOCKS[t.unlock].at), 'info'); return; }
       if (t.key === 'delete') this.toggleDeleteMode();
       else this.setPlacing(this.placingMachine === t.key ? null : t.key);
     });

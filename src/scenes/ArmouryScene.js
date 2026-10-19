@@ -46,7 +46,6 @@ class ArmouryScene extends Phaser.Scene {
   drawTowerCards() {
     const { width } = this.scale;
     const stockpile = this.saveData.stockpile || {};
-    const completed = (this.saveData.completedLevels && this.saveData.completedLevels.storyline1) || [];
     this.cardItems.forEach(e => e.destroy());
     this.cardItems = [];
 
@@ -55,7 +54,7 @@ class ArmouryScene extends Phaser.Scene {
     ['gunner', 'bomber', 'barricade'].forEach(type => {
       const d = TOWER_DATA[type];
       const count = stockpile[type] || 0;
-      const unlocked = type === 'gunner' || completed.includes(2) || count > 0;
+      const unlocked = type === 'gunner' || Progress.has(this.saveData, type) || count > 0;
       const cy = y + h / 2;
       const lx = 16 + 20;
       const add = (o) => { this.cardItems.push(o); return o; };
@@ -65,7 +64,7 @@ class ArmouryScene extends Phaser.Scene {
         accent: unlocked ? d.colour : undefined, radius: 16
       }));
       add(UI.text(this, lx, y + 18, this.titleCase(d.name), 'title', { size: 22, color: unlocked ? UI.T.text : UI.T.faint }));
-      add(UI.text(this, lx, y + 48, unlocked ? TOWER_ROLE[type] : 'Unlocks after Level 2.', 'small',
+      add(UI.text(this, lx, y + 48, unlocked ? TOWER_ROLE[type] : 'Unlocks after ' + Progress.levelName(UNLOCKS[type].at) + '.', 'small',
         { size: 12, wrap: w - 140, color: unlocked ? UI.T.mute : UI.T.faint }));
 
       // Stat row

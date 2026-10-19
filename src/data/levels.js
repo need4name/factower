@@ -4,8 +4,16 @@
 //   killDrops     — materials per enemy kill (small, anti-hardlock trickle)
 //   completionBonus — bulk reward on level victory
 //
-// S1 (Salt & Plastic) uses only T1 materials: plasticScrap + salvagedMetal.
-// S2-S6 are test storylines for difficulty scaling validation — not for release.
+// Campaign structure (see progression.js for keys, gates and unlocks):
+//   storyline 1  Prologue            p1..p7
+//   storyline 2  Story 1 · SALV      s1-1..
+//   storyline 3  Story 2 · Borga     s2-1..
+//   storyline 4  Story 3 · Helix     s3-1..
+// Levels marked soon: true are planned but not built yet (shown locked).
+// type: 'raid' levels are offensive — your towers roll out as a convoy
+// against enemy turrets (RaidScene).
+// path points use x 0..390 and oy 0..418 (rescaled to the play area);
+// a level without a path uses the default S-curve.
 
 // ── Shared kill drop tables ────────────────────────────────────────────────────
 
@@ -15,337 +23,164 @@ const _NCF_DROPS = {
   driftwoodHulk:  { salvagedMetal: 2 },
   frontCommander: { plasticScrap: 2, salvagedMetal: 3 }
 };
+const _SALV_DROPS = {
+  salvSkiff:  { plasticScrap: 1 },
+  salvCutter: { salvagedMetal: 2 },
+  saltChild:  { plasticScrap: 1 },
+  scrapRunner:{ plasticScrap: 1 }
+};
 
-// ── Test storyline generator ───────────────────────────────────────────────────
-// Produces 10-level NCF-only runs scaled by enemy count.
-// Scale affects waves per level and enemies per wave — HP/speed stay at base.
-// rewardMult scales the completion bonus proportionally to difficulty.
-
-function _buildTestStoryline(id, name, countScale, rewardMult) {
-  const levels = [];
-
-  for (let lvl = 1; lvl <= 10; lvl++) {
-    const waveCount = Math.min(2 + Math.floor(lvl / 2), 7);
-    const base      = Math.round(5 * countScale * (1 + (lvl - 1) * 0.18));
-    const waves     = [];
-
-    for (let w = 0; w < waveCount; w++) {
-      const wave = {
-        preWaveDelay: w === 0 ? 3000 : 6000,
-        enemies: []
-      };
-
-      // Salt Children — core swarm, present every wave
-      wave.enemies.push({
-        type: 'saltChild',
-        count: Math.round(base * (1 + w * 0.22)),
-        interval: Math.max(500, 1200 - w * 80)
-      });
-
-      // Scrap Runners — from wave 2 onward, or if level >= 3
-      if (w >= 1 || lvl >= 3) {
-        wave.enemies.push({
-          type: 'scrapRunner',
-          count: Math.max(1, Math.round(base * 0.45)),
-          interval: 1800
-        });
-      }
-
-      // Driftwood Hulks — mid-level onward, later waves only
-      if (lvl >= 4 && w >= Math.floor(waveCount / 2)) {
-        wave.enemies.push({
-          type: 'driftwoodHulk',
-          count: Math.max(1, Math.round(countScale * Math.ceil(lvl / 3))),
-          interval: 4000
-        });
-      }
-
-      // Front Commander — boss in final wave of levels 6+
-      if (lvl >= 6 && w === waveCount - 1) {
-        wave.enemies.push({
-          type: 'frontCommander',
-          count: Math.max(1, Math.round(countScale * 0.5)),
-          interval: 0
-        });
-      }
-
-      waves.push(wave);
-    }
-
-    // Completion bonus scales with level position and storyline difficulty
-    const scrapBonus = Math.round((6 + lvl * 2) * rewardMult);
-    const metalBonus = Math.round((1 + lvl * 1.5) * rewardMult);
-
-    levels.push({
-      id:          lvl,
-      name:        name + ' \xb7 ' + lvl,
-      description: 'Test run ' + id + ', tier ' + lvl + '. Enemy count \xd7' + countScale.toFixed(1) + '.',
-      difficulty:  (id - 1) * 10 + lvl,
-      towerSlots:  8,
-      baseHp:      10,
-      waves,
-      materialRewards: {
-        killDrops:       _NCF_DROPS,
-        completionBonus: { plasticScrap: scrapBonus, salvagedMetal: metalBonus }
-      }
-    });
-  }
-
-  return {
-    id,
-    name,
-    description: 'Difficulty scaling test (' + countScale.toFixed(1) + '\xd7 enemy count). Not for release.',
-    faction:     'Non-Continuous Front',
-    levels
-  };
-}
+// Compact helpers: _W(_g('saltChild', 8, 1500), ...) is a wave; _P([x, oy], ...) a path
+const _g = (type, count, interval) => ({ type, count, interval });
+const _W = (...enemies) => ({ enemies });
+const _P = (...pts) => pts.map(([x, oy]) => ({ x, oy }));
 
 // ── Main level data ────────────────────────────────────────────────────────────
 
 const LEVEL_DATA = {
   storylines: [
 
-    // ── STORYLINE 1 — SALT & PLASTIC ──────────────────────────────────────────
+    // ── PROLOGUE — WASHED UP ──────────────────────────────────────────────────
     {
-      id:          1,
-      name:        'SALT & PLASTIC',
-      description: 'Establish your base. Survive the first raids.',
-      faction:     'Non-Continuous Front',
+      id: 1, name: 'PROLOGUE', short: 'Prologue', title: 'Washed Up',
+      description: 'A raft, a dead wind turbine and a man called Tim. Survive the Front.',
+      faction: 'Non-Continuous Front',
       levels: [
-        // ── L1: FIRST CONTACT ─────────────────────────────────────────────────
-        {
-          id: 1, name: 'FIRST CONTACT',
-          description: 'A scouting party probes your shore. Two well-placed Gunners will hold them.',
-          difficulty: 1, towerSlots: 6, baseHp: 10,
-          // Tuned with a headless sim of CombatScene's rules: no towers or one
-          // tower always loses, two badly placed Gunners lose, two Gunners near
-          // the road's bends win every time.
+        { id: 1, name: 'WASHED UP',
+          description: 'A Front scouting party probes the raft. Two well-placed Gunners will hold them.',
+          difficulty: 1, baseHp: 10,
+          // Tuned with a headless sim: no towers or one tower always loses, two
+          // badly placed Gunners lose, two Gunners near the bends win every time.
           recommendedTowers: 2,
-          // Spots the tutorial points at (x, oy — same space as path points)
           tutorialSpots: [{ x: 170, oy: 336 }, { x: 230, oy: 244 }],
-          waves: [
-            { preWaveDelay: 3000, enemies: [
-              { type: 'saltChild', count: 4, interval: 2600 }
-            ]},
-            { preWaveDelay: 4000, enemies: [
-              { type: 'saltChild', count: 6, interval: 2200 }
-            ]}
-          ],
-          materialRewards: {
-            killDrops: _NCF_DROPS,
-            completionBonus: { plasticScrap: 6, salvagedMetal: 0 }
-          }
-        },
+          waves: [ _W(_g('saltChild', 4, 2600)), _W(_g('saltChild', 6, 2200)) ],
+          materialRewards: { killDrops: _NCF_DROPS, completionBonus: { plasticScrap: 6, salvagedMetal: 0 } } },
 
-        // ── L2: WORD SPREADS ──────────────────────────────────────────────────
-        {
-          id: 2, name: 'WORD SPREADS',
-          description: 'A larger force. Scrap Runners have joined.',
-          difficulty: 2, towerSlots: 6, baseHp: 10,
-          waves: [
-            { preWaveDelay: 3000, enemies: [
-              { type: 'saltChild', count: 8, interval: 1500 }
-            ]},
-            { preWaveDelay: 5000, enemies: [
-              { type: 'saltChild',   count: 6, interval: 1500 },
-              { type: 'scrapRunner', count: 3, interval: 2500 }
-            ]}
-          ],
-          materialRewards: {
-            killDrops: _NCF_DROPS,
-            completionBonus: { plasticScrap: 8, salvagedMetal: 2 }
-          }
-        },
+        { id: 2, name: 'THEY CAME BACK',
+          description: 'The Front never takes one beating when it can take two.',
+          difficulty: 2, baseHp: 10,
+          path: _P([195, 0], [195, 40], [320, 40], [320, 140], [70, 140], [70, 250], [320, 250], [320, 360], [195, 360], [195, 418]),
+          waves: [ _W(_g('saltChild', 8, 1500)), _W(_g('saltChild', 6, 1500), _g('scrapRunner', 3, 2500)) ],
+          materialRewards: { killDrops: _NCF_DROPS, completionBonus: { plasticScrap: 8, salvagedMetal: 4 } } },
 
-        // ── L3: OVERNIGHT ASSAULT ─────────────────────────────────────────────
-        {
-          id: 3, name: 'OVERNIGHT ASSAULT',
-          description: 'Three waves through the night.',
-          difficulty: 3, towerSlots: 8, baseHp: 10,
-          waves: [
-            { preWaveDelay: 3000, enemies: [
-              { type: 'saltChild', count: 10, interval: 1200 }
-            ]},
-            { preWaveDelay: 6000, enemies: [
-              { type: 'saltChild',   count: 8, interval: 1200 },
-              { type: 'scrapRunner', count: 4, interval: 2000 }
-            ]},
-            { preWaveDelay: 6000, enemies: [
-              { type: 'saltChild',   count: 12, interval: 1000 },
-              { type: 'scrapRunner', count: 6,  interval: 1800 }
-            ]}
-          ],
-          materialRewards: {
-            killDrops: _NCF_DROPS,
-            completionBonus: { plasticScrap: 8, salvagedMetal: 4 }
-          }
-        },
+        { id: 3, name: 'HOLD THE RAFT',
+          description: 'A bigger crew. Grab the salvage from their wrecks.',
+          difficulty: 3, baseHp: 10,
+          path: _P([60, 0], [60, 330], [170, 330], [170, 90], [280, 90], [280, 330], [330, 330], [330, 418]),
+          waves: [ _W(_g('saltChild', 10, 1200)),
+                   _W(_g('saltChild', 8, 1200), _g('scrapRunner', 4, 2000)),
+                   _W(_g('saltChild', 12, 1000), _g('scrapRunner', 6, 1800)) ],
+          materialRewards: { killDrops: _NCF_DROPS, completionBonus: { plasticScrap: 8, salvagedMetal: 4 } } },
 
-        // ── L4: THE HULK ──────────────────────────────────────────────────────
-        {
-          id: 4, name: 'THE HULK',
-          description: 'Something bigger arrives. Splash damage is useless against it.',
-          difficulty: 4, towerSlots: 8, baseHp: 10,
-          waves: [
-            { preWaveDelay: 3000, enemies: [
-              { type: 'saltChild', count: 10, interval: 1200 }
-            ]},
-            { preWaveDelay: 6000, enemies: [
-              { type: 'driftwoodHulk', count: 1, interval: 0    },
-              { type: 'saltChild',     count: 8, interval: 1500 }
-            ]},
-            { preWaveDelay: 6000, enemies: [
-              { type: 'driftwoodHulk', count: 2, interval: 5000 },
-              { type: 'scrapRunner',   count: 6, interval: 1500 }
-            ]}
-          ],
-          materialRewards: {
-            killDrops: _NCF_DROPS,
-            completionBonus: { plasticScrap: 6, salvagedMetal: 8 }
-          }
-        },
+        { id: 4, name: 'FIRST RAID', type: 'raid',
+          description: 'Take the fight to the Front. Roll your towers into their camp and wreck its core.',
+          difficulty: 4,
+          path: _P([195, 0], [195, 70], [80, 70], [80, 200], [310, 200], [310, 330], [195, 330], [195, 418]),
+          turrets: [ { x: 140, oy: 30, kind: 'gun' }, { x: 30, oy: 140, kind: 'gun' }, { x: 200, oy: 250, kind: 'gun' },
+                     { x: 360, oy: 270, kind: 'gun' }, { x: 120, oy: 370, kind: 'heavy' } ],
+          core: { hp: 420 },
+          loot: { plasticScrap: 18, salvagedMetal: 10 } },
 
-        // ── L5: THE COMMANDER ─────────────────────────────────────────────────
-        {
-          id: 5, name: 'THE COMMANDER',
-          description: 'The Front Commander leads the assault. Hold your ground.',
-          difficulty: 5, towerSlots: 8, baseHp: 10,
-          waves: [
-            { preWaveDelay: 3000, enemies: [
-              { type: 'saltChild',   count: 12, interval: 1000 },
-              { type: 'scrapRunner', count: 6,  interval: 1500 }
-            ]},
-            { preWaveDelay: 6000, enemies: [
-              { type: 'driftwoodHulk', count: 2,  interval: 4000 },
-              { type: 'saltChild',     count: 10, interval: 1200 }
-            ]},
-            { preWaveDelay: 8000, enemies: [
-              { type: 'frontCommander', count: 1,  interval: 0    },
-              { type: 'saltChild',      count: 15, interval: 800  },
-              { type: 'scrapRunner',    count: 8,  interval: 1200 }
-            ]}
-          ],
-          materialRewards: {
-            killDrops: _NCF_DROPS,
-            completionBonus: { plasticScrap: 10, salvagedMetal: 8 }
-          }
-        },
+        { id: 5, name: 'RETALIATION',
+          description: 'You hit their camp. Now the Front comes with everything.',
+          difficulty: 5, baseHp: 12,
+          path: _P([350, 0], [350, 80], [40, 80], [40, 200], [350, 200], [350, 320], [40, 320], [40, 418]),
+          waves: [ _W(_g('saltChild', 14, 900), _g('scrapRunner', 6, 1500)),
+                   _W(_g('saltChild', 12, 1000), _g('scrapRunner', 6, 1300)),
+                   _W(_g('saltChild', 16, 800), _g('scrapRunner', 10, 1200), _g('bilgeRat', 8, 220)),
+                   _W(_g('scrapRunner', 10, 1100), _g('saltChild', 14, 900), _g('bilgeRat', 10, 220)) ],
+          materialRewards: { killDrops: _NCF_DROPS, completionBonus: { plasticScrap: 10, salvagedMetal: 8 } } },
 
-        // ── L6: DRIFT WALL ────────────────────────────────────────────────────
-        {
-          id: 6, name: 'DRIFT WALL',
-          description: 'Four waves. The Front has regrouped.',
-          difficulty: 6, towerSlots: 8, baseHp: 10,
-          waves: [
-            { preWaveDelay: 3000, enemies: [
-              { type: 'saltChild',   count: 14, interval: 900  },
-              { type: 'scrapRunner', count: 6,  interval: 1500 }
-            ]},
-            { preWaveDelay: 6000, enemies: [
-              { type: 'driftwoodHulk', count: 2,  interval: 4000 },
-              { type: 'saltChild',     count: 12, interval: 1000 }
-            ]},
-            { preWaveDelay: 6000, enemies: [
-              { type: 'saltChild',   count: 16, interval: 800  },
-              { type: 'scrapRunner', count: 10, interval: 1200 }
-            ]},
-            { preWaveDelay: 8000, enemies: [
-              { type: 'driftwoodHulk', count: 3,  interval: 3500 },
-              { type: 'scrapRunner',   count: 8,  interval: 1200 },
-              { type: 'saltChild',     count: 10, interval: 1000 }
-            ]}
-          ],
-          materialRewards: {
-            killDrops: _NCF_DROPS,
-            completionBonus: { plasticScrap: 10, salvagedMetal: 10 }
-          }
-        },
+        { id: 6, name: 'SOMETHING BIGGER',
+          description: 'Armoured raiders. Someone is equipping the Front.',
+          difficulty: 6, baseHp: 12,
+          path: _P([195, 0], [195, 120], [60, 120], [60, 300], [195, 300], [195, 180], [330, 180], [330, 418]),
+          waves: [ _W(_g('saltChild', 10, 1200)),
+                   _W(_g('driftwoodHulk', 1, 0), _g('saltChild', 8, 1500)),
+                   _W(_g('driftwoodHulk', 2, 5000), _g('scrapRunner', 6, 1500)) ],
+          materialRewards: { killDrops: _NCF_DROPS, completionBonus: { plasticScrap: 8, salvagedMetal: 10 } } },
 
-        // ── L7: DEEP CHANNEL ──────────────────────────────────────────────────
-        {
-          id: 7, name: 'DEEP CHANNEL',
-          description: 'Five waves. A merchant watches the outcome.',
-          difficulty: 7, towerSlots: 8, baseHp: 10,
-          waves: [
-            { preWaveDelay: 3000, enemies: [
-              { type: 'saltChild',   count: 14, interval: 800  },
-              { type: 'scrapRunner', count: 8,  interval: 1400 }
-            ]},
-            { preWaveDelay: 6000, enemies: [
-              { type: 'driftwoodHulk', count: 3,  interval: 3500 },
-              { type: 'saltChild',     count: 12, interval: 900  }
-            ]},
-            { preWaveDelay: 6000, enemies: [
-              { type: 'saltChild',   count: 18, interval: 700  },
-              { type: 'scrapRunner', count: 10, interval: 1100 }
-            ]},
-            { preWaveDelay: 7000, enemies: [
-              { type: 'driftwoodHulk',  count: 4,  interval: 3000 },
-              { type: 'scrapRunner',    count: 12, interval: 1000 }
-            ]},
-            { preWaveDelay: 8000, enemies: [
-              { type: 'frontCommander', count: 1,  interval: 0    },
-              { type: 'saltChild',      count: 18, interval: 700  },
-              { type: 'scrapRunner',    count: 10, interval: 1000 }
-            ]}
-          ],
-          materialRewards: {
-            killDrops: _NCF_DROPS,
-            completionBonus: { plasticScrap: 12, salvagedMetal: 12 }
-          }
-        },
-
-        // ── L8: THE SARGASSO ──────────────────────────────────────────────────
-        {
-          id: 8, name: 'THE SARGASSO',
-          description: 'The final battle. Victory establishes the island\'s reputation.',
-          difficulty: 8, towerSlots: 8, baseHp: 10,
-          waves: [
-            { preWaveDelay: 3000, enemies: [
-              { type: 'saltChild',   count: 16, interval: 700  },
-              { type: 'scrapRunner', count: 10, interval: 1200 }
-            ]},
-            { preWaveDelay: 6000, enemies: [
-              { type: 'driftwoodHulk', count: 4,  interval: 3000 },
-              { type: 'saltChild',     count: 14, interval: 800  }
-            ]},
-            { preWaveDelay: 6000, enemies: [
-              { type: 'saltChild',   count: 20, interval: 600  },
-              { type: 'scrapRunner', count: 14, interval: 900  }
-            ]},
-            { preWaveDelay: 7000, enemies: [
-              { type: 'driftwoodHulk', count: 5,  interval: 2500 },
-              { type: 'scrapRunner',   count: 14, interval: 900  }
-            ]},
-            { preWaveDelay: 9000, enemies: [
-              { type: 'frontCommander', count: 2,  interval: 8000 },
-              { type: 'saltChild',      count: 20, interval: 600  },
-              { type: 'scrapRunner',    count: 14, interval: 900  },
-              { type: 'driftwoodHulk',  count: 3,  interval: 3500 }
-            ]}
-          ],
-          materialRewards: {
-            killDrops: _NCF_DROPS,
-            completionBonus: { plasticScrap: 14, salvagedMetal: 14 }
-          }
-        }
+        { id: 7, name: 'THE FRONT COMMANDER',
+          description: 'Their boss leads the assault. Bring it down and the Front scatters.',
+          difficulty: 7, baseHp: 14, boss: true,
+          path: _P([195, 0], [195, 52], [315, 52], [315, 185], [80, 185], [80, 308], [315, 308], [315, 375], [195, 375], [195, 418]),
+          waves: [ _W(_g('saltChild', 12, 1000), _g('scrapRunner', 6, 1500)),
+                   _W(_g('driftwoodHulk', 2, 4000), _g('saltChild', 10, 1200), _g('bilgeRat', 8, 220)),
+                   _W(_g('frontCommander', 1, 0), _g('saltChild', 15, 800), _g('scrapRunner', 8, 1200)) ],
+          materialRewards: { killDrops: _NCF_DROPS, completionBonus: { plasticScrap: 12, salvagedMetal: 10 } } }
       ]
     },
 
-    // ── STORYLINES 2-6 — DIFFICULTY SCALING TESTS ─────────────────────────────
-    // Enemy counts scaled, HP/speed at base values.
-    // Rewards scale proportionally. Not intended for release.
+    // ── STORY 1 — THE SALV COLLECTIVE ─────────────────────────────────────────
+    {
+      id: 2, name: 'STORY 1', short: 'Story 1', title: 'The SALV Collective',
+      description: 'The local pirate federation has noticed your raft. Friend or threat?',
+      faction: 'SALV Collective',
+      levels: [
+        { id: 1, name: 'SUPPLY RUN', type: 'raid',
+          description: 'Raid the Salt Children’s stash before the SALV arrive.',
+          difficulty: 8,
+          path: _P([60, 0], [60, 120], [330, 120], [330, 240], [60, 240], [60, 360], [250, 360], [250, 418]),
+          turrets: [ { x: 160, oy: 70, kind: 'gun' }, { x: 260, oy: 170, kind: 'gun' }, { x: 370, oy: 60, kind: 'gun' },
+                     { x: 150, oy: 290, kind: 'heavy' }, { x: 20, oy: 300, kind: 'gun' }, { x: 320, oy: 330, kind: 'heavy' } ],
+          core: { hp: 420 },
+          loot: { plasticScrap: 24, salvagedMetal: 16 } },
 
-    _buildTestStoryline(2, 'PRESSURE TEST A', 1.4, 1.6),
-    _buildTestStoryline(3, 'PRESSURE TEST B', 1.9, 2.2),
-    _buildTestStoryline(4, 'PRESSURE TEST C', 2.5, 2.9),
-    _buildTestStoryline(5, 'PRESSURE TEST D', 3.2, 3.8),
-    _buildTestStoryline(6, 'PRESSURE TEST E', 4.0, 5.0)
+        { id: 2, name: 'STRANGE SAILS',
+          description: 'Bigger hulls, better guns. The SALV are testing you.',
+          difficulty: 9, baseHp: 14,
+          path: _P([100, 0], [100, 150], [290, 150], [290, 270], [100, 270], [100, 418]),
+          waves: [ _W(_g('salvSkiff', 8, 1300)),
+                   _W(_g('salvSkiff', 10, 1100), _g('salvCutter', 2, 4000)),
+                   _W(_g('salvCutter', 3, 3000), _g('salvSkiff', 12, 900)) ],
+          materialRewards: { killDrops: _SALV_DROPS, completionBonus: { plasticScrap: 12, salvagedMetal: 12 } } },
+
+        { id: 3, name: 'KEEP THEM OFF',
+          description: 'The SALV come in force. Keep them off the raft.',
+          difficulty: 10, baseHp: 15,
+          path: _P([330, 0], [330, 100], [60, 100], [60, 210], [200, 210], [200, 320], [330, 320], [330, 418]),
+          waves: [ _W(_g('salvSkiff', 12, 900)),
+                   _W(_g('salvCutter', 3, 3000), _g('salvSkiff', 10, 1000)),
+                   _W(_g('salvSkiff', 16, 700), _g('salvCutter', 2, 3500)),
+                   _W(_g('salvCutter', 5, 2500), _g('salvSkiff', 14, 800)) ],
+          materialRewards: { killDrops: _SALV_DROPS, completionBonus: { plasticScrap: 14, salvagedMetal: 14 } } },
+
+        { id: 4, name: 'BROKEN TRUST', soon: true, requires: ['s2-2'],
+          description: 'Umbaji visits and sees the Front recruits on your raft.' },
+        { id: 5, name: 'UMBAJI’S REVENGE', soon: true,
+          description: 'Wave after wave, each worse than the last.' },
+        { id: 6, name: 'THE SIPHON', soon: true,
+          description: 'Borga shares a secret learned fighting with the Front.' }
+      ]
+    },
+
+    // ── STORY 2 — BORGA ───────────────────────────────────────────────────────
+    {
+      id: 3, name: 'STORY 2', short: 'Story 2', title: 'Borga',
+      description: 'Expeditions, a starving crew, and a voice on the radio.',
+      faction: 'SALV Collective · IOA',
+      levels: [
+        { id: 1, name: 'EXPEDITION', type: 'raid', soon: true, description: 'Scavenge for the new Gunner’s parts.' },
+        { id: 2, name: 'THE STARVING', type: 'raid', soon: true, description: 'A stranded Front crew, close to death.' },
+        { id: 3, name: 'SALV STRIKE', soon: true, requires: ['s1-6'], description: 'The SALV hit back.' },
+        { id: 4, name: 'PAYBACK', type: 'raid', soon: true, description: 'Take the fight to Umbaji.' },
+        { id: 5, name: 'THE VOICE', soon: true, requires: ['s3-2'], description: 'Someone from the IOA wants something.' },
+        { id: 6, name: 'PRESSURE', soon: true, requires: ['s3-3'], description: 'Why is Helix moving the Front?' },
+        { id: 7, name: 'UMBAJI', soon: true, boss: true, description: 'End the SALV raids for good.' }
+      ]
+    },
+
+    // ── STORY 3 — HELIX ───────────────────────────────────────────────────────
+    {
+      id: 4, name: 'STORY 3', short: 'Story 3', title: 'Helix',
+      description: 'The Front keeps fleeing from the west. Something is driving them.',
+      faction: 'Non-Continuous Front · Helix',
+      levels: [
+        { id: 1, name: 'ROGUE FRONT', soon: true, description: 'A rogue Front crew spots the siphon.' },
+        { id: 2, name: 'THE RADIO', soon: true, description: 'A stronger attack — and a radio.' },
+        { id: 3, name: 'ONE WORD', soon: true, description: 'A prisoner says only: Helix.' },
+        { id: 4, name: 'ADVANCE FORCE', soon: true, description: 'The fleeing Front, and what follows them.' }
+      ]
+    }
   ]
 };
-
-// Bilge Rat swarms join the later Salt & Plastic levels (wave 2 onward)
-LEVEL_DATA.storylines[0].levels.forEach(l => {
-  if (l.id < 6) return;
-  l.waves.forEach((w, i) => { if (i >= 1) w.enemies.push({ type: 'bilgeRat', count: 4 + l.id, interval: 220 }); });
-});

@@ -138,7 +138,7 @@ class DockScene extends Phaser.Scene {
       let pressed = false;
       zone.on('pointerdown', () => { pressed = true; panel.setAlpha(0.8); });
       zone.on('pointerout',  () => { pressed = false; panel.setAlpha(1); });
-      zone.on('pointerup',   () => { panel.setAlpha(1); if (pressed && c.onTap) c.onTap(); pressed = false; });
+      zone.on('pointerup',   () => { panel.setAlpha(1); if (pressed && c.onTap && !UI.blocked(this)) c.onTap(); pressed = false; });
       items.push(zone);
     } else {
       items.push(UI.icon(this, width - 16 - 24, top + h / 2, 'lock', 15, 0x465163));
@@ -214,7 +214,7 @@ class DockScene extends Phaser.Scene {
       let pressed = false;
       zone.on('pointerdown', () => { pressed = true; });
       zone.on('pointerout',  () => { pressed = false; });
-      zone.on('pointerup',   () => { if (pressed && !this._dragging) this.showBriefing(storyline, level); pressed = false; });
+      zone.on('pointerup',   () => { if (pressed && !this._dragging && !UI.blocked(this)) this.showBriefing(storyline, level); pressed = false; });
       items.push(zone);
     }
     this.contentContainer.add(items);

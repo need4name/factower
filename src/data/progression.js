@@ -12,6 +12,7 @@ const UNLOCKS = {
   worker2:    { at: 'p1',   label: 'Uncle Bet joins the factory as your second worker.' },
   barricade:  { at: 'p2',   label: 'Barricade bench — bent hull metal that slows raiders.' },
   metal:      { at: 'p2',   label: 'Salvaged Metal store opens in the Factory.' },
+  abilities:  { at: 'p2',   label: 'Flares and cargo nets — tap them in battle, then tap the road.' },
   mods:       { at: 'p3',   label: 'Salvage & scavenger mods — collect wreckage mid-battle and bolt it onto towers.' },
   bomber:     { at: 'p4',   label: 'Bomber bench — plans plundered from the Front’s camp.' },
   smelter:    { at: 'p4',   label: 'Smelter — turns scrap into the refined plastic Bombers need.' },

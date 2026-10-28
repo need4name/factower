@@ -25,12 +25,16 @@ const Story = {
     const { width, height } = scene.scale;
     const D = (opts && opts.depth) || 500;
     const items = [];
+    scene._storyOpen = true;
+    scene._inputBlockedUntil = Infinity;
+    scene.events.once('shutdown', () => { scene._storyOpen = false; scene._inputBlockedUntil = 0; });
     const dim = scene.add.rectangle(width / 2, height / 2, width, height, 0x05070a, 0.78).setDepth(D).setInteractive();
     items.push(dim);
     const panelH = 230, py = height - 16 - panelH / 2;
     const panel = scene.add.graphics().setDepth(D + 1);
     items.push(panel);
     const portrait = scene.add.graphics().setDepth(D + 2);
+    items.push(portrait);
     const initial = UI.text(scene, 0, 0, '', 'title', { size: 26, origin: 0.5, depth: D + 3, color: UI.T.dark });
     const nameT = UI.text(scene, 0, 0, '', 'heading', { size: 17, origin: [0, 0.5], depth: D + 3 });
     const roleT = UI.text(scene, 0, 0, '', 'small', { size: 11, origin: [0, 0.5], depth: D + 3, color: UI.T.mute });
@@ -43,11 +47,13 @@ const Story = {
     const finish = () => {
       if (finished) return;
       finished = true;
+      scene._storyOpen = false;
+      scene._inputBlockedUntil = scene.time.now + 250;
       Story.markSeen(key);
       items.forEach(e => e && e.destroy && e.destroy());
       done();
     };
-    const skip = UI.button(scene, width - 16 - 40, py - panelH / 2 - 24, 72, 34, { label: 'SKIP', variant: 'ghost', size: 12, depth: D + 4, onTap: finish });
+    const skip = UI.button(scene, width - 16 - 40, py - panelH / 2 - 24, 72, 34, { label: 'SKIP', variant: 'ghost', size: 12, depth: D + 4, ignoreBlock: true, onTap: finish });
     items.push(skip);
 
     const show = () => {

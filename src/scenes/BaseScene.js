@@ -189,6 +189,6 @@ drawZoneTile(z, x, y, w, h, recommended) {
   let pressed = false;
   zone.on('pointerdown', () => { pressed = true; panel.setAlpha(0.75); });
   zone.on('pointerout',  () => { pressed = false; panel.setAlpha(1); });
-  zone.on('pointerup',   () => { panel.setAlpha(1); if (pressed) UI.go(this, z.key); pressed = false; });
+  zone.on('pointerup',   () => { panel.setAlpha(1); if (pressed && !UI.blocked(this)) UI.go(this, z.key); pressed = false; });
 }
 }

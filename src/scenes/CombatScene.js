@@ -58,6 +58,12 @@ this._pausedTweens     = null;
 this._uiToast          = null;
 this.towerTapped       = false;
 this.tutorial         = null;
+this._pendingSpawns    = 0;
+this.selectedAbility   = null;
+this.abilityPreview    = null;
+this._startSig         = null;
+this.abilityTapped     = false;
+this.abilityLast       = {};        // ability key → simNow it was last used
 this._upTut           = null;   // one-time 'how to upgrade' lesson (see updateUpgradeTutorial)
 this.coach             = null;
 this.simNow            = 0;      // tower fire-rate clock (scaled by speed, stops when paused)
@@ -144,6 +150,7 @@ this.drawUBZs();
 this.drawPath();
 this.drawHeader();
 this.drawBottomPanel();
+this.drawAbilityButtons();
 this.setupPlacementInput();
 
 // ── Checks ───────────────────────────────────────────────────────────
@@ -275,6 +282,12 @@ return best;
 // ── Input ─────────────────────────────────────────────────────────────
 setupPlacementInput() {
 this.input.on('pointermove', (pointer) => {
+  if (this.selectedAbility && !this.gameOver) {
+    const r = this.abilityDefs()[this.selectedAbility].radius;
+    if (!this.abilityPreview) this.abilityPreview = this.add.circle(0, 0, r, 0xffffff, 0.08).setStrokeStyle(2, 0xffffff, 0.5).setDepth(6);
+    this.abilityPreview.setPosition(pointer.x, pointer.y).setRadius(r);
+    return;
+  }
   if (!this.selectedTowerType || this.gameOver || this._modalOpen) return;
   if (!this.isInPlayArea(pointer.x, pointer.y)) { this.hidePreview(); return; }
   this.updatePreview(pointer.x, pointer.y);
@@ -286,6 +299,11 @@ this.input.on('pointerup', (pointer) => {
   // them — ask the coach whether this point is blocked.
   if (this.coach && this.coach.blocks(pointer.x, pointer.y)) return;
   if (this.pickupTapped) { this.pickupTapped = false; return; }   // that tap collected salvage
+  if (this.abilityTapped) { this.abilityTapped = false; return; }  // that tap was on an ability button
+  if (this.selectedAbility) {
+    if (this.isInPlayArea(pointer.x, pointer.y)) this.castAbility(this.selectedAbility, pointer.x, pointer.y);
+    return;
+  }
 
   if (this.upgradePanel) {
     if (!this.towerTapped) this.dismissUpgradePanel();
@@ -419,7 +437,7 @@ this.towersUsed[type] = (this.towersUsed[type] || 0) + 1;
 // A barrel that turns to face whatever the tower is shooting at
 const barrel = type === 'barricade' ? null
   : this.add.rectangle(x, y, type === 'bomber' ? 17 : 19, type === 'bomber' ? 8 : 5, 0xeef2f8, 0.95).setOrigin(0, 0.5).setDepth(4.5).setRotation(-Math.PI / 2);
-const tower = { type, x, y, data: towerData, lastFired: -1e9, upgradeTier: 0, mods: [0, 0, 0], towerCircle, towerLabel, tierBadge: null, hitZone, powerMult: mult, barrel };
+const tower = { type, x, y, data: towerData, lastFired: -1e9, upgradeTier: 0, mods: [0, 0, 0], targetMode: 'first', towerCircle, towerLabel, tierBadge: null, hitZone, powerMult: mult, barrel };
 this.placedTowers.push(tower);
 
 hitZone.on('pointerup', () => {
@@ -519,9 +537,14 @@ items.push(UI.panel(this, width / 2, cy, width - 24, h, { fill: UI.C.surface, st
 const top = cy - h / 2;
 items.push(UI.text(this, lx, top + 20, this.titleCase(tower.data.name), 'heading', { size: 17, origin: [0, 0.5], depth: D + 1, color: UI.hex(colour) }));
 const rareTxt = Object.keys(this.rare).filter(k => this.rare[k] > 0).map(k => this.rare[k] + ' ' + RARE_PARTS[k].name).join(' \u00b7 ');
-items.push(UI.text(this, width - 12 - 18, top + 20, this.parts + ' Parts' + (rareTxt ? ' \u00b7 ' + rareTxt : ''), 'small',
-  { size: 11, origin: [1, 0.5], depth: D + 1, color: UI.T.amber }));
-let info = 'Scavenger mods \u2014 pick any two paths';
+if (tower.type !== 'barricade') {
+  const modes = ['first', 'strong', 'close', 'last'];
+  items.push(UI.button(this, width - 12 - 16 - 56, top + 22, 112, 30, {
+    label: 'AIM: ' + (tower.targetMode || 'first').toUpperCase(), variant: 'outline', colour: colour, size: 11, depth: D + 2,
+    onTap: () => { this.towerTapped = true; tower.targetMode = modes[(modes.indexOf(tower.targetMode || 'first') + 1) % modes.length]; this.showUpgradePanel(tower); }
+  }));
+}
+let info = this.parts + ' Parts' + (rareTxt ? ' \u00b7 ' + rareTxt : '') + '  \u00b7  mods: pick any two paths';
 if (tower.powerMult && Math.abs(tower.powerMult - 1) > 0.04) info += '  \u00b7  power zone ' + (tower.powerMult > 1 ? '+' : '') + Math.round((tower.powerMult - 1) * 100) + '%';
 items.push(UI.text(this, lx, top + 40, info, 'small', { size: 11, origin: [0, 0.5], depth: D + 1 }));
 
@@ -816,7 +839,8 @@ types.forEach((type, i) => {
 // Start wave
 const sx = width - 16 - startW / 2;
 this.startWaveBtn = UI.button(this, sx, by, startW, bh, {
-  label: 'START', sub: 'WAVE 1', variant: 'success', size: 17, depth: 10, onTap: () => this.startNextWave()
+  label: 'START', sub: 'WAVE 1', variant: 'success', size: 17, depth: 10,
+  onTap: () => this.waveActive ? this.callWaveEarly() : this.startNextWave()
 });
 this.startWaveBtn.y = by;
 }
@@ -873,6 +897,8 @@ if (this.loadout[type] <= 0) {
 }
 if (this.gameOver) return;
 this.dismissUpgradePanel();
+this.selectedAbility = null;
+if (this.abilityPreview) { this.abilityPreview.destroy(); this.abilityPreview = null; }
 this.selectedTowerType = type;
 this.refreshTowerButtons();
 }
@@ -880,6 +906,7 @@ this.refreshTowerButtons();
 // ── Combat ────────────────────────────────────────────────────────────
 getSpeedModifier(enemy) {
 let modifier = 1.0;
+if (enemy.netUntil && enemy.netUntil > this.simNow) modifier = 0.15;
 this.placedTowers.forEach(tower => {
 if (tower.type !== 'barricade') return;
 if (Phaser.Math.Distance.Between(tower.x, tower.y, enemy.sprite.x, enemy.sprite.y) <= tower.data.range) {
@@ -887,6 +914,21 @@ modifier = Math.min(modifier, tower.data.slowAmount);
 }
 });
 return modifier;
+}
+
+// Target priority, set per tower from its panel
+pickTarget(tower, list) {
+const prog = e => {
+  const nxt = this.pathPoints[e.moveTargetIdx] || this.pathPoints[this.pathPoints.length - 1];
+  return (e.moveTargetIdx || 0) * 10000 - Phaser.Math.Distance.Between(e.sprite.x, e.sprite.y, nxt.x, nxt.y);
+};
+const by = {
+  first:  (a, b) => prog(b) - prog(a),
+  last:   (a, b) => prog(a) - prog(b),
+  strong: (a, b) => b.hp - a.hp,
+  close:  (a, b) => Phaser.Math.Distance.Between(tower.x, tower.y, a.sprite.x, a.sprite.y) - Phaser.Math.Distance.Between(tower.x, tower.y, b.sprite.x, b.sprite.y)
+}[tower.targetMode || 'first'];
+return list.slice().sort(by)[0];
 }
 
 towerShoot(tower) {
@@ -900,7 +942,7 @@ const inRange = this.activeEnemies.filter(e => {
 });
 if (inRange.length === 0) return;
 
-const target = inRange.reduce((best, e) => e.pathProgress > best.pathProgress ? e : best, inRange[0]);
+const target = this.pickTarget(tower, inRange);
 tower.lastFired = this.simNow;
 
 // Aim the barrel and kick it back a little
@@ -993,11 +1035,14 @@ this.saveData.seenEnemies[type] = true;
 SaveManager.update(s => { if (!s.seenEnemies) s.seenEnemies = {}; s.seenEnemies[type] = true; });
 this._modalOpen = true;
 this.hidePreview();
+const midWave = this.waveActive;
+if (midWave) this.setPaused(true);
 UI.modal(this, {
   title: 'New raider: ' + d.card.title, icon: 'shield', accent: d.colour,
   body: d.card.trait + '\n\n' + d.card.body,
   buttons: [{ label: types.length > 1 ? 'NEXT' : 'GOT IT', variant: 'primary', colour: UI.C.red, onTap: () => {
     this._modalOpen = false;
+    if (midWave) this.setPaused(false);
     if (types.length > 1) this.time.delayedCall(120, () => this.introduceRaiders(types.slice(1), done));
     else done();
   } }]
@@ -1175,7 +1220,9 @@ this.tweens.add({ targets: [banner, sub], alpha: 1, duration: 220,
 
 // The player pressed START, so raiders arrive as the banner fades — no
 // long silent wait (preWaveDelay in the level data is ignored)
+this._awaitingSpawn = true;     // no calling early until this wave is under way
 this.time.delayedCall(500, () => {
+  this._awaitingSpawn = false;
   if (this.gameOver) return;
   this.waveText.setText('Wave ' + (this.currentWave + 1) + ' of ' + total + ' — hold the line').setColor(UI.T.dim);
   this.spawnWave(waveData);
@@ -1183,10 +1230,13 @@ this.time.delayedCall(500, () => {
 }
 
 // REQ 10: Irregular rhythm — burst spawning with variable gaps
-spawnWave(waveData) {
+// accumulate: a wave called early adds to the one still on the road
+spawnWave(waveData, accumulate) {
 let totalDelay = 0;
-this.waveEnemyTotal    = waveData.enemies.reduce((s, g) => s + g.count, 0);
-this.waveEnemyResolved = 0;
+const n = waveData.enemies.reduce((s, g) => s + g.count, 0);
+if (accumulate) this.waveEnemyTotal += n;
+else { this.waveEnemyTotal = n; this.waveEnemyResolved = 0; }
+this._pendingSpawns = (this._pendingSpawns || 0) + n;
 
 waveData.enemies.forEach(group => {
   let i = 0;
@@ -1200,6 +1250,7 @@ waveData.enemies.forEach(group => {
       const burstOffset = b > 0 ? 120 + Math.random() * 280 : 0;
       const spawnDelay  = totalDelay + burstOffset;
       this.time.delayedCall(spawnDelay, () => {
+        this._pendingSpawns--;
         if (!this.gameOver) this.spawnEnemy(group.type);
       });
     }
@@ -1290,12 +1341,146 @@ this.checkWaveComplete();
 
 }
 
+// ── Abilities ─────────────────────────────────────────────────────────
+// Two tools on cooldowns: tap the button, then tap the map.
+abilityDefs() {
+return {
+  flare: { name: 'FLARE', icon: 'star', colour: UI.C.amber, radius: 70, cooldown: 25000,
+           hint: 'Tap the road to drop a flare barrage' },
+  net:   { name: 'NET',   icon: 'shield', colour: 0x8fb3c9, radius: 80, cooldown: 20000,
+           hint: 'Tap the road to throw a cargo net' }
+};
+}
+
+drawAbilityButtons() {
+this.abilityBtns = {};
+if (!Progress.has(this.saveData, 'abilities') && !this.isEndless) return;
+const width = this.scale.width;
+Object.entries(this.abilityDefs()).forEach(([key, a], i) => {
+  const x = width - 34, y = this.PLAY_BOTTOM - 34 - i * 62;
+  const c = this.add.container(x, y).setDepth(11);
+  const ring = this.add.graphics();
+  const ic = UI.icon(this, 0, -4, a.icon, 15, a.colour);
+  const lbl = UI.text(this, 0, 14, a.name, 'tag', { size: 8.5, origin: 0.5, color: UI.T.dim });
+  const cd = UI.text(this, 0, -4, '', 'number', { size: 14, origin: 0.5, color: UI.T.text });
+  const zone = this.add.zone(0, 0, 54, 54).setInteractive();
+  c.add([ring, ic, lbl, cd, zone]);
+  zone.on('pointerdown', () => {
+    this.abilityTapped = true;
+    if (this.gameOver || this.abilityCooldownLeft(key) > 0) return;
+    this.selectedTowerType = null; this.refreshTowerButtons(); this.hidePreview(); this.dismissUpgradePanel();
+    this.selectedAbility = this.selectedAbility === key ? null : key;
+    if (this.selectedAbility) UI.toast(this, a.hint, 'info', { y: this.PLAY_TOP + 22, duration: 1600 });
+    this._abSig = null;
+  });
+  this.abilityBtns[key] = { c, ring, ic, cd, a };
+});
+}
+
+abilityCooldownLeft(key) {
+const last = this.abilityLast[key];
+if (last === undefined) return 0;
+return Math.max(0, this.abilityDefs()[key].cooldown - (this.simNow - last));
+}
+
+updateAbilityButtons() {
+if (!this.abilityBtns) return;
+Object.entries(this.abilityBtns).forEach(([key, b]) => {
+  const left = this.abilityCooldownLeft(key), sel = this.selectedAbility === key;
+  const sig = Math.ceil(left / 1000) + (sel ? 's' : '');
+  if (b.sig === sig) return;
+  b.sig = sig;
+  const frac = left / b.a.cooldown;
+  b.ring.clear();
+  b.ring.fillStyle(sel ? 0x1d2734 : UI.C.surface, 0.95); b.ring.fillCircle(0, 0, 25);
+  b.ring.lineStyle(sel ? 3 : 2, left > 0 ? UI.C.line : b.a.colour, 1); b.ring.strokeCircle(0, 0, 25);
+  if (left > 0) {
+    b.ring.lineStyle(3, b.a.colour, 0.9);
+    b.ring.beginPath(); b.ring.arc(0, 0, 25, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - frac)); b.ring.strokePath();
+  }
+  b.ic.setAlpha(left > 0 ? 0.25 : 1);
+  b.cd.setText(left > 0 ? String(Math.ceil(left / 1000)) : '');
+});
+}
+
+castAbility(key, x, y) {
+const a = this.abilityDefs()[key];
+this.selectedAbility = null;
+this.abilityLast[key] = this.simNow;
+if (this.abilityPreview) { this.abilityPreview.destroy(); this.abilityPreview = null; }
+if (key === 'flare') {
+  // A short whistle, then a blast that ignores some armour
+  const mark = this.add.circle(x, y, a.radius, UI.C.amber, 0.12).setStrokeStyle(2, UI.C.amber, 0.7).setDepth(6);
+  this.tweens.add({ targets: mark, alpha: 0.5, duration: 150, yoyo: true, repeat: 1 });
+  this.time.delayedCall(600, () => {
+    mark.destroy();
+    if (this.gameOver) return;
+    const boom = this.add.circle(x, y, a.radius, 0xffd27a, 0.55).setDepth(8);
+    this.tweens.add({ targets: boom, alpha: 0, scale: 1.25, duration: 320, onComplete: () => boom.destroy() });
+    this.cameras.main.shake(120, 0.004);
+    this.activeEnemies.slice().forEach(e => {
+      if (!e.alive || !e.sprite) return;
+      if (Phaser.Math.Distance.Between(x, y, e.sprite.x, e.sprite.y) <= a.radius) this.dealDamage(e, 45, 'flare', { pierce: 3 });
+    });
+  });
+} else {
+  // Cargo net: raiders inside barely move for a few seconds
+  const net = this.add.circle(x, y, a.radius, 0x8fb3c9, 0.14).setStrokeStyle(2, 0x8fb3c9, 0.8).setDepth(3);
+  this.tweens.add({ targets: net, alpha: 0, delay: 3200, duration: 800, onComplete: () => net.destroy() });
+  this.activeEnemies.forEach(e => {
+    if (!e.alive || !e.sprite) return;
+    if (Phaser.Math.Distance.Between(x, y, e.sprite.x, e.sprite.y) <= a.radius) { e.netUntil = this.simNow + 4000; this.moveToWaypoint(e, e.moveTargetIdx); }
+  });
+}
+}
+
+// ── Call the next wave early ──────────────────────────────────────────
+// Once the current wave has finished arriving, START becomes CALL EARLY:
+// the next wave comes straight away and pays bonus Parts for the risk.
+earlyBonus() { return 4 + this.activeEnemies.filter(e => e.alive).length; }
+
+canCallEarly() {
+return this.waveActive && !this.gameOver && !this.tutorial && !this._awaitingSpawn && this._pendingSpawns <= 0
+  && this.currentWave + 1 < this.levelData.waves.length;
+}
+
+callWaveEarly() {
+if (!this.canCallEarly()) return;
+const nextIdx = this.currentWave + 1;
+const next = this.levelData.waves[nextIdx];
+const seen = (this.saveData && this.saveData.seenEnemies) || {};
+const fresh = [...new Set(next.enemies.map(g => g.type))]
+  .filter(t => !seen[t] && ENEMY_DATA[t] && (ENEMY_DATA[t].traits || []).length && ENEMY_DATA[t].card);
+if (fresh.length) { this.introduceRaiders(fresh, () => this.callWaveEarly()); return; }
+const bonus = this.earlyBonus();
+this.parts += bonus;
+this.partsText.setText('' + this.parts);
+this.currentWave = nextIdx;
+this.waveIndicator.setText('WAVE ' + (nextIdx + 1) + ' / ' + this.levelData.waves.length);
+UI.toast(this, 'Wave ' + (nextIdx + 1) + ' called early  +' + bonus + ' Parts', 'good', { y: this.PLAY_TOP + 22, duration: 1600 });
+this.spawnWave(next, true);
+}
+
+updateStartButton() {
+if (!this.startWaveBtn || this.gameOver) return;
+let sig;
+if (!this.waveActive) return;
+if (this.canCallEarly()) sig = 'early' + this.earlyBonus();
+else sig = 'busy' + this.currentWave;
+if (sig === this._startSig) return;
+this._startSig = sig;
+if (this.canCallEarly()) this.startWaveBtn.setEnabled(true).setVariant('primary', UI.C.amber).setLabel('EARLY', '+' + this.earlyBonus() + ' PARTS');
+else this.startWaveBtn.setEnabled(false).setVariant('success').setLabel('WAVE ' + (this.currentWave + 1), 'IN PROGRESS');
+}
+
 checkWaveComplete() {
 if (!this.waveActive || this.gameOver) return;
-if (this.waveEnemyResolved < this.waveEnemyTotal) return;
+if (this.waveEnemyResolved < this.waveEnemyTotal || this._pendingSpawns > 0) return;
 
 this.time.delayedCall(1200, () => {
   if (!this.waveActive) return;
+  // A wave called early in the meantime keeps this one going
+  if (this.waveEnemyResolved < this.waveEnemyTotal || this._pendingSpawns > 0) return;
   this.waveActive = false;
   this.currentWave++;
   if (this.currentWave >= this.levelData.waves.length) {
@@ -1306,7 +1491,8 @@ this.time.delayedCall(1200, () => {
   const left = Object.values(this.loadout).reduce((a, b) => a + b, 0);
   this.waveText.setText('Wave ' + this.currentWave + ' cleared' + (left > 0 ? ' — place more towers if you have them' : ''))
     .setColor(UI.T.green);
-  this.startWaveBtn.setEnabled(true).setLabel('START', 'WAVE ' + (this.currentWave + 1));
+  this._startSig = null;
+  this.startWaveBtn.setEnabled(true).setVariant('success').setLabel('START', 'WAVE ' + (this.currentWave + 1));
 });
 }
 
@@ -1555,6 +1741,8 @@ this.activeEnemies.forEach(enemy => {
 
 this.updateTutorial();
 this.updateUpgradeTutorial();
+this.updateStartButton();
+this.updateAbilityButtons();
 }
 
 }

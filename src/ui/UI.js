@@ -215,6 +215,7 @@ const UI = {
       const was = pressed;
       pressed = false; c.setScale(1); draw();
       if (!was || !enabled) return;
+      if (UI.blocked(scene) && !o.ignoreBlock) return;
       if (o.guard && o.guard() === false) return;
       if (o.onTap) o.onTap();
     });
@@ -546,6 +547,10 @@ const UI = {
   },
 
   // ── Scene transition ───────────────────────────────────────────────────
+  // True while a full-screen overlay (a story scene) owns input, and for a
+  // moment after it closes so the closing tap can't press what's underneath
+  blocked(scene) { return !!(scene && scene._inputBlockedUntil && scene.time && (scene._storyOpen || scene.time.now < scene._inputBlockedUntil)); },
+
   go(scene, key, data) {
     if (scene._uiLeaving) return;
     scene._uiLeaving = true;

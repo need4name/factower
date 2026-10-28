@@ -23,10 +23,19 @@ const _NCF_DROPS = {
   driftwoodHulk:  { salvagedMetal: 2 },
   frontCommander: { plasticScrap: 2, salvagedMetal: 3 }
 };
+const _HELIX_DROPS = {
+  helixDrone:     { plasticScrap: 1 },
+  helixTrooper:   { salvagedMetal: 2 },
+  helixWarden:    { plasticScrap: 2, salvagedMetal: 2 },
+  helixSpearhead: { plasticScrap: 6, salvagedMetal: 8 },
+  saltChild:      { plasticScrap: 1 },
+  scrapRunner:    { plasticScrap: 1 }
+};
 const _SALV_DROPS = {
   salvSkiff:  { plasticScrap: 1 },
   salvCutter: { salvagedMetal: 2 },
   salvRam:    { salvagedMetal: 4 },
+  umbajiFlagship: { plasticScrap: 10, salvagedMetal: 14 },
   saltChild:  { plasticScrap: 1 },
   scrapRunner:{ plasticScrap: 1 }
 };
@@ -236,8 +245,25 @@ const LEVEL_DATA = {
                    _W(_g('salvCutter', 10, 1300), _g('salvRam', 2, 5000)),
                    _W(_g('salvRam', 5, 3000), _g('salvCutter', 8, 1400), _g('salvSkiff', 26, 450)) ],
           materialRewards: { killDrops: _SALV_DROPS, completionBonus: { plasticScrap: 22, salvagedMetal: 24 } } },
-        { id: 6, name: 'PRESSURE', soon: true, requires: ['s3-3'], description: 'Why is Helix moving the Front?' },
-        { id: 7, name: 'UMBAJI', soon: true, boss: true, description: 'End the SALV raids for good.' }
+        { id: 6, name: 'PRESSURE', requires: ['s3-3'],
+          description: 'You press the voice about Helix. The SALV press the raft.',
+          difficulty: 17, baseHp: 18,
+          path: _P([350, 0], [350, 70], [120, 70], [120, 180], [300, 180], [300, 290], [60, 290], [60, 418]),
+          waves: [ _W(_g('salvSkiff', 22, 550), _g('scrapRunner', 12, 700)),
+                   _W(_g('salvCutter', 8, 1500), _g('saltChild', 20, 450)),
+                   _W(_g('salvRam', 4, 3200), _g('salvSkiff', 20, 550), _g('bilgeRat', 18, 160)),
+                   _W(_g('salvRam', 5, 2800), _g('salvCutter', 10, 1200), _g('salvSkiff', 26, 420)) ],
+          materialRewards: { killDrops: _SALV_DROPS, completionBonus: { plasticScrap: 24, salvagedMetal: 26 } } },
+
+        { id: 7, name: 'UMBAJI', boss: true,
+          description: 'Umbaji sails his flagship at the raft. End the SALV raids for good.',
+          difficulty: 19, baseHp: 20,
+          path: _P([40, 0], [40, 100], [350, 100], [350, 210], [40, 210], [40, 320], [350, 320], [350, 418]),
+          waves: [ _W(_g('salvSkiff', 24, 500), _g('salvCutter', 6, 1800)),
+                   _W(_g('salvRam', 4, 3000), _g('salvCutter', 8, 1400)),
+                   _W(_g('salvCutter', 10, 1100), _g('salvSkiff', 28, 420), _g('salvRam', 3, 4000)),
+                   _W(_g('umbajiFlagship', 1, 0), _g('salvCutter', 8, 2200), _g('salvRam', 2, 9000)) ],
+          materialRewards: { killDrops: _SALV_DROPS, completionBonus: { plasticScrap: 34, salvagedMetal: 36 } } }
       ]
     },
 
@@ -266,8 +292,26 @@ const LEVEL_DATA = {
                    _W(_g('frontCommander', 1, 0), _g('bilgeRat', 20, 160), _g('scrapRunner', 14, 650)),
                    _W(_g('frontCommander', 2, 8000), _g('driftwoodHulk', 6, 2200), _g('saltChild', 24, 450), _g('bilgeRat', 20, 160)) ],
           materialRewards: { killDrops: _NCF_DROPS, completionBonus: { plasticScrap: 22, salvagedMetal: 20 } } },
-        { id: 3, name: 'ONE WORD', soon: true, description: 'A prisoner says only: Helix.' },
-        { id: 4, name: 'ADVANCE FORCE', soon: true, description: 'The fleeing Front, and what follows them.' }
+        { id: 3, name: 'ONE WORD',
+          description: 'Another Front crew running from the west. Take one alive.',
+          difficulty: 16, baseHp: 18,
+          path: _P([60, 0], [60, 120], [330, 120], [330, 40], [195, 40], [195, 260], [330, 260], [330, 380], [60, 380], [60, 418]),
+          waves: [ _W(_g('scrapRunner', 20, 550), _g('saltChild', 16, 500)),
+                   _W(_g('driftwoodHulk', 5, 2400), _g('bilgeRat', 20, 150)),
+                   _W(_g('frontCommander', 1, 0), _g('scrapRunner', 18, 550), _g('driftwoodHulk', 4, 2600)),
+                   _W(_g('frontCommander', 2, 7000), _g('driftwoodHulk', 6, 2000), _g('bilgeRat', 24, 140), _g('scrapRunner', 16, 600)) ],
+          materialRewards: { killDrops: _NCF_DROPS, completionBonus: { plasticScrap: 24, salvagedMetal: 22 } } },
+
+        { id: 4, name: 'ADVANCE FORCE', boss: true,
+          description: 'The fleeing Front, and what follows them.',
+          difficulty: 18, baseHp: 18,
+          path: _P([195, 0], [195, 70], [350, 70], [350, 200], [195, 200], [195, 300], [40, 300], [40, 160], [110, 160], [110, 418]),
+          waves: [ _W(_g('saltChild', 8, 1400), _g('scrapRunner', 5, 1800)),
+                   _W(_g('helixDrone', 16, 650)),
+                   _W(_g('helixTrooper', 8, 1600), _g('helixDrone', 16, 600)),
+                   _W(_g('helixWarden', 2, 6000), _g('helixTrooper', 8, 1400), _g('helixDrone', 18, 500)),
+                   _W(_g('helixSpearhead', 1, 0), _g('helixWarden', 2, 7000), _g('helixTrooper', 10, 1200), _g('helixDrone', 20, 450)) ],
+          materialRewards: { killDrops: _HELIX_DROPS, completionBonus: { plasticScrap: 30, salvagedMetal: 30 } } }
       ]
     }
   ]

@@ -740,7 +740,8 @@ for (let i = 0; i < this.pathPoints.length - 1; i++) {
 const start = this.pathPoints[0];
 UI.text(this, start.x + 28, this.CT + 10, 'RAIDERS ENTER', 'tag', { size: 10, origin: [0, 0.5], color: UI.T.red, depth: 2 });
 const exitPt = this.pathPoints[this.pathPoints.length - 1];
-UI.text(this, exitPt.x + 28, this.CB - 10, 'YOUR BASE', 'tag', { size: 10, origin: [0, 0.5], color: UI.T.blue, depth: 2 });
+const baseRight = exitPt.x > this.scale.width - 110;   // keep the label on screen
+UI.text(this, exitPt.x + (baseRight ? -28 : 28), this.CB - 10, 'YOUR BASE', 'tag', { size: 10, origin: [baseRight ? 1 : 0, 0.5], color: UI.T.blue, depth: 2 });
 }
 
 // ── Header redesign (REQ 7) ───────────────────────────────────────────
@@ -944,7 +945,7 @@ targets.forEach(e => {
   g.lineStyle(4, 0x9d7ff0, flick * 0.5); g.lineBetween(tower.x, tower.y, e.sprite.x, e.sprite.y);
   g.lineStyle(1.5, 0xe9ddff, flick);     g.lineBetween(tower.x, tower.y, e.sprite.x, e.sprite.y);
   e.siphonedUntil = now + 300;
-  this.dealDamage(e, (d.dps || 12) * dt / 1000, 'siphon', { pierce: 2 });
+  this.dealDamage(e, (d.dps || 12) * dt / 1000, 'siphon', { pierce: 2, beam: true });
 });
 }
 
@@ -1157,6 +1158,7 @@ this.pickups = this.pickups.filter(p => {
 this.activeEnemies.forEach(e => {
   if (!e.alive || !e.sprite || !e.sprite.active) return;
   if (e.sprite.aura) e.sprite.aura.setPosition(e.sprite.x, e.sprite.y);
+  this.shieldTick(e);
   const h = e.data.heal;
   if (h && this.simNow - e.lastHeal >= h.every) {
     e.lastHeal = this.simNow;
@@ -1177,10 +1179,59 @@ this.activeEnemies.forEach(e => {
 });
 }
 
-// opts.pierce ignores that much armour; opts.trueDamage ignores it all (burns)
+// Shields recharge (fully, over a second) once a raider goes untouched for
+// shield.regen ms; projectors top up allies; spawners launch boats.
+shieldTick(e) {
+const sd = e.data.shield;
+if (sd && e.shield < e.maxShield && this.simNow - e.lastHitAt >= sd.regen) {
+  e.shield = Math.min(e.maxShield, e.shield + e.maxShield * this._tickDt / 1000);
+}
+if (e.ring) {
+  e.ring.setPosition(e.sprite.x, e.sprite.y);
+  e.ring.setAlpha(e.shield > 0 ? 0.3 + 0.7 * e.shield / Math.max(1, e.maxShield) : 0);
+}
+const a = e.data.shieldAura;
+if (a && this.simNow - e.lastHeal >= a.every) {
+  e.lastHeal = this.simNow;
+  this.activeEnemies.forEach(o => {
+    if (!o.alive || o === e || !o.sprite) return;
+    if (Phaser.Math.Distance.Between(e.sprite.x, e.sprite.y, o.sprite.x, o.sprite.y) > a.radius) return;
+    o.maxShield = Math.max(o.maxShield || 0, a.amount);
+    o.shield = Math.min(o.maxShield, (o.shield || 0) + a.amount);
+    this.addShieldRing(o);
+  });
+  if (e.sprite.aura) this.tweens.add({ targets: e.sprite.aura, alpha: { from: 1, to: 0.4 }, duration: 300 });
+}
+const sp = e.data.spawn;
+if (sp) {
+  const enraged = e.hp < e.maxHp * 0.5;
+  if (enraged && !e.enraged) {
+    e.enraged = true;
+    UI.toast(this, (e.data.card ? e.data.card.title : 'The flagship') + ' is listing — Skiffs pouring out!', 'warn', { y: this.PLAY_TOP + 26 });
+  }
+  if (this.simNow - e.lastSpawn >= (enraged ? sp.enragedEvery : sp.every)) {
+    e.lastSpawn = this.simNow;
+    for (let i = 0; i < sp.count; i++) {
+      this.waveEnemyTotal++;
+      this.spawnEnemy(sp.type, { x: e.sprite.x + (i - (sp.count - 1) / 2) * 14, y: e.sprite.y, idx: e.moveTargetIdx || 1 });
+    }
+  }
+}
+}
+
+// opts.pierce ignores that much armour; opts.trueDamage ignores it all (burns);
+// opts.beam (Siphon) goes straight through shields
 dealDamage(enemy, damage, sourceType, opts) {
 if (!enemy.alive) return;
 const o = opts || {};
+enemy.lastHitAt = this.simNow;
+// Shields soak the hit before armour; beams and burns slip past them
+if (enemy.shield > 0 && !o.trueDamage && !o.beam) {
+  const soak = Math.min(enemy.shield, damage);
+  enemy.shield -= soak; damage -= soak;
+  if (enemy.shield <= 0) { enemy.shield = 0; this.shieldBreak(enemy); }
+  if (damage <= 0) return;
+}
 const armour = o.trueDamage ? 0 : Math.max(0, (enemy.data.armour || 0) - (o.pierce || 0));
 if (armour > 0) damage = Math.max(1, damage - armour);
 enemy.hp -= damage;
@@ -1193,6 +1244,12 @@ this.tweens.add({ targets: enemy.sprite, alpha: 0.3, duration: 60, yoyo: true })
 if (enemy.hp <= 0) this.killEnemy(enemy, sourceType);
 }
 
+shieldBreak(enemy) {
+if (!enemy.sprite || !enemy.sprite.active) return;
+const pop = this.add.circle(enemy.sprite.x, enemy.sprite.y, enemy.data.size + 5, 0x7fe3ff, 0).setStrokeStyle(3, 0x7fe3ff, 1).setDepth(9);
+this.tweens.add({ targets: pop, scale: 1.8, alpha: 0, duration: 260, onComplete: () => pop.destroy() });
+}
+
 killEnemy(enemy, sourceType) {
 if (!enemy.alive) return;
 enemy.alive = false;
@@ -1203,6 +1260,7 @@ if (sourceType && this.towerStats[sourceType] && this.towerStats[sourceType].kil
 this.towerStats[sourceType].kills++;
 }
 if (enemy.sprite && enemy.sprite.aura) { enemy.sprite.aura.destroy(); enemy.sprite.aura = null; }
+if (enemy.ring) { enemy.ring.destroy(); enemy.ring = null; }
 if (enemy.hpBg)   { enemy.hpBg.destroy();   enemy.hpBg   = null; }
 if (enemy.hpFill) { enemy.hpFill.destroy();  enemy.hpFill = null; }
 if (enemy.sprite && enemy.sprite.active) {
@@ -1313,9 +1371,10 @@ waveData.enemies.forEach(group => {
 
 }
 
-spawnEnemy(type) {
+// from = { x, y, idx }: start mid-path (boats launched by a spawner boss)
+spawnEnemy(type, from) {
 const data   = ENEMY_DATA[type];
-const start  = this.pathPoints[0];
+const start  = from || this.pathPoints[0];
 const sprite = this.add.circle(start.x, start.y, data.size, data.colour).setDepth(7);
 const barW   = Math.max(data.size * 2.5, 22);
 const hpBg   = this.add.rectangle(start.x, start.y - data.size - 7, barW, 4, 0x2a3a4a).setDepth(8);
@@ -1327,11 +1386,21 @@ if (traits.includes('healer')) {
   const aura = this.add.circle(start.x, start.y, data.heal.radius, 0x52c47f, 0.06).setStrokeStyle(1, 0x52c47f, 0.35).setDepth(5);
   sprite.aura = aura;
 }
+if (data.shieldAura) {
+  sprite.aura = this.add.circle(start.x, start.y, data.shieldAura.radius, 0x7fe3ff, 0.05).setStrokeStyle(1, 0x7fe3ff, 0.35).setDepth(5);
+}
+const shield = data.shield ? data.shield.hp : 0;
 const enemy = { type, data: { ...data }, sprite, hp: data.hp, maxHp: data.hp, alive: true, pathProgress: 0, hpBg, hpFill,
-  lastHeal: this.simNow, burnDps: 0, burnUntil: 0 };
+  lastHeal: this.simNow, burnDps: 0, burnUntil: 0, shield, maxShield: shield, lastHitAt: 0, lastSpawn: this.simNow };
+if (shield) this.addShieldRing(enemy);
 this.activeEnemies.push(enemy);
-this.moveToWaypoint(enemy, 1);
+this.moveToWaypoint(enemy, from ? from.idx : 1);
 
+}
+
+addShieldRing(enemy) {
+if (enemy.ring || !enemy.sprite) return;
+enemy.ring = this.add.circle(enemy.sprite.x, enemy.sprite.y, enemy.data.size + 4, 0x7fe3ff, 0.12).setStrokeStyle(2, 0x7fe3ff, 0.95).setDepth(8);
 }
 
 moveToWaypoint(enemy, idx) {
@@ -1362,6 +1431,8 @@ if (!enemy.alive) return;
 enemy.alive = false;
 this.activeEnemies = this.activeEnemies.filter(e => e !== enemy);
 this.enemiesEscaped++;
+if (enemy.sprite && enemy.sprite.aura) { enemy.sprite.aura.destroy(); enemy.sprite.aura = null; }
+if (enemy.ring) { enemy.ring.destroy(); enemy.ring = null; }
 if (enemy.hpBg)   { enemy.hpBg.destroy();   enemy.hpBg   = null; }
 if (enemy.hpFill) { enemy.hpFill.destroy();  enemy.hpFill = null; }
 if (enemy.sprite) enemy.sprite.destroy();
@@ -1399,7 +1470,9 @@ this.abilityBtns = {};
 if (!Progress.has(this.saveData, 'abilities') && !this.isEndless) return;
 const width = this.scale.width;
 Object.entries(this.abilityDefs()).forEach(([key, a], i) => {
-  const x = width - 34, y = this.PLAY_BOTTOM - 34 - i * 62;
+  // Bottom-right, unless the road ends there — then bottom-left
+  const end = this.pathPoints[this.pathPoints.length - 1];
+  const x = end.x > width - 110 ? 34 : width - 34, y = this.PLAY_BOTTOM - 34 - i * 62;
   const c = this.add.container(x, y).setDepth(11);
   const ring = this.add.graphics();
   const ic = UI.icon(this, 0, -4, a.icon, 15, a.colour);
@@ -1622,6 +1695,8 @@ if (victory) {
     Object.keys(STORYLINE_GATES).forEach(sid => {
       if ((STORYLINE_GATES[sid] || []).includes(lkey)) unlocks.push('New story: ' + Progress.storyline(+sid).short + ' \u2014 ' + Progress.storyline(+sid).title + '.');
     });
+    const stl = Progress.storyline(this.storylineId);
+    if (stl && stl.levels[stl.levels.length - 1].id === this.levelId) unlocks.unshift(stl.short + ' complete \u2014 ' + stl.title + '.');
   }
   if (this.merchantsRested) unlocks.push('Your merchants have rested — fresh payouts at the Market.');
   if (unlocks.length) card('UNLOCKED', unlocks.join('\n'), UI.C.amber);

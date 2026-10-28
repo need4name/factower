@@ -12,6 +12,7 @@ const CHARACTERS = {
   ncf:      { name: 'NCF raider',    colour: 0xe5534b },
   umbaji:   { name: 'Umbaji',        colour: 0x52c47f, role: 'Captain of the SALV Collective' },
   borga:    { name: 'Borga',         colour: 0x9d7ff0, role: 'More cybernetics than woman' },
+  agent:    { name: 'Rogue agent',   colour: 0x7fe3ff, role: 'Walked out on Helix' },
   voice:    { name: 'Muffled voice', colour: 0x8b9bb0, role: 'Claims to speak for Luis Ortega, IOA' }
 };
 
@@ -161,6 +162,30 @@ const STORY_BEATS = {
   's2-5.after': [
     ['tim', 'The IOA don\u2019t do favours. Whatever they want, it\u2019s bigger than Umbaji.']
   ],
+  's2-6.before': [
+    ['narrator', 'You key the radio. This time you do the asking.'],
+    ['narrator', 'Why is Helix driving the whole Front east? What are they running from?'],
+    ['voice', '\u2026Will you end Umbaji or not?'],
+    ['narrator', 'Static. Then SALV sails, and Front boats running ahead of them.']
+  ],
+  's2-6.after': [
+    ['narrator', 'That night you sit down with everyone who works the raft.'],
+    ['tim', 'I don\u2019t trust the voice. But I don\u2019t trust Umbaji either.'],
+    ['bet', 'Odds are bad either way. I\u2019d rather bet on us.'],
+    ['borga', 'Umbaji left my people to starve. I will not cry for him.'],
+    ['narrator', 'Whatever the IOA want, the worst that can happen is the SALV raids stop. You decide to end it.']
+  ],
+  's2-7.before': [
+    ['umbaji', '(on the radio) I offered you the Collective. You chose the gutter.'],
+    ['umbaji', 'Now you see the Makombora. Nobody has ever seen it twice.'],
+    ['borga', 'Big ship. Big target.']
+  ],
+  's2-7.after': [
+    ['narrator', 'The Makombora rolls over and goes down by the bow. The SALV sails scatter for the horizon.'],
+    ['tim', 'No more raids. Not from them.'],
+    ['voice', '(on the radio) Efficient. The office of Commander Ortega will be in touch.'],
+    ['bet', 'I don\u2019t like being somebody\u2019s good news.']
+  ],
 
   // ── Story 3 · Helix ─────────────────────────────────────────────────────
   's3-1.before': [
@@ -175,5 +200,27 @@ const STORY_BEATS = {
   's3-2.after': [
     ['ncf', 'Here. Take it. Someone will call. They\u2019ll need something from you.'],
     ['narrator', 'A battered radio, still warm from the raider\u2019s hands.']
+  ],
+  's3-3.before': [
+    ['tim', 'Always from the west. Always running. This time we take one alive.']
+  ],
+  's3-3.after': [
+    ['narrator', 'You pull a Front raider out of the water and sit him down in the factory.'],
+    ['tim', 'Who are you running from?'],
+    ['narrator', 'He doesn\u2019t answer for a long time. Then one word.'],
+    ['ncf', 'Helix.'],
+    ['narrator', 'He won\u2019t say anything else.']
+  ],
+  's3-4.before': [
+    ['bet', 'Front boats on the horizon. Not many. Not enough to be a raid.'],
+    ['tim', 'They\u2019re not attacking. They\u2019re fleeing. Get ready for whatever\u2019s behind them.']
+  ],
+  's3-4.after': [
+    ['narrator', 'In the wreck of the command ship, someone is still alive \u2014 and wants you to know it.'],
+    ['agent', 'Don\u2019t shoot. I\u2019m not with them. Not any more.'],
+    ['agent', 'That was the Advance Force. Helix sends it ahead to clear the water. What it clears, it keeps.'],
+    ['agent', 'They don\u2019t want the Front. They don\u2019t want your raft. They want the turbines.'],
+    ['tim', 'Then we\u2019re next.'],
+    ['agent', 'Everyone is next.']
   ]
 };

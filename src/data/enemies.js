@@ -5,6 +5,10 @@
 //               barely scratch them; big hits and armour-piercing mods work
 //   healer    — patches up nearby raiders every few seconds; focus it down
 //   swarm     — tiny and many; splash damage shines
+//   shielded  — an energy shield soaks hits first and recharges if the
+//               raider goes untouched; Siphon beams and burns slip past it
+//   projector — tops up the shields of raiders around it
+//   spawner   — launches smaller boats as it goes (boss)
 // `card` is shown the first time a raider appears (see CombatScene).
 // `rareDrop` is the rare salvage an elite leaves behind (for tier-3 mods).
 const ENEMY_DATA = {
@@ -50,6 +54,44 @@ const ENEMY_DATA = {
     hp: 460, speed: 45, partsReward: 18, baseDamage: 5, armour: 8,
     colour: 0x1f5f52, size: 19, traits: ['armoured'], rareDrop: 'engine',
     card: { title: 'SALV Ram', trait: 'HEAVY ARMOUR', body: 'A battering-ram hull with 8 armour. Small rounds do almost nothing \u2014 use Bombers, Mk II hull-piercers, Siphons and flares. Wrecks hold an Engine.' }
+  },
+  // ── Helix ───────────────────────────────────────────────────────────
+  helixDrone: {
+    key: 'helixDrone', name: 'HELIX DRONE',
+    hp: 45, speed: 185, partsReward: 4, baseDamage: 2,
+    colour: 0xd8e4ea, size: 9, traits: ['fast', 'shielded'],
+    shield: { hp: 50, regen: 2500 },
+    card: { title: 'Helix Drone', trait: 'FAST · SHIELDED', body: 'Quick machines behind a 50-point energy shield that recharges if you stop hitting them. Keep firing — or let a Siphon beam slip straight past the shield.' }
+  },
+  helixTrooper: {
+    key: 'helixTrooper', name: 'HELIX TROOPER',
+    hp: 180, speed: 80, partsReward: 9, baseDamage: 3, armour: 3,
+    colour: 0x9fb4c2, size: 14, traits: ['shielded', 'armoured'], rareDrop: 'plate',
+    shield: { hp: 90, regen: 3000 },
+    card: { title: 'Helix Trooper', trait: 'SHIELDED · ARMOURED', body: 'Soldiers in plated suits behind a recharging shield. Concentrate fire to break the shield, then the armour. Siphons drain them through it.' }
+  },
+  helixWarden: {
+    key: 'helixWarden', name: 'HELIX WARDEN',
+    hp: 220, speed: 60, partsReward: 14, baseDamage: 4,
+    colour: 0x5fd0e6, size: 16, traits: ['projector', 'shielded'], rareDrop: 'engine',
+    shield: { hp: 60, regen: 3000 },
+    shieldAura: { amount: 30, radius: 100, every: 2500 },
+    card: { title: 'Helix Warden', trait: 'SHIELD PROJECTOR', body: 'Projects shields onto every raider near it, every few seconds. Kill it first and the rest go bare. Its wreck holds an Engine.' }
+  },
+  helixSpearhead: {
+    key: 'helixSpearhead', name: 'HELIX SPEARHEAD',
+    hp: 900, speed: 42, partsReward: 45, baseDamage: 8, armour: 4,
+    isBoss: true, colour: 0x2fb6d6, size: 22, traits: ['projector', 'shielded', 'armoured'], rareDrop: 'engine',
+    shield: { hp: 250, regen: 4000 },
+    shieldAura: { amount: 40, radius: 120, every: 3000 },
+    card: { title: 'Helix Spearhead', trait: 'BOSS · SHIELDS', body: 'The Advance Force’s command ship. A huge recharging shield, armour, and it shields its escort. Siphons and burns get past the shield.' }
+  },
+  umbajiFlagship: {
+    key: 'umbajiFlagship', name: 'THE MAKOMBORA',
+    hp: 2400, speed: 26, partsReward: 80, baseDamage: 12, armour: 6,
+    isBoss: true, colour: 0x1b8a64, size: 26, traits: ['spawner', 'armoured'], rareDrop: 'engine',
+    spawn: { type: 'salvSkiff', count: 2, every: 6000, enragedEvery: 3500 },
+    card: { title: 'The Makombora', trait: 'BOSS · SPAWNER', body: 'Umbaji’s flagship. 2400 hull, 6 armour, and it launches Skiffs as it sails — faster once it’s badly hurt. Bombers, Mk II hull-piercers and flares.' }
   },
   frontCommander: {
     key: 'frontCommander', name: 'FRONT COMMANDER',

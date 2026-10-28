@@ -11,7 +11,7 @@ const RAID_TURRETS = {
   gun:   { name: 'Gun nest', hp: 150, dmg: 14, range: 120, rate: 850,  colour: 0xe5534b, parts: 6 },
   heavy: { name: 'Cannon',   hp: 300, dmg: 38, range: 110, rate: 1800, colour: 0xb03a33, parts: 12, rare: 'plate' }
 };
-const RAID_UNIT_HP   = { gunner: 110, bomber: 90, barricade: 260 };
+const RAID_UNIT_HP   = { gunner: 110, gunner2: 150, bomber: 90, barricade: 260, siphon: 120 };
 const RAID_DEPLOY_MS = 1000;
 const RAID_REPAIR    = { cost: 10, heal: 0.5, cooldown: 6000 };
 
@@ -29,8 +29,8 @@ class RaidScene extends Phaser.Scene {
     this.H = this.scale.height;
     this.saveData = SaveManager.load() || {};
     const stock = this.saveData.stockpile || {};
-    this.stock = { gunner: stock.gunner || 0, bomber: stock.bomber || 0, barricade: stock.barricade || 0 };
-    this.lost  = { gunner: 0, bomber: 0, barricade: 0 };
+    this.stock = {}; this.lost = {};
+    TOWER_ORDER.forEach(t => { this.stock[t] = stock[t] || 0; this.lost[t] = 0; });
     this.units = []; this.turrets = []; this.shots = []; this.pickups = [];
     this.parts = 10; this.rare = { plate: 0, engine: 0 };   // enough for one repair
     this.repairHinted = false;
@@ -72,7 +72,7 @@ class RaidScene extends Phaser.Scene {
     this.input.on('pointerup', () => { this._pickupTap = false; });
   }
 
-  titleCase(str) { return str.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()); }
+  titleCase(str) { return str.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()).replace(/\bIi\b/g, 'II'); }
 
   // ── Map ───────────────────────────────────────────────────────────────
   drawRoad() {
@@ -127,17 +127,24 @@ class RaidScene extends Phaser.Scene {
     const g = this.add.graphics().setDepth(20);
     g.fillStyle(UI.C.bg, 0.96); g.fillRect(0, this.PANEL_TOP, width, 124);
     g.fillStyle(UI.C.line, 1); g.fillRect(0, this.PANEL_TOP, width, 1);
-    const types = ['gunner', 'bomber', 'barricade'];
-    const bw = (width - 32 - 3 * 8) / 4, by = this.H - 62;
+    // One button per tower type you own (two rows if there are more than 3), plus REPAIR
+    let types = TOWER_ORDER.filter(t => this.stock[t] > 0);
+    if (!types.length) types = ['gunner'];
+    const compact = types.length > 3;
+    const perRow = compact ? Math.ceil(types.length / 2) : types.length;
+    const repW = 88, bw = (width - 32 - repW - 8 * perRow) / perRow;
+    const bh = compact ? 50 : 76;
     this.deployBtns = {};
     types.forEach((t, i) => {
-      const x = 16 + bw / 2 + i * (bw + 8);
-      this.deployBtns[t] = UI.button(this, x, by, bw, 76, {
-        label: this.titleCase(TOWER_DATA[t].name), sub: 'x' + this.stock[t], variant: 'secondary', size: 13, depth: 21,
+      const row = compact ? Math.floor(i / perRow) : 0, col = compact ? i % perRow : i;
+      const x = 16 + bw / 2 + col * (bw + 8);
+      const y = compact ? this.PANEL_TOP + 8 + bh / 2 + row * (bh + 8) : this.H - 62;
+      this.deployBtns[t] = UI.button(this, x, y, bw, bh, {
+        label: TOWER_DATA[t].short || this.titleCase(TOWER_DATA[t].name), sub: 'x' + this.stock[t], variant: 'secondary', size: compact ? 11.5 : 13, depth: 21,
         onTap: () => this.deploy(t)
       });
     });
-    this.repairBtn = UI.button(this, width - 16 - bw / 2, by, bw, 76, {
+    this.repairBtn = UI.button(this, width - 16 - repW / 2, this.H - 62, repW, 76, {
       label: 'REPAIR', sub: RAID_REPAIR.cost + ' PARTS', variant: 'primary', colour: UI.C.green, size: 13, depth: 21,
       onTap: () => this.repair()
     });
@@ -145,7 +152,7 @@ class RaidScene extends Phaser.Scene {
   }
 
   refreshPanel() {
-    Object.entries(this.deployBtns).forEach(([t, b]) => b.setLabel(this.titleCase(TOWER_DATA[t].name), 'x' + this.stock[t]).setEnabled(this.stock[t] > 0 && !this.over));
+    Object.entries(this.deployBtns).forEach(([t, b]) => b.setLabel(TOWER_DATA[t].short || this.titleCase(TOWER_DATA[t].name), 'x' + this.stock[t]).setEnabled(this.stock[t] > 0 && !this.over));
     const ready = this.simNow - this.lastRepair >= RAID_REPAIR.cooldown;
     this.repairBtn.setEnabled(!this.over && this.parts >= RAID_REPAIR.cost && ready && this.units.some(u => u.alive));
     this.hdr.chips.parts.setValue(this.parts);
@@ -219,7 +226,8 @@ class RaidScene extends Phaser.Scene {
         if (u.atCore && this.simNow - u.last >= 1000) { u.last = this.simNow; this.hitCore(8); }
         return;
       }
-      if (this.simNow - u.last < u.d.fireRate) return;
+      const rate = u.type === 'siphon' ? 500 : u.d.fireRate;
+      if (this.simNow - u.last < rate) return;
       let target = null;
       if (u.atCore && this.core.alive) target = this.core;
       else {
@@ -234,7 +242,13 @@ class RaidScene extends Phaser.Scene {
       u.last = this.simNow;
       const ang = Phaser.Math.Angle.Between(p.x, p.y, target.x, target.y);
       if (u.barrel) u.barrel.setRotation(ang);
-      this.fire(p.x, p.y, target, u.type === 'bomber' ? 340 : 700, u.d.damage, u.type === 'bomber' ? (u.d.splashRadius || 80) : 0, u.type === 'bomber' ? u.d.colour : 0xfff2c4, 'unit');
+      const dmg = u.type === 'siphon' ? Math.round((u.d.dps || 12) * 0.5) : u.d.damage;
+      if (u.type === 'siphon') {
+        // Siphon carts drain turrets and patch up the cart in front
+        const ally = this.units.filter(o => o.alive && o !== u && o.hp < o.maxHp).sort((a, b) => Math.abs(a.s - u.s) - Math.abs(b.s - u.s))[0];
+        if (ally) ally.hp = Math.min(ally.maxHp, ally.hp + dmg * 0.6);
+      }
+      this.fire(p.x, p.y, target, u.type === 'bomber' ? 340 : 700, dmg, u.type === 'bomber' ? (u.d.splashRadius || 80) : 0, u.type === 'bomber' ? u.d.colour : u.type === 'siphon' ? 0xc9b6ff : 0xfff2c4, 'unit');
     });
 
     // Turrets shoot the nearest cart in range — barricades first

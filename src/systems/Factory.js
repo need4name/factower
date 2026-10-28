@@ -67,6 +67,28 @@ const MACHINE_TYPES = {
     duration:     4000,
     depositDuration: 1000
   },
+  assembly_gunner2: {
+    key:          'assembly_gunner2',
+    name:         'ASSEMBLY \xb7 GUNNER MK II',
+    shortName:    'ASM\xb7MK2',
+    colour:       0x2fb6d6,
+    colourHex:    '#2fb6d6',
+    produces:     'gunner2',
+    primaryInput: 'salvagedMetal',  // SALV tech: built from metal
+    duration:     5000,
+    depositDuration: 1000
+  },
+  assembly_siphon: {
+    key:          'assembly_siphon',
+    name:         'ASSEMBLY \xb7 SIPHON',
+    shortName:    'ASM\xb7SIP',
+    colour:       0x9d7ff0,
+    colourHex:    '#9d7ff0',
+    produces:     'siphon',
+    primaryInput: 'refinedPlastic', // needs a smelter, like the Bomber
+    duration:     5000,
+    depositDuration: 1000
+  },
   conveyor: {
     key:        'conveyor',
     name:       'CONVEYOR',

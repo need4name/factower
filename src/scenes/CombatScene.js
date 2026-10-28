@@ -73,18 +73,12 @@ this._modalOpen        = false;
 this._confirmedNoTowers = false;
 this.time.timeScale = 1; this.tweens.timeScale = 1; this.time.paused = false;
 
-this.towerStats = {
-  gunner:    { damageDealt: 0, kills: 0 },
-  bomber:    { damageDealt: 0, kills: 0 },
-  barricade: { placed: 0 }
-};
+this.towerStats = {};
+TOWER_ORDER.forEach(t => { this.towerStats[t] = t === 'barricade' ? { placed: 0 } : { damageDealt: 0, kills: 0 }; });
 
 const stockpile = (this.saveData && this.saveData.stockpile) ? this.saveData.stockpile : {};
-this.loadout = {
-  gunner:    stockpile.gunner    || 0,
-  bomber:    stockpile.bomber    || 0,
-  barricade: stockpile.barricade || 0
-};
+this.loadout = {};
+TOWER_ORDER.forEach(t => { this.loadout[t] = stockpile[t] || 0; });
 this.startingLoadout = { ...this.loadout };
 
 // ── Layout constants — tight to viewport ─────────────────────────────
@@ -436,6 +430,7 @@ this.towersUsed[type] = (this.towersUsed[type] || 0) + 1;
 
 // A barrel that turns to face whatever the tower is shooting at
 const barrel = type === 'barricade' ? null
+  : type === 'siphon' ? this.add.rectangle(x, y, 13, 7, 0xd9c9ff, 0.95).setOrigin(0, 0.5).setDepth(4.5).setRotation(-Math.PI / 2)
   : this.add.rectangle(x, y, type === 'bomber' ? 17 : 19, type === 'bomber' ? 8 : 5, 0xeef2f8, 0.95).setOrigin(0, 0.5).setDepth(4.5).setRotation(-Math.PI / 2);
 const tower = { type, x, y, data: towerData, lastFired: -1e9, upgradeTier: 0, mods: [0, 0, 0], targetMode: 'first', towerCircle, towerLabel, tierBadge: null, hitZone, powerMult: mult, barrel };
 this.placedTowers.push(tower);
@@ -611,6 +606,8 @@ if (m.scatter)     d.scatter     = m.scatter;
 if (m.doubleShot)  d.doubleShot  = true;
 if (m.napalm)      d.napalm      = m.napalm;
 if (m.armourBonus) d.armourBonus = m.armourBonus;
+if (m.dps)         d.dps         = m.dps;
+if (m.beams)       d.beams       = m.beams;
 
 if (m.burnDps) {
   d.burnDps = m.burnDps;
@@ -802,30 +799,39 @@ this.hpBarBg.fillStyle(UI.C.surface2, 1); this.hpBarBg.fillRoundedRect(this.hpBa
 this.hpBarFill = this.add.graphics().setDepth(10);
 this.updateHpBar();
 
-// Tower buttons
-const types = ['gunner', 'bomber', 'barricade'];
+// Tower buttons — one per tower type brought into this battle. Up to 3
+// sit in one row; more wrap into two compact rows.
+let types = TOWER_ORDER.filter(t => this.startingLoadout[t] > 0);
+if (!types.length) types = ['gunner'];
 const gap = 8, startW = 96;
-const bw = (width - 32 - startW - gap * types.length) / types.length;
-const by = this.PANEL_TOP + 58, bh = 92;
+const compact = types.length > 3;
+const perRow = compact ? Math.ceil(types.length / 2) : types.length;
+const bw = (width - 32 - startW - gap * perRow) / perRow;
+const bh = compact ? 50 : 92;
+const by = this.PANEL_TOP + 58;
 this.towerButtons = {};
 types.forEach((type, i) => {
   const d = TOWER_DATA[type];
-  const x = 16 + bw / 2 + i * (bw + gap);
-  const c = this.add.container(x, by).setDepth(10);
+  const row = compact ? Math.floor(i / perRow) : 0, col = compact ? i % perRow : i;
+  const x = 16 + bw / 2 + col * (bw + gap);
+  const y = compact ? this.PANEL_TOP + 8 + bh / 2 + row * (bh + 8) : by;
+  const c = this.add.container(x, y).setDepth(10);
   const bg = this.add.graphics();
   const disc = this.add.graphics();
-  const name = UI.text(this, 0, 10, this.titleCase(d.name), 'tag', { size: 12.5, origin: 0.5, color: UI.T.text });
-  const countText = UI.text(this, 0, 30, 'x' + this.loadout[type], 'number', { size: 15, origin: 0.5 });
+  const label = compact ? (d.short || this.titleCase(d.name)) : this.titleCase(d.name);
+  const name = UI.text(this, compact ? -bw / 2 + 28 : 0, compact ? -8 : 10, label, 'tag', { size: compact ? 11 : 12.5, origin: compact ? [0, 0.5] : 0.5, color: UI.T.text });
+  const countText = UI.text(this, compact ? -bw / 2 + 28 : 0, compact ? 9 : 30, 'x' + this.loadout[type], 'number', { size: compact ? 13 : 15, origin: compact ? [0, 0.5] : 0.5 });
   const zone = this.add.zone(0, 0, bw, bh).setInteractive();
   c.add([bg, disc, name, countText, zone]);
-  const btn = { container: c, countText, x, y: by, w: bw, h: bh, type };
+  const btn = { container: c, countText, x, y, w: bw, h: bh, type };
   btn.draw = () => {
     const has = this.loadout[type] > 0, sel = this.selectedTowerType === type;
     UI.drawPanel(bg, 0, 0, bw, bh, { fill: sel ? 0x1d2734 : (has ? UI.C.surface : 0x10151c),
-      stroke: sel ? d.colour : (has ? UI.C.line : UI.C.lineSoft), strokeWidth: sel ? 2 : 1, radius: 14 });
+      stroke: sel ? d.colour : (has ? UI.C.line : UI.C.lineSoft), strokeWidth: sel ? 2 : 1, radius: compact ? 10 : 14 });
     disc.clear();
-    disc.fillStyle(has ? d.colour : UI.C.line, has ? 1 : 0.6); disc.fillCircle(0, -20, 11);
-    disc.lineStyle(2, 0x0a0d12, 1); disc.strokeCircle(0, -20, 11);
+    const dx = compact ? -bw / 2 + 15 : 0, dy = compact ? 0 : -20, r = compact ? 8 : 11;
+    disc.fillStyle(has ? d.colour : UI.C.line, has ? 1 : 0.6); disc.fillCircle(dx, dy, r);
+    disc.lineStyle(2, 0x0a0d12, 1); disc.strokeCircle(dx, dy, r);
     name.setColor(has ? UI.T.text : UI.T.faint);
     countText.setText('x' + this.loadout[type]).setColor(has ? UI.hex(d.colour) : UI.T.faint);
   };
@@ -838,7 +844,7 @@ types.forEach((type, i) => {
 
 // Start wave
 const sx = width - 16 - startW / 2;
-this.startWaveBtn = UI.button(this, sx, by, startW, bh, {
+this.startWaveBtn = UI.button(this, sx, by, startW, 92, {
   label: 'START', sub: 'WAVE 1', variant: 'success', size: 17, depth: 10,
   onTap: () => this.waveActive ? this.callWaveEarly() : this.startNextWave()
 });
@@ -849,7 +855,7 @@ refreshTowerButtons() {
   Object.values(this.towerButtons).forEach(b => b.draw());
 }
 
-titleCase(str) { return String(str).toLowerCase().replace(/\b\w/g, c => c.toUpperCase()); }
+titleCase(str) { return String(str).toLowerCase().replace(/\b\w/g, c => c.toUpperCase()).replace(/\bIi\b/g, 'II'); }
 
 toggleSpeed() {
   this.speed = this.speed === 2 ? 1 : 2;
@@ -916,6 +922,32 @@ modifier = Math.min(modifier, tower.data.slowAmount);
 return modifier;
 }
 
+// ── Siphon ────────────────────────────────────────────────────────────
+// Beams lock onto up to `beams` raiders in range and drain dps from each.
+// Raiders that die in a beam drop double salvage, collected automatically.
+siphonTick(tower) {
+const d = tower.data;
+const now = this.simNow;
+const dt = Math.min(500, now - (tower.lastTick || now));
+tower.lastTick = now;
+if (!tower.beamGfx) tower.beamGfx = this.add.graphics().setDepth(6);
+const g = tower.beamGfx;
+g.clear();
+const inRange = this.activeEnemies.filter(e => e.alive && e.sprite && e.sprite.active &&
+  Phaser.Math.Distance.Between(tower.x, tower.y, e.sprite.x, e.sprite.y) <= d.range);
+if (!inRange.length) return;
+const first = this.pickTarget(tower, inRange);
+const targets = [first].concat(inRange.filter(e => e !== first).slice(0, (d.beams || 1) - 1));
+if (tower.barrel) tower.barrel.setRotation(Phaser.Math.Angle.Between(tower.x, tower.y, first.sprite.x, first.sprite.y));
+targets.forEach(e => {
+  const flick = 0.55 + Math.random() * 0.35;
+  g.lineStyle(4, 0x9d7ff0, flick * 0.5); g.lineBetween(tower.x, tower.y, e.sprite.x, e.sprite.y);
+  g.lineStyle(1.5, 0xe9ddff, flick);     g.lineBetween(tower.x, tower.y, e.sprite.x, e.sprite.y);
+  e.siphonedUntil = now + 300;
+  this.dealDamage(e, (d.dps || 12) * dt / 1000, 'siphon', { pierce: 2 });
+});
+}
+
 // Target priority, set per tower from its panel
 pickTarget(tower, list) {
 const prog = e => {
@@ -932,8 +964,9 @@ return list.slice().sort(by)[0];
 }
 
 towerShoot(tower) {
-if (!this.waveActive || this.gameOver) return;
+if (!this.waveActive || this.gameOver) { if (tower.beamGfx) tower.beamGfx.clear(); return; }
 if (tower.type === 'barricade') return;
+if (tower.type === 'siphon') return this.siphonTick(tower);
 if (this.simNow - tower.lastFired < tower.data.fireRate) return;
 
 const inRange = this.activeEnemies.filter(e => {
@@ -1054,8 +1087,17 @@ UI.modal(this, {
 // it sinks. Elites also drop a rare part (needed for tier-3 mods).
 dropSalvage(enemy) {
 const x = enemy.sprite.x, y = enemy.sprite.y;
-this.spawnPickup(x, y, { parts: enemy.data.partsReward });
 const rare = enemy.data.rareDrop || (Math.random() < 0.03 ? (Math.random() < 0.5 ? 'plate' : 'engine') : null);
+if (enemy.siphonedUntil && enemy.siphonedUntil > this.simNow) {
+  // Siphoned: double salvage, straight into Parts — nothing to tap
+  const n = enemy.data.partsReward * 2;
+  this.parts += n; this.partsText.setText('' + this.parts);
+  if (rare) this.rare[rare]++;
+  const t = UI.text(this, x, y - 12, '+' + n + (rare ? ' +\u2605' : ''), 'tag', { size: 12, origin: 0.5, color: '#c9b6ff', depth: 12 });
+  this.tweens.add({ targets: t, y: y - 38, alpha: 0, duration: 700, onComplete: () => t.destroy() });
+  return;
+}
+this.spawnPickup(x, y, { parts: enemy.data.partsReward });
 if (rare) this.spawnPickup(x + 18, y - 10, { rare });
 if (!this.salvageHintShown && !(this.saveData && this.saveData.tutorials && this.saveData.tutorials.salvage) && !this.tutorial) {
   this.salvageHintShown = true;
@@ -1557,7 +1599,7 @@ const card = (title, lines, colour) => {
 };
 
 // Tower performance
-const perf = ['gunner', 'bomber', 'barricade'].filter(t => this.towersUsed[t]).map(t => {
+const perf = TOWER_ORDER.filter(t => this.towersUsed[t]).map(t => {
   const st = this.towerStats[t];
   return this.titleCase(TOWER_DATA[t].name) + ' ×' + this.towersUsed[t] + (t === 'barricade' ? ' — slowed raiders' : ' — ' + Math.round(st.damageDealt || 0) + ' dmg, ' + (st.kills || 0) + ' kills');
 });

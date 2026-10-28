@@ -80,8 +80,7 @@ class MarketplaceScene extends Phaser.Scene {
     this.tradeItems = [];
     const add = (o) => { this.tradeItems.push(o); return o; };
     const stock = this.saveData.stockpile || {};
-    const types = ['gunner', 'bomber', 'barricade'].filter(t => t === 'gunner' || (stock[t] || 0) > 0 ||
-      Progress.has(this.saveData, 'barricade'));
+    const types = TOWER_ORDER.filter(t => t === 'gunner' || (stock[t] || 0) > 0 || Progress.has(this.saveData, t));
     const top = this.tradeTop, rowH = 50, w = width - 32;
     const h = 44 + types.length * rowH + 6;
 
@@ -131,5 +130,5 @@ class MarketplaceScene extends Phaser.Scene {
     });
   }
 
-  titleCase(str) { return str.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()); }
+  titleCase(str) { return str.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()).replace(/\bIi\b/g, 'II'); }
 }

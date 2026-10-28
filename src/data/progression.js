@@ -18,6 +18,8 @@ const UNLOCKS = {
   smelter:    { at: 'p4',   label: 'Smelter — turns scrap into the refined plastic Bombers need.' },
   market:     { at: 'p5',   label: 'The Market — Chrome has set up shop on your raft.' },
   uplink:     { at: 'p7',   label: 'The Uplink — trade bolts for permanent upgrades.' },
+  gunner2:    { at: 's1-3', label: 'Gunner Mk II — SALV tech. Build it from metal at a new bench.' },
+  siphon:     { at: 's1-6', label: 'The Siphon — Borga\u2019s beam tower. Raiders it drains drop double salvage, straight into your Parts.' },
   belts:      { at: 's1-3', label: 'Conveyor belts — SALV tech that moves items without workers.' }
 };
 

@@ -45,7 +45,7 @@ class DockScene extends Phaser.Scene {
   }
 
 
-  titleCase(str) { return str.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()); }
+  titleCase(str) { return str.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()).replace(/\bIi\b/g, 'II'); }
 
   clearContent() {
     if (this.contentContainer) { this.contentContainer.destroy(true); this.contentContainer = null; }
@@ -231,7 +231,7 @@ class DockScene extends Phaser.Scene {
     const counts = {};
     (level.waves || []).forEach(wv => wv.enemies.forEach(g => { counts[g.type] = (counts[g.type] || 0) + g.count; }));
     const enemyLines = Object.entries(counts).map(([t, n]) => n + ' × ' + this.titleCase(ENEMY_DATA[t] ? ENEMY_DATA[t].name : t)).join('\n');
-    const towers = ['gunner', 'bomber', 'barricade'].filter(t => stock[t] > 0)
+    const towers = TOWER_ORDER.filter(t => stock[t] > 0)
       .map(t => stock[t] + ' ' + this.titleCase(TOWER_DATA[t].name)).join(',  ') || 'none';
     const rec = level.recommendedTowers;
 
@@ -255,7 +255,7 @@ class DockScene extends Phaser.Scene {
     const total = this.stockTotal();
     const kinds = {};
     (level.turrets || []).forEach(t => { kinds[t.kind] = (kinds[t.kind] || 0) + 1; });
-    const towers = ['gunner', 'bomber', 'barricade'].filter(t => stock[t] > 0)
+    const towers = TOWER_ORDER.filter(t => stock[t] > 0)
       .map(t => stock[t] + ' ' + this.titleCase(TOWER_DATA[t].name)).join(',  ') || 'none';
     const loot = level.loot ? '+' + (level.loot.plasticScrap || 0) + ' scrap, +' + (level.loot.salvagedMetal || 0) + ' metal' : '';
     const body = 'An attack. Your towers ride out on carts along the road \u2014 they fire as they go. Wreck the core at the end.\n\n' +

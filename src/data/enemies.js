@@ -45,6 +45,12 @@ const ENEMY_DATA = {
     colour: 0x2f7d6a, size: 15, traits: ['armoured'], rareDrop: 'plate',
     card: { title: 'SALV Cutter', trait: 'ARMOURED', body: 'Plated SALV boats that shrug off 4 damage per hit. Bombers and armour-piercing mods break them open.' }
   },
+  salvRam: {
+    key: 'salvRam', name: 'SALV RAM',
+    hp: 460, speed: 45, partsReward: 18, baseDamage: 5, armour: 8,
+    colour: 0x1f5f52, size: 19, traits: ['armoured'], rareDrop: 'engine',
+    card: { title: 'SALV Ram', trait: 'HEAVY ARMOUR', body: 'A battering-ram hull with 8 armour. Small rounds do almost nothing \u2014 use Bombers, Mk II hull-piercers, Siphons and flares. Wrecks hold an Engine.' }
+  },
   frontCommander: {
     key: 'frontCommander', name: 'FRONT COMMANDER',
     hp: 650, speed: 55, partsReward: 40, baseDamage: 6, armour: 3,

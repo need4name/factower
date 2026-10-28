@@ -9,6 +9,7 @@
 
 const RAID_TURRETS = {
   gun:   { name: 'Gun nest', hp: 150, dmg: 14, range: 120, rate: 850,  colour: 0xe5534b, parts: 6 },
+  salvo: { name: 'SALV salvo', hp: 210, dmg: 10, range: 135, rate: 500,  colour: 0x52c47f, parts: 9 },
   heavy: { name: 'Cannon',   hp: 300, dmg: 38, range: 110, rate: 1800, colour: 0xb03a33, parts: 12, rare: 'plate' }
 };
 const RAID_UNIT_HP   = { gunner: 110, gunner2: 150, bomber: 90, barricade: 260, siphon: 120 };
@@ -94,7 +95,9 @@ class RaidScene extends Phaser.Scene {
   }
 
   addTurret(x, y, kind) {
-    const k = RAID_TURRETS[kind] || RAID_TURRETS.gun;
+    // Later raids have tougher defences: turretScale multiplies hp and damage
+    const base = RAID_TURRETS[kind] || RAID_TURRETS.gun, sc = this.levelData.turretScale || 1;
+    const k = Object.assign({}, base, { hp: Math.round(base.hp * sc), dmg: Math.round(base.dmg * sc) });
     const size = kind === 'heavy' ? 30 : 24;
     const body = this.add.rectangle(x, y, size, size, 0x2a1414).setStrokeStyle(2, k.colour).setDepth(4);
     const barrel = this.add.rectangle(x, y, size * 0.8, kind === 'heavy' ? 8 : 5, k.colour).setOrigin(0, 0.5).setDepth(5);

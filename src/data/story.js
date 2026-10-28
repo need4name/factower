@@ -101,5 +101,79 @@ const STORY_BEATS = {
     ['umbaji', 'A gift, to begin: conveyor belts. Your workers will thank me.'],
     ['tim', '(quietly) I don’t trust him.'],
     ['narrator', 'You tell Umbaji you’ll think about it.']
+  ],
+  's1-4.before': [
+    ['tim', 'Umbaji\u2019s here. Says he\u2019s \u201cvisiting\u201d.'],
+    ['umbaji', 'You took in Front scum? After everything they have done on these waters?'],
+    ['umbaji', 'I offered you the Collective. You chose them. So you get what they get.']
+  ],
+  's1-4.after': [
+    ['bet', 'He\u2019ll be back. Angrier.']
+  ],
+  's1-5.before': [
+    ['umbaji', '(on the radio) Every tide, raft-dweller. Every tide until your raft sinks.']
+  ],
+  's1-5.after': [
+    ['tim', 'We can\u2019t hold like this forever.']
+  ],
+  's1-6.before': [
+    ['borga', 'You want to stop the SALV? I have something. Learned it fighting for the Front, before they threw me away.'],
+    ['borga', 'A siphon. It drinks a boat dry. First \u2014 survive this.']
+  ],
+  's1-6.after': [
+    ['borga', 'Siphon plans are in the factory. Feed it refined plastic.'],
+    ['umbaji', '(on the radio) This is not finished.'],
+    ['tim', 'And the Front keep coming from the west\u2026 like they\u2019re running from something.']
+  ],
+
+  // ── Story 2 · Borga ─────────────────────────────────────────────────────
+  's2-1.before': [
+    ['bet', 'SALV gave us the Mk II plans but not the metal to build them. Their salvage yard is lightly guarded.']
+  ],
+  's2-1.after': [
+    ['bet', 'Metal enough for a few Mk IIs. Not bad for a morning.']
+  ],
+  's2-2.before': [
+    ['tim', 'Another reef, another stash. In and out.']
+  ],
+  's2-2.after': [
+    ['narrator', 'Behind the Salt Children\u2019s camp you find a Front crew, cut off from their fleet. They haven\u2019t eaten in days.'],
+    ['tim', 'We can\u2019t leave them here. We don\u2019t really have a choice.'],
+    ['narrator', 'You bring them home. One of them is a hulking mass of cybernetics.'],
+    ['borga', 'Borga. I lift things. I break things. Point me at your factory.']
+  ],
+  's2-3.before': [
+    ['bet', 'SALV sails while our best are out on the reefs. Hold the raft!']
+  ],
+  's2-4.before': [
+    ['borga', 'Umbaji keeps hitting our people. Let\u2019s hit back.']
+  ],
+  's2-4.after': [
+    ['umbaji', '(on the radio) You will regret this, raft-dweller.']
+  ],
+  's2-5.before': [
+    ['voice', '\u2026this line is secure. I speak for the office of Commander Luis Ortega. IOA.'],
+    ['voice', 'Umbaji is a problem for both of us. End him.'],
+    ['narrator', 'You ask what\u2019s in it for you.'],
+    ['voice', 'That depends on whether you\u2019re willing to work for the IOA.'],
+    ['narrator', 'The line goes dead. Then the SALV sails appear.']
+  ],
+  's2-5.after': [
+    ['tim', 'The IOA don\u2019t do favours. Whatever they want, it\u2019s bigger than Umbaji.']
+  ],
+
+  // ── Story 3 · Helix ─────────────────────────────────────────────────────
+  's3-1.before': [
+    ['tim', 'A Front crew \u2014 but not the old Front. They\u2019re asking about the siphon.']
+  ],
+  's3-1.after': [
+    ['borga', 'They wanted my siphon. Everyone wants my siphon.']
+  ],
+  's3-2.before': [
+    ['bet', 'Biggest Front force since the Commander. Where are they all coming from?']
+  ],
+  's3-2.after': [
+    ['ncf', 'Here. Take it. Someone will call. They\u2019ll need something from you.'],
+    ['narrator', 'A battered radio, still warm from the raider\u2019s hands.']
   ]
 };

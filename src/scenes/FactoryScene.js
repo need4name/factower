@@ -233,6 +233,17 @@ getUnlockedAssemblyTypes() {
 }
 
 checkWorker2Recruitment() {
+  const w3 = this.factory.workers[2];
+  if (w3 && w3.unlocked && !this.factory.worker3Introduced && this.factory.tutorialComplete) {
+    this.factory.worker3Introduced = true;
+    this.factory.save();
+    UI.modal(this, {
+      title: 'Borga joins the factory', icon: 'star', accent: UI.C.purple,
+      body: 'W3 is Borga \u2014 more cybernetics than woman, and stronger than the rest of the crew put together. Three workers means a hauler, a bench operator and someone spare for the smelter.',
+      buttons: [{ label: 'WELCOME HER', variant: 'primary', colour: UI.C.purple }]
+    });
+    return;
+  }
   const w2 = this.factory.workers[1];
   if (w2.unlocked && !this.factory.worker2Introduced && this.factory.tutorialComplete) {
     this.factory.worker2Introduced = true;
@@ -566,9 +577,10 @@ openWorkerMenu(stationKey) {
     fullHands ? 'Tip: tap a store to put a carried item back' : 'Tap outside to close', 'small',
     { size: fullHands ? 11 : 10, origin: 0.5, depth: D + 2, color: fullHands ? UI.T.amber : UI.T.faint }));
 
-  const bw = (menuW - 36) / 2;
+  const n = unlocked.length;
+  const bw = (menuW - 24 - 12 * (n - 1)) / n;
   unlocked.forEach((w, i) => {
-    const bx = width / 2 + (i === 0 ? -1 : 1) * (bw / 2 + 6);
+    const bx = width / 2 - menuW / 2 + 12 + bw / 2 + i * (bw + 12);
     const by = menuY + 6;
     const direct  = this.factory.canWorkerStartAt(stationKey, w.id);
     const canWork = direct || this.factory.canStartIfEmpty(stationKey, w.id);
@@ -1057,7 +1069,7 @@ showMessage(text, kind) {
 
 // Where a worker stands to use a station — beside its label, not on top of it
 getStationPos(stationKey, workerId) {
-  const off = workerId === 1 ? -26 : 0;     // W2 stands beside W1, never on top
+  const off = [0, -26, -52][workerId] || 0;   // workers stand side by side, never on top of each other
   if (stationKey === 'store_scrap') return { x: 16 + this.STORE_W - 26 + off, y: this.STORE_Y };
   if (stationKey === 'store_metal') return { x: this.METAL_X + this.STORE_W / 2 - 26 + off, y: this.STORE_Y };
   if (stationKey === 'depository')  return { x: this.DEPOT_X + this.DEPOT_W / 2 - 30 + off, y: this.DEPOT_Y };

@@ -101,8 +101,10 @@ const MACHINE_TYPES = {
 
 const ITEM_NAMES = { plasticScrap: 'scrap', salvagedMetal: 'metal', refinedPlastic: 'refined plastic', towerComponent: 'tower' };
 
-const WORKER_COLOURS = [0xe8a020, 0x3a8fc4];
-const WORKER_LABELS  = ['W1', 'W2'];
+// W1 = you, W2 = Uncle Bet (Prologue 1), W3 = Borga (Story 2 · The Starving)
+const WORKER_COLOURS = [0xe8a020, 0x3a8fc4, 0x9d7ff0];
+const WORKER_LABELS  = ['W1', 'W2', 'W3'];
+const WORKER_NAMES   = ['You', 'Uncle Bet', 'Borga'];
 
 class Factory {
   constructor() {
@@ -141,7 +143,8 @@ class Factory {
 
     this.workers = [
       this.makeWorker(0, true),
-      this.makeWorker(1, false)
+      this.makeWorker(1, false),
+      this.makeWorker(2, false)
     ];
     // Materials loaded from saveData — not hardcoded here
     this.materials = { plasticScrap: 0, refinedPlastic: 0, salvagedMetal: 0 };
@@ -155,6 +158,7 @@ class Factory {
     this.tutorialStep     = 0;
     this.tutorialComplete = false;
     this.worker2Introduced = false;
+    this.worker3Introduced = false;
   }
 
   makeWorker(id, unlocked) {
@@ -196,7 +200,10 @@ class Factory {
 
   loadFromSave(saveData) {
     if (!saveData) return;
-    if (saveData.workers >= 2) this.workers[1].unlocked = true;
+    const P = typeof Progress !== 'undefined' ? Progress : null;
+    if (saveData.workers >= 2 || (P && P.done(saveData, 'p1'))) this.workers[1].unlocked = true;
+    if (saveData.workers >= 3 || (P && P.has(saveData, 'worker3'))) this.workers[2].unlocked = true;
+    if (saveData.worker3Introduced) this.worker3Introduced = true;
     if (saveData.worker2Introduced) this.worker2Introduced = saveData.worker2Introduced;
 
     // Materials: canonical source is saveData.materials (top level).
@@ -292,6 +299,7 @@ class Factory {
       tutorialComplete: this.tutorialComplete
     };
     saveData.worker2Introduced = this.worker2Introduced;
+    if (this.worker3Introduced) saveData.worker3Introduced = true;
   }
 
   // ── Worker helpers ─────────────────────────────────────────────────────────

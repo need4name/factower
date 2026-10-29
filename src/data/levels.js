@@ -291,7 +291,7 @@ const LEVEL_DATA = {
 
         { id: 4, name: 'ADVANCE FORCE', boss: true,
           description: 'The fleeing Front, and what follows them.',
-          difficulty: 18, recommendedTowers: 10, hpScale: 2.1, baseHp: 18,
+          difficulty: 18, recommendedTowers: 10, hpScale: 1.8, baseHp: 18,
           path: _P([195, 0], [195, 70], [350, 70], [350, 200], [195, 200], [195, 300], [40, 300], [40, 160], [110, 160], [110, 418]),
           waves: [ _W(_g('saltChild', 8, 1400), _g('scrapRunner', 5, 1800)),
                    _W(_g('helixDrone', 16, 650)),

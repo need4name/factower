@@ -122,6 +122,12 @@ nextGoal(stockTotal, completed) {
       body: 'The first raid needs at least ' + need + ' towers to hold. Build another in the Factory, then head to the Dock.',
       scene: 'FactoryScene', cta: 'GO TO FACTORY', colour: UI.C.blue };
   }
+  if (completed.length > 0 && next && next.type !== 'raid' && stockTotal > 0 && stockTotal < need) {
+    const more = need - stockTotal;
+    return { tag: 'BUILD UP', title: 'Build ' + more + ' more tower' + (more === 1 ? '' : 's'),
+      body: this.titleCase(next.name) + ' calls for about ' + need + ' towers. You have ' + stockTotal + '.',
+      scene: 'FactoryScene', cta: 'GO TO FACTORY', colour: UI.C.blue };
+  }
   if (stockTotal === 0) {
     return { tag: 'OUT OF TOWERS', title: 'Restock the Armoury',
       body: 'Towers are used up in battle. Build more in the Factory before you sail.',

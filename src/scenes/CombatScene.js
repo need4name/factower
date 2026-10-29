@@ -968,7 +968,8 @@ towerShoot(tower) {
 if (!this.waveActive || this.gameOver) { if (tower.beamGfx) tower.beamGfx.clear(); return; }
 if (tower.type === 'barricade') return;
 if (tower.type === 'siphon') return this.siphonTick(tower);
-if (this.simNow - tower.lastFired < tower.data.fireRate) return;
+const rate = tower.data.fireRate;
+if (this.simNow - tower.lastFired < rate) return;
 
 const inRange = this.activeEnemies.filter(e => {
   if (!e.alive || !e.sprite || !e.sprite.active) return false;
@@ -977,7 +978,14 @@ const inRange = this.activeEnemies.filter(e => {
 if (inRange.length === 0) return;
 
 const target = this.pickTarget(tower, inRange);
-tower.lastFired = this.simNow;
+// Keep the cadence on slow frames: step lastFired by the fire rate rather
+// than snapping it to now, and fire again this frame if still behind.
+// After an idle spell it restarts from now.
+const behind = this.simNow - tower.lastFired >= rate * 3;
+tower.lastFired = behind ? this.simNow : tower.lastFired + rate;
+if (!behind && this.simNow - tower.lastFired >= rate && !tower._refire) {
+  tower._refire = true; this.towerShoot(tower); tower._refire = false;
+}
 
 // Aim the barrel and kick it back a little
 const ang = Phaser.Math.Angle.Between(tower.x, tower.y, target.sprite.x, target.sprite.y);
@@ -1784,7 +1792,8 @@ if (save.stockpile) {
 }
 
 // ── Material rewards ──────────────────────────────────────────────────────
-// Per-kill drops (trickle) + level completion bonus (bulk).
+// Elite kill drops + a small scrap trickle + level completion bonus (bulk).
+// Every tower costs one material, so this income is the tower budget.
 // Stored on this.materialEarned for display in triggerGameOver.
 this.materialEarned = { plasticScrap: 0, salvagedMetal: 0 };
 
@@ -1805,9 +1814,16 @@ if (!this.isEndless && typeof LEVEL_DATA !== 'undefined') {
       }.bind(this));
     }
 
+    // Scrap trickle: one Plastic Scrap per 6 raiders sunk, so long levels
+    // pay a little more than short ones
+    const sunk = Object.values(this.killStats || {}).reduce((t, n) => t + n, 0);
+    this.materialEarned.plasticScrap += Math.floor(sunk / 6);
+
+    // Bulk reward; replays pay half
     if (completionBonus) {
-      this.materialEarned.plasticScrap  += completionBonus.plasticScrap  || 0;
-      this.materialEarned.salvagedMetal += completionBonus.salvagedMetal || 0;
+      const k = this.firstClear ? 1 : 0.5;
+      this.materialEarned.plasticScrap  += Math.ceil((completionBonus.plasticScrap  || 0) * k);
+      this.materialEarned.salvagedMetal += Math.ceil((completionBonus.salvagedMetal || 0) * k);
     }
   }
 }

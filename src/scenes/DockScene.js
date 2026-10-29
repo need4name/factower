@@ -236,7 +236,7 @@ class DockScene extends Phaser.Scene {
     const rec = level.recommendedTowers;
 
     let body = 'Incoming:\n' + enemyLines + '\n\nYour towers: ' + towers;
-    if (rec && total < rec) body += '\n\nRecommended: at least ' + rec + ' towers.';
+    if (rec) body += '\n\nRecommended: ' + rec + ' towers' + (total < rec ? ' \u2014 you have ' + total + '.' : '.');
 
     const buttons = total > 0
       ? [{ label: 'CANCEL', variant: 'secondary' }, { label: 'LAUNCH', variant: 'primary', colour: UI.C.red, onTap: () => this.launch(level, false, storyline) }]

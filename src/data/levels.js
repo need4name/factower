@@ -1,8 +1,12 @@
 // ── levels.js ─────────────────────────────────────────────────────────────────
 // Level data for all storylines.
-// materialRewards defines what players earn:
-//   killDrops     — materials per enemy kill (small, anti-hardlock trickle)
-//   completionBonus — bulk reward on level victory
+// Every tower costs one material, so materialRewards is the tower budget:
+//   killDrops       — materials from elite kills
+//   completionBonus — bulk reward on victory (half on replays), sized so a
+//                     first clear pays for roughly the next level's
+//                     recommendedTowers
+// recommendedTowers is the tower count the level is tuned for (headless sim:
+// that many towers wins with HP to spare; a few fewer usually loses).
 //
 // Campaign structure (see progression.js for keys, gates and unlocks):
 //   storyline 1  Prologue            p1..p7
@@ -17,27 +21,21 @@
 
 // ── Shared kill drop tables ────────────────────────────────────────────────────
 
+// Only elites drop materials; ordinary raiders add to the scrap trickle
+// (one Plastic Scrap per 6 sunk, see CombatScene.saveProgress).
 const _NCF_DROPS = {
-  saltChild:      { plasticScrap: 1 },
-  scrapRunner:    { plasticScrap: 1 },
-  driftwoodHulk:  { salvagedMetal: 2 },
-  frontCommander: { plasticScrap: 2, salvagedMetal: 3 }
+  driftwoodHulk:  { salvagedMetal: 1 },
+  frontCommander: { plasticScrap: 2, salvagedMetal: 2 }
 };
 const _HELIX_DROPS = {
-  helixDrone:     { plasticScrap: 1 },
-  helixTrooper:   { salvagedMetal: 2 },
-  helixWarden:    { plasticScrap: 2, salvagedMetal: 2 },
-  helixSpearhead: { plasticScrap: 6, salvagedMetal: 8 },
-  saltChild:      { plasticScrap: 1 },
-  scrapRunner:    { plasticScrap: 1 }
+  helixTrooper:   { salvagedMetal: 1 },
+  helixWarden:    { plasticScrap: 1, salvagedMetal: 1 },
+  helixSpearhead: { plasticScrap: 3, salvagedMetal: 3 }
 };
 const _SALV_DROPS = {
-  salvSkiff:  { plasticScrap: 1 },
-  salvCutter: { salvagedMetal: 2 },
-  salvRam:    { salvagedMetal: 4 },
-  umbajiFlagship: { plasticScrap: 10, salvagedMetal: 14 },
-  saltChild:  { plasticScrap: 1 },
-  scrapRunner:{ plasticScrap: 1 }
+  salvCutter:     { salvagedMetal: 1 },
+  salvRam:        { salvagedMetal: 2 },
+  umbajiFlagship: { plasticScrap: 4, salvagedMetal: 4 }
 };
 
 // Compact helpers: _W(_g('saltChild', 8, 1500), ...) is a wave; _P([x, oy], ...) a path

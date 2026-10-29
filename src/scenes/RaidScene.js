@@ -388,7 +388,7 @@ class RaidScene extends Phaser.Scene {
     this.paused = false;
     const key = Progress.key(this.storylineId, this.levelId);
     let firstClear = false, bolts = 0;
-    const loot = won ? (this.levelData.loot || {}) : {};
+    const loot = {};    // filled in below: full on a first clear, half on replays
     SaveManager.update(save => {
       if (!save.stockpile) save.stockpile = {};
       Object.entries(this.lost).forEach(([t, n]) => { save.stockpile[t] = Math.max(0, (save.stockpile[t] || 0) - n); });
@@ -398,6 +398,8 @@ class RaidScene extends Phaser.Scene {
       if (!save.completedLevels[sk]) save.completedLevels[sk] = [];
       firstClear = !save.completedLevels[sk].includes(this.levelId);
       if (firstClear) save.completedLevels[sk].push(this.levelId);
+      const base = this.levelData.loot || {};
+      Object.keys(base).forEach(m => { loot[m] = Math.ceil(base[m] * (firstClear ? 1 : 0.5)); });
       if (!save.materials) save.materials = { plasticScrap: 0, refinedPlastic: 0, salvagedMetal: 0 };
       save.materials.plasticScrap  = (save.materials.plasticScrap  || 0) + (loot.plasticScrap  || 0);
       save.materials.salvagedMetal = (save.materials.salvagedMetal || 0) + (loot.salvagedMetal || 0);

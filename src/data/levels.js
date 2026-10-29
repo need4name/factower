@@ -21,22 +21,12 @@
 
 // ── Shared kill drop tables ────────────────────────────────────────────────────
 
-// Only elites drop materials; ordinary raiders add to the scrap trickle
-// (one Plastic Scrap per 6 sunk, see CombatScene.saveProgress).
-const _NCF_DROPS = {
-  driftwoodHulk:  { salvagedMetal: 1 },
-  frontCommander: { plasticScrap: 2, salvagedMetal: 2 }
-};
-const _HELIX_DROPS = {
-  helixTrooper:   { salvagedMetal: 1 },
-  helixWarden:    { plasticScrap: 1, salvagedMetal: 1 },
-  helixSpearhead: { plasticScrap: 3, salvagedMetal: 3 }
-};
-const _SALV_DROPS = {
-  salvCutter:     { salvagedMetal: 1 },
-  salvRam:        { salvagedMetal: 2 },
-  umbajiFlagship: { plasticScrap: 4, salvagedMetal: 4 }
-};
+// Only bosses drop materials (other elites drop rare parts for mods);
+// ordinary raiders add to the scrap trickle (one Plastic Scrap per 15
+// sunk, see CombatScene.saveProgress).
+const _NCF_DROPS   = { frontCommander: { plasticScrap: 1, salvagedMetal: 1 } };
+const _HELIX_DROPS = { helixSpearhead: { plasticScrap: 2, salvagedMetal: 2 } };
+const _SALV_DROPS  = { umbajiFlagship: { plasticScrap: 2, salvagedMetal: 2 } };
 
 // Compact helpers: _W(_g('saltChild', 8, 1500), ...) is a wave; _P([x, oy], ...) a path
 const _g = (type, count, interval) => ({ type, count, interval });

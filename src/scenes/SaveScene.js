@@ -36,10 +36,12 @@ class SaveScene extends Phaser.Scene {
       UI.text(this, width / 2, y - 6, 'New game', 'title', { origin: 0.5, size: 24 });
       UI.text(this, width / 2, y + 24, 'Start building your island defences.', 'body', { origin: 0.5, size: 13, color: UI.T.mute });
     } else {
-      const completed = (data.completedLevels && data.completedLevels.storyline1) || [];
+      const all = LEVEL_DATA.storylines.reduce((n, st) => n + st.levels.filter(l => !l.soon).length, 0);
+      const cleared = LEVEL_DATA.storylines.reduce((n, st) => n + st.levels.filter(l => Progress.done(data, Progress.key(st.id, l.id))).length, 0);
       const stock = Object.values(data.stockpile || {}).reduce((a, b) => a + b, 0);
+      if (BUILD.test) UI.text(this, lx + 62, y - cardH / 2 + 18, isTestSave(data) ? 'TEST SAVE' : 'CAMPAIGN', 'tag', { size: 10, color: isTestSave(data) ? UI.T.amber : UI.T.green });
       UI.text(this, lx, y - 28, data.playerName || 'THE PIRATE KING', 'title', { size: 21, origin: [0, 0.5] });
-      UI.text(this, lx, y + 2, 'Salt & Plastic  ·  ' + completed.length + ' / 8 levels cleared', 'body', { size: 13, origin: [0, 0.5] });
+      UI.text(this, lx, y + 2, cleared + ' / ' + all + ' missions cleared', 'body', { size: 13, origin: [0, 0.5] });
 
       const chipY = y + 42;
       let cx = lx;
@@ -84,52 +86,72 @@ class SaveScene extends Phaser.Scene {
   }
 
   selectSlot(index, isEmpty) {
-    if (isEmpty) {
-      const newSave = {
-        saveVersion: SAVE_VERSION,
-        slot:       index,
-        playerName: 'THE PIRATE KING',
-        storyline:  1,
-        level:      1,
-        powerScore: 0,
-        // ── Starting materials ─────────────────────────────────────────────
-        // Player must visit the factory before the first level.
-        materials: { plasticScrap: 2, refinedPlastic: 0, salvagedMetal: 0 },
-        // ── Starting stockpile: empty — towers are built, never given ─────
-        // (test builds hand out plenty so combat can be tested straight away)
-        stockpile: BUILD.test ? Object.assign({}, BUILD.testStock) : { gunner: 0, bomber: 0, barricade: 0 },
-        nuts:            0,
-        bolts:           0,
-        parts:           0,
-        completedLevels: {},
-        skillTree:       {},
-        merchantFatigue: { chrome: 0, ricochet: 0, doubleDown: 0 },
-        merchantUnlocks: { chrome: false, ricochet: false, doubleDown: false },
-        chromeState:     { pityCount: 0 },
-        ricochetState:   {},
-        ddState:         {},
-        tutorials:       {},
-        flags: {
-          armouryUnlocked:     false,
-          skillTreeUnlocked:   false,  // unlocks after first level completion
-          marketplaceUnlocked: false,  // unlocks after first level completion
-          baseTutDone:         false
-        },
-        // True whenever the factory should be running — i.e. the player is NOT
-        // in a combat mission. CombatScene flips this on entry and exit.
-        factoryActive: true,
-        createdAt: Date.now()
-      };
-      SaveManager.write(newSave, index);
-    } else {
-      // Bring older saves up to the current format (see SaveManager.js)
-      const existing = SaveManager.load(index);
-      let   dirty    = SaveManager.migrate(existing);
-      // Nobody is in combat while picking a slot. If the app was closed mid-battle,
-      // CombatScene never got to clear this, and the factory would stay frozen.
-      if (existing.factoryActive !== true) { existing.factoryActive = true; dirty = true; }
-      if (dirty) SaveManager.write(existing, index);
+    // A test build asks what kind of save to start: a test save (towers and
+    // levels handed out) or a normal campaign that earns everything
+    if (isEmpty && BUILD.test) {
+      UI.modal(this, {
+        title: 'New save', icon: 'play', accent: UI.C.amber,
+        body: 'TEST SAVE: lots of towers, every level open, materials topped up.\n\nCAMPAIGN: the real game \u2014 start from the raft and earn everything.',
+        buttons: [{ label: 'TEST SAVE', variant: 'secondary', onTap: () => this.createSave(index, false) },
+                  { label: 'CAMPAIGN', variant: 'primary', onTap: () => this.createSave(index, true) }]
+      });
+      return;
     }
+    if (isEmpty) this.createSave(index, !BUILD.test);
+    else this.openSave(index);
+  }
+
+  createSave(index, campaign) {
+    const newSave = {
+      saveVersion: SAVE_VERSION,
+      slot:       index,
+      playerName: 'THE PIRATE KING',
+      storyline:  1,
+      level:      1,
+      powerScore: 0,
+      // ── Starting materials ─────────────────────────────────────────────
+      // Player must visit the factory before the first level: enough for
+      // a Gunner bench, the two Gunners the first level needs and a spare
+      materials: { plasticScrap: 6, refinedPlastic: 0, salvagedMetal: 0 },
+      // ── Starting stockpile: empty — towers are built, never given ─────
+      // (test saves get plenty so combat can be tested straight away)
+      campaign,
+      stockpile: campaign ? { gunner: 0, bomber: 0, barricade: 0 } : Object.assign({}, BUILD.testStock),
+      nuts:            0,
+      bolts:           0,
+      parts:           0,
+      completedLevels: {},
+      skillTree:       {},
+      merchantFatigue: { chrome: 0, ricochet: 0, doubleDown: 0 },
+      merchantUnlocks: { chrome: false, ricochet: false, doubleDown: false },
+      chromeState:     { pityCount: 0 },
+      ricochetState:   {},
+      ddState:         {},
+      tutorials:       {},
+      flags: {
+        armouryUnlocked:     false,
+        skillTreeUnlocked:   false,  // unlocks after first level completion
+        marketplaceUnlocked: false,  // unlocks after first level completion
+        baseTutDone:         false
+      },
+      // True whenever the factory should be running — i.e. the player is NOT
+      // in a combat mission. CombatScene flips this on entry and exit.
+      factoryActive: true,
+      createdAt: Date.now()
+    };
+    SaveManager.write(newSave, index);
+    SaveManager.setActiveSlot(index);
+    UI.go(this, 'BaseScene');
+  }
+
+  openSave(index) {
+    // Bring older saves up to the current format (see SaveManager.js)
+    const existing = SaveManager.load(index);
+    let   dirty    = SaveManager.migrate(existing);
+    // Nobody is in combat while picking a slot. If the app was closed mid-battle,
+    // CombatScene never got to clear this, and the factory would stay frozen.
+    if (existing.factoryActive !== true) { existing.factoryActive = true; dirty = true; }
+    if (dirty) SaveManager.write(existing, index);
 
     SaveManager.setActiveSlot(index);
     UI.go(this, 'BaseScene');

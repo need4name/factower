@@ -28,14 +28,13 @@ create() {
   this._workerWalkTweens = {};
   this._lastFactoryRun   = this.shouldFactoryRun();
 
-  // ── Dev resource floor (Milestone 3 — testing aid) ──────────────────
-  // Plentiful materials on every visit so belts/machines can be iterated on
-  // without farming combat. Revisit when balancing — production play should
-  // make players earn materials.
+  // ── Test-save resource floor ─────────────────────────────────────────
+  // Test saves get plentiful materials on every visit so the factory can be
+  // tried out without playing combat. Campaign saves earn every scrap.
   const DEV_FLOOR = { plasticScrap: 50, salvagedMetal: 50 };
   if (!this.saveData.materials) this.saveData.materials = { plasticScrap: 0, refinedPlastic: 0, salvagedMetal: 0 };
   let toppedUp = false;
-  ['plasticScrap', 'salvagedMetal'].forEach(k => {
+  if (isTestSave(this.saveData)) ['plasticScrap', 'salvagedMetal'].forEach(k => {
     if ((this.saveData.materials[k] || 0) < DEV_FLOOR[k]) { this.saveData.materials[k] = DEV_FLOOR[k]; toppedUp = true; }
   });
   if (toppedUp) SaveManager.update(s => { s.materials = Object.assign(s.materials || {}, this.saveData.materials); });

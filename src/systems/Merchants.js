@@ -36,7 +36,7 @@ const Merchants = {
   // old saves pick them up automatically).
   isRecruited(save, id) {
     const m = Merchants.get(id);
-    return !!m && (Progress.done(save, m.recruitKey) || (BUILD.test && BUILD.unlockAll));
+    return !!m && (Progress.done(save, m.recruitKey) || (isTestSave(save) && BUILD.unlockAll));
   },
 
   // Merchants who join by clearing this level (for the victory screen).

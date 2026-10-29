@@ -46,7 +46,7 @@ const Progress = {
 
   // Is a feature unlocked? (BUILD.unlockAll opens everything for testing)
   has(save, feature) {
-    if (typeof BUILD !== 'undefined' && BUILD.test && BUILD.unlockAll) return true;
+    if (typeof BUILD !== 'undefined' && isTestSave(save) && BUILD.unlockAll) return true;
     const u = UNLOCKS[feature];
     return !!u && Progress.done(save, u.at);
   },
@@ -68,7 +68,7 @@ const Progress = {
   },
 
   storylineOpen(save, id) {
-    if (typeof BUILD !== 'undefined' && BUILD.test && BUILD.allLevels) return true;
+    if (typeof BUILD !== 'undefined' && isTestSave(save) && BUILD.allLevels) return true;
     const g = STORYLINE_GATES[id] || [];
     return g.length === 0 || g.some(k => Progress.done(save, k));
   },
@@ -78,7 +78,7 @@ const Progress = {
   levelLock(save, storylineId, level) {
     const s = Progress.storyline(storylineId);
     if (level.soon) return 'Coming soon';
-    if (typeof BUILD !== 'undefined' && BUILD.test && BUILD.allLevels) return '';
+    if (typeof BUILD !== 'undefined' && isTestSave(save) && BUILD.allLevels) return '';
     if (!Progress.storylineOpen(save, storylineId)) return 'Story locked';
     const i = s.levels.indexOf(level);
     if (i > 0 && !Progress.done(save, Progress.key(storylineId, s.levels[i - 1].id))) return 'Clear the previous level';

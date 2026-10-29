@@ -102,7 +102,7 @@ class DockScene extends Phaser.Scene {
     let pool = [];
     LEVEL_DATA.storylines.forEach(st => st.levels.forEach(l => {
       if (l.soon || l.type === 'raid' || !l.waves) return;
-      if (Progress.done(this.saveData, Progress.key(st.id, l.id)) || (BUILD.test && BUILD.allLevels)) pool.push(l);
+      if (Progress.done(this.saveData, Progress.key(st.id, l.id)) || (isTestSave(this.saveData) && BUILD.allLevels)) pool.push(l);
     }));
     return pool;
   }

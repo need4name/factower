@@ -457,7 +457,7 @@ this.tutorialTowerPlaced();
 
 // ── Upgrade panel ─────────────────────────────────────────────────────
 upgradesUnlocked() {
-return Progress.has(this.saveData, 'mods') || this.isEndless || (BUILD.test && BUILD.allUpgrades);
+return Progress.has(this.saveData, 'mods') || this.isEndless || (isTestSave(this.saveData) && BUILD.allUpgrades);
 }
 
 // ── Upgrade lesson ────────────────────────────────────────────────────
@@ -1397,8 +1397,10 @@ if (traits.includes('healer')) {
 if (data.shieldAura) {
   sprite.aura = this.add.circle(start.x, start.y, data.shieldAura.radius, 0x7fe3ff, 0.05).setStrokeStyle(1, 0x7fe3ff, 0.35).setDepth(5);
 }
-const shield = data.shield ? data.shield.hp : 0;
-const enemy = { type, data: { ...data }, sprite, hp: data.hp, maxHp: data.hp, alive: true, pathProgress: 0, hpBg, hpFill,
+// hpScale (per level) toughens hulls and shields without new waves
+const k = (this.levelData && this.levelData.hpScale) || 1;
+const shield = data.shield ? Math.round(data.shield.hp * k) : 0, hp = Math.round(data.hp * k);
+const enemy = { type, data: { ...data }, sprite, hp, maxHp: hp, alive: true, pathProgress: 0, hpBg, hpFill,
   lastHeal: this.simNow, burnDps: 0, burnUntil: 0, shield, maxShield: shield, lastHitAt: 0, lastSpawn: this.simNow };
 if (shield) this.addShieldRing(enemy);
 this.activeEnemies.push(enemy);
@@ -1814,10 +1816,10 @@ if (!this.isEndless && typeof LEVEL_DATA !== 'undefined') {
       }.bind(this));
     }
 
-    // Scrap trickle: one Plastic Scrap per 6 raiders sunk, so long levels
+    // Scrap trickle: one Plastic Scrap per 15 raiders sunk, so long levels
     // pay a little more than short ones
     const sunk = Object.values(this.killStats || {}).reduce((t, n) => t + n, 0);
-    this.materialEarned.plasticScrap += Math.floor(sunk / 6);
+    this.materialEarned.plasticScrap += Math.floor(sunk / 15);
 
     // Bulk reward; replays pay half
     if (completionBonus) {

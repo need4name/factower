@@ -64,7 +64,7 @@ const Progress = {
   levelName(key) {
     const k = Progress.parse(key), l = Progress.level(key), s = k && Progress.storyline(k.storylineId);
     if (!l || !s) return key;
-    return s.short + ' · ' + l.name.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+    return s.short + ' · ' + UI.titleCase(l.name);
   },
 
   storylineOpen(save, id) {

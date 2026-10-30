@@ -100,7 +100,7 @@ nextPlayable() {
 }
 
 titleCase(str) {
-  return str.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+  return UI.titleCase(str);
 }
 
 // What should the player do next? Drives the card at the top of the hub so a

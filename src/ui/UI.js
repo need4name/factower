@@ -95,6 +95,12 @@ const UI = {
   },
 
   // ── Background ─────────────────────────────────────────────────────────
+  // "UMBAJI’S REVENGE" → "Umbaji’s Revenge": capitals only after a space,
+  // hyphen or bracket (not after an apostrophe); "Mk Ii" → "Mk II"
+  titleCase(str) {
+    return String(str).toLowerCase().replace(/(^|[\s\-(])([a-z])/g, (m, p, c) => p + c.toUpperCase()).replace(/\bIi\b/g, 'II');
+  },
+
   backdrop(scene, opts) {
     const o = opts || {};
     const { width, height } = scene.scale;

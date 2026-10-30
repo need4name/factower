@@ -40,6 +40,7 @@ class RaidScene extends Phaser.Scene {
 
     UI.backdrop(this);
     UI.fadeIn(this);
+    Art.ensure(this);
 
     // Layout mirrors CombatScene
     this.PLAY_TOP = UI.HEADER_H + 14;
@@ -73,16 +74,13 @@ class RaidScene extends Phaser.Scene {
     this.input.on('pointerup', () => { this._pickupTap = false; });
   }
 
-  titleCase(str) { return str.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()).replace(/\bIi\b/g, 'II'); }
+  titleCase(str) { return UI.titleCase(str); }
 
   // ── Map ───────────────────────────────────────────────────────────────
   drawRoad() {
-    const g = this.add.graphics().setDepth(1);
-    const stroke = (w, col) => { g.lineStyle(w, col, 1); g.beginPath(); g.moveTo(this.path[0].x, this.path[0].y); this.path.forEach(p => g.lineTo(p.x, p.y)); g.strokePath(); };
-    const joints = (r, col) => { g.fillStyle(col, 1); this.path.forEach(p => g.fillCircle(p.x, p.y, r)); };
-    joints(23, 0x2d2a26); stroke(46, 0x2d2a26);
-    joints(20, 0x1b1915); stroke(40, 0x1b1915);
-    stroke(2, 0x3a342b);
+    const { width } = this.scale;
+    const map = Art.drawMap(this, this.path, { x: 14, y: this.PLAY_TOP, w: width - 28, h: this.CORE_Y + 22 - this.PLAY_TOP }, this.storylineId);
+    this.waterFx = map.water;
     const s = this.path[0];
     UI.text(this, s.x + 28, this.CT + 34, 'YOUR CONVOY', 'tag', { size: 10, origin: [0, 0.5], color: UI.T.blue, depth: 2 });
   }
@@ -99,8 +97,8 @@ class RaidScene extends Phaser.Scene {
     const base = RAID_TURRETS[kind] || RAID_TURRETS.gun, sc = this.levelData.turretScale || 1;
     const k = Object.assign({}, base, { hp: Math.round(base.hp * sc), dmg: Math.round(base.dmg * sc) });
     const size = kind === 'heavy' ? 30 : 24;
-    const body = this.add.rectangle(x, y, size, size, 0x2a1414).setStrokeStyle(2, k.colour).setDepth(4);
-    const barrel = this.add.rectangle(x, y, size * 0.8, kind === 'heavy' ? 8 : 5, k.colour).setOrigin(0, 0.5).setDepth(5);
+    const body = this.add.image(x, y, kind === 'heavy' ? 'tur_base_heavy' : 'tur_base').setScale(1 / Art.RES).setDepth(4);
+    const barrel = this.add.image(x, y, 'tur_head_' + (RAID_TURRETS[kind] ? kind : 'gun')).setScale(1 / Art.RES).setDepth(5).setRotation(-Math.PI / 2);
     const range = this.add.circle(x, y, k.range, k.colour, 0.05).setStrokeStyle(1, k.colour, 0.22).setDepth(2);
     const hpBg = this.add.rectangle(x, y - size / 2 - 8, size + 6, 4, 0x2a3a4a).setDepth(6);
     const hpFill = this.add.rectangle(x - (size + 6) / 2, y - size / 2 - 8, size + 6, 4, UI.C.red).setOrigin(0, 0.5).setDepth(6);
@@ -170,8 +168,14 @@ class RaidScene extends Phaser.Scene {
     this.started = true;
     const d = TOWER_DATA[type];
     const p = this.path[0];
-    const sprite = this.add.circle(p.x, p.y, type === 'barricade' ? 15 : 13, d.colour).setStrokeStyle(2, 0x0a0d12).setDepth(8);
-    const barrel = type === 'barricade' ? null : this.add.rectangle(p.x, p.y, 17, 5, 0xeef2f8).setOrigin(0, 0.5).setDepth(9).setRotation(Math.PI / 2);
+    // A barge carrying the tower; the turret head turns separately
+    const art = Art.tower(this, 0, 0, type);
+    const barge = this.add.image(0, 0, 'barge').setScale(1 / Art.RES);
+    const sprite = this.add.container(p.x, p.y, [barge, art.base.setScale(0.8 / Art.RES)]).setDepth(8);
+    sprite.barge = barge;
+    const head = art.head.setPosition(p.x, p.y).setScale(0.8 / Art.RES).setDepth(9).setRotation(Math.PI / 2);
+    const barrel = type === 'barricade' ? null : head;
+    if (type === 'barricade') { sprite.add(head.setPosition(0, 0)); this.tweens.add({ targets: head, angle: 360, duration: 9000, repeat: -1 }); }
     const hpBg = this.add.rectangle(p.x, p.y - 20, 26, 4, 0x2a3a4a).setDepth(9);
     const hpFill = this.add.rectangle(p.x - 13, p.y - 20, 26, 4, UI.C.green).setOrigin(0, 0.5).setDepth(9);
     const hp = RAID_UNIT_HP[type];
@@ -207,6 +211,7 @@ class RaidScene extends Phaser.Scene {
 
   // ── Simulation ────────────────────────────────────────────────────────
   update(time, delta) {
+    if (this.waterFx && !this.paused) { this.waterFx.tilePositionX += delta * 0.012; this.waterFx.tilePositionY -= delta * 0.02; }
     if (this.over || this.paused) return;
     const dt = Math.min(delta, 50);
     this.simNow += dt;
@@ -219,6 +224,9 @@ class RaidScene extends Phaser.Scene {
         if (u.s >= this.pathLen - 4) { u.s = this.pathLen - 4; u.atCore = true; }
       }
       const p = this.pointAt(u.s);
+      // Point the barge along the channel
+      const q = this.pointAt(u.s + 6);
+      if (q.x !== p.x || q.y !== p.y) u.sprite.barge.setRotation(Math.atan2(q.y - p.y, q.x - p.x));
       u.sprite.setPosition(p.x, p.y);
       if (u.barrel) u.barrel.setPosition(p.x, p.y);
       u.hpBg.setPosition(p.x, p.y - 20); u.hpFill.setPosition(p.x - 13, p.y - 20);
@@ -330,7 +338,7 @@ class RaidScene extends Phaser.Scene {
     if (t.hp > 0) return;
     t.alive = false;
     [t.barrel, t.hpBg, t.hpFill, t.range].forEach(o => o.destroy());
-    t.body.setFillStyle(0x151515).setStrokeStyle(2, 0x444444);
+    t.body.setTint(0x555555);
     const boom = this.add.circle(t.x, t.y, 26, UI.C.amber, 0.5).setDepth(11);
     this.tweens.add({ targets: boom, scale: 2, alpha: 0, duration: 300, onComplete: () => boom.destroy() });
     this.spawnPickup(t.x + 16, t.y + 16, { parts: t.k.parts });

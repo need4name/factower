@@ -139,6 +139,10 @@ this._pathScaleY = sy;
 // ── Draw scene ───────────────────────────────────────────────────────
 UI.backdrop(this);
 UI.fadeIn(this);
+Art.ensure(this);
+// Boat wakes: one shared emitter, fed from update()
+this.wake = this.add.particles(0, 0, 'fx_dot', { lifespan: 800, scale: { start: 0.18, end: 0.7 }, alpha: { start: 0.2, end: 0 }, emitting: false }).setDepth(1.5);
+this._wakeAcc = 0;
 this.drawHotspots();
 this.drawUBZs();
 this.drawPath();
@@ -395,11 +399,11 @@ if (Math.abs(mult - 1) > 0.04) {
 }
 
 const hitZone    = this.add.circle(x, y, 20, 0xffffff, 0).setDepth(10).setInteractive();
-const towerCircle = this.add.circle(x, y, 14, data.colour, 0.9).setDepth(4);
-this.add.circle(x, y, 14).setStrokeStyle(2, data.colour).setDepth(4);
-const towerLabel = this.add.text(x, y, data.name.substring(0, 3), {
-  fontFamily: 'monospace', fontSize: '9px', color: '#eef2f8', fontStyle: 'bold'
-}).setOrigin(0.5).setDepth(5);
+const art        = Art.tower(this, x, y, type);
+const towerCircle = art.base.setDepth(4);
+const towerLabel  = art.head.setDepth(4.5).setRotation(-Math.PI / 2);
+// Drop-in: the platform lands with a little bounce
+[art.base, art.head].forEach(o => { const sc = o.scale; o.setScale(sc * 1.35).setAlpha(0); this.tweens.add({ targets: o, scale: sc, alpha: 1, duration: 220, ease: 'Back.easeOut' }); });
 
 if (type === 'barricade') {
   this.add.circle(x, y, towerData.range, data.colour, 0.04).setDepth(2);
@@ -429,9 +433,8 @@ this.refreshTowerButtons();
 this.towersUsed[type] = (this.towersUsed[type] || 0) + 1;
 
 // A barrel that turns to face whatever the tower is shooting at
-const barrel = type === 'barricade' ? null
-  : type === 'siphon' ? this.add.rectangle(x, y, 13, 7, 0xd9c9ff, 0.95).setOrigin(0, 0.5).setDepth(4.5).setRotation(-Math.PI / 2)
-  : this.add.rectangle(x, y, type === 'bomber' ? 17 : 19, type === 'bomber' ? 8 : 5, 0xeef2f8, 0.95).setOrigin(0, 0.5).setDepth(4.5).setRotation(-Math.PI / 2);
+const barrel = type === 'barricade' ? null : towerLabel;
+if (type === 'barricade') this.tweens.add({ targets: towerLabel, angle: 360, duration: 9000, repeat: -1 });   // the spiked boom turns slowly
 const tower = { type, x, y, data: towerData, lastFired: -1e9, upgradeTier: 0, mods: [0, 0, 0], targetMode: 'first', towerCircle, towerLabel, tierBadge: null, hitZone, powerMult: mult, barrel };
 this.placedTowers.push(tower);
 
@@ -709,24 +712,16 @@ tutorialWaveStarted() {
 // ── Scene drawing ─────────────────────────────────────────────────────
 
 // ── Road ──────────────────────────────────────────────────────────────
+// The battle map: fused-plastic raft decking with water channels cut through
+// it. Raiders sail the channels; towers stand on the decking.
 drawPath() {
-const g = this.add.graphics().setDepth(1);
-const stroke = (w, col, a) => {
-  g.lineStyle(w, col, a);
-  g.beginPath();
-  g.moveTo(this.pathPoints[0].x, this.pathPoints[0].y);
-  this.pathPoints.forEach(p => g.lineTo(p.x, p.y));
-  g.strokePath();
-};
-// Rounded joints: a disc at every corner so bends don't look notched
-const joints = (r, col) => { g.fillStyle(col, 1); this.pathPoints.forEach(p => g.fillCircle(p.x, p.y, r)); };
-joints(23, 0x26303d); stroke(46, 0x26303d, 1);     // kerb
-joints(20, 0x161d27); stroke(40, 0x161d27, 1);     // road surface
-stroke(2, 0x2c3746, 1);                            // centre line
+const map = Art.drawMap(this, this.pathPoints, { x: this.PLAY_LEFT, y: this.PLAY_TOP, w: this.PLAY_RIGHT - this.PLAY_LEFT, h: this.PLAY_BOTTOM - this.PLAY_TOP }, this.storylineId);
+this.waterFx = map.water;
+this._mapTheme = map.theme;
 
 // Direction chevrons along the road
-const cg = this.add.graphics().setDepth(1);
-cg.lineStyle(2, 0x3a4658, 1);
+const cg = this.add.graphics().setDepth(1.3);
+cg.lineStyle(2, this._mapTheme.glint, 0.3);
 for (let i = 0; i < this.pathPoints.length - 1; i++) {
   const a = this.pathPoints[i], b = this.pathPoints[i + 1];
   const L = Math.hypot(b.x - a.x, b.y - a.y), ang = Math.atan2(b.y - a.y, b.x - a.x);
@@ -738,7 +733,8 @@ for (let i = 0; i < this.pathPoints.length - 1; i++) {
 }
 
 const start = this.pathPoints[0];
-UI.text(this, start.x + 28, this.CT + 10, 'RAIDERS ENTER', 'tag', { size: 10, origin: [0, 0.5], color: UI.T.red, depth: 2 });
+const startRight = start.x > this.scale.width - 130;
+UI.text(this, start.x + (startRight ? -28 : 28), this.CT + 10, 'RAIDERS ENTER', 'tag', { size: 10, origin: [startRight ? 1 : 0, 0.5], color: UI.T.red, depth: 2 });
 const exitPt = this.pathPoints[this.pathPoints.length - 1];
 const baseRight = exitPt.x > this.scale.width - 110;   // keep the label on screen
 UI.text(this, exitPt.x + (baseRight ? -28 : 28), this.CB - 10, 'YOUR BASE', 'tag', { size: 10, origin: [baseRight ? 1 : 0, 0.5], color: UI.T.blue, depth: 2 });
@@ -823,16 +819,20 @@ types.forEach((type, i) => {
   const name = UI.text(this, compact ? -bw / 2 + 28 : 0, compact ? -8 : 10, label, 'tag', { size: compact ? 11 : 12.5, origin: compact ? [0, 0.5] : 0.5, color: UI.T.text });
   const countText = UI.text(this, compact ? -bw / 2 + 28 : 0, compact ? 9 : 30, 'x' + this.loadout[type], 'number', { size: compact ? 13 : 15, origin: compact ? [0, 0.5] : 0.5 });
   const zone = this.add.zone(0, 0, bw, bh).setInteractive();
-  c.add([bg, disc, name, countText, zone]);
+  // The tower's own turret art as its icon
+  const ix = compact ? -bw / 2 + 15 : 0, iy = compact ? 0 : -20, isz = compact ? 0.5 : 0.65;
+  const icon = this.add.image(ix, iy, 'twr_head_' + type).setScale(isz / Art.RES * 1.6).setRotation(-Math.PI / 2);
+  c.add([bg, disc, icon, name, countText, zone]);
   const btn = { container: c, countText, x, y, w: bw, h: bh, type };
   btn.draw = () => {
     const has = this.loadout[type] > 0, sel = this.selectedTowerType === type;
     UI.drawPanel(bg, 0, 0, bw, bh, { fill: sel ? 0x1d2734 : (has ? UI.C.surface : 0x10151c),
       stroke: sel ? d.colour : (has ? UI.C.line : UI.C.lineSoft), strokeWidth: sel ? 2 : 1, radius: compact ? 10 : 14 });
     disc.clear();
-    const dx = compact ? -bw / 2 + 15 : 0, dy = compact ? 0 : -20, r = compact ? 8 : 11;
-    disc.fillStyle(has ? d.colour : UI.C.line, has ? 1 : 0.6); disc.fillCircle(dx, dy, r);
-    disc.lineStyle(2, 0x0a0d12, 1); disc.strokeCircle(dx, dy, r);
+    const dx = compact ? -bw / 2 + 15 : 0, dy = compact ? 0 : -20, r = compact ? 11 : 15;
+    disc.fillStyle(0x0b0f14, 1); disc.fillCircle(dx, dy, r);
+    disc.lineStyle(1.5, has ? d.colour : UI.C.line, has ? 0.8 : 0.5); disc.strokeCircle(dx, dy, r);
+    icon.setAlpha(has ? 1 : 0.35);
     name.setColor(has ? UI.T.text : UI.T.faint);
     countText.setText('x' + this.loadout[type]).setColor(has ? UI.hex(d.colour) : UI.T.faint);
   };
@@ -856,7 +856,7 @@ refreshTowerButtons() {
   Object.values(this.towerButtons).forEach(b => b.draw());
 }
 
-titleCase(str) { return String(str).toLowerCase().replace(/\b\w/g, c => c.toUpperCase()).replace(/\bIi\b/g, 'II'); }
+titleCase(str) { return UI.titleCase(str); }
 
 toggleSpeed() {
   this.speed = this.speed === 2 ? 1 : 2;
@@ -1252,6 +1252,19 @@ this.tweens.add({ targets: enemy.sprite, alpha: 0.3, duration: 60, yoyo: true })
 if (enemy.hp <= 0) this.killEnemy(enemy, sourceType);
 }
 
+// Wreck effect: a ring of foam and a few bits of debris
+splash(x, y, size, colour) {
+const ring = this.add.image(x, y, 'fx_ring').setScale(size / 32).setAlpha(0.7).setDepth(6.5);
+this.tweens.add({ targets: ring, scale: size / 10, alpha: 0, duration: 520, ease: 'Quad.easeOut', onComplete: () => ring.destroy() });
+const n = size > 16 ? 8 : 5;
+for (let i = 0; i < n; i++) {
+  const a = Math.random() * Math.PI * 2, d = size * (0.8 + Math.random() * 1.2);
+  const chip = this.add.image(x, y, 'fx_chip').setTint(i % 2 ? colour : 0xdfe6ee).setScale(0.35 + Math.random() * 0.4).setDepth(6.6);
+  this.tweens.add({ targets: chip, x: x + Math.cos(a) * d, y: y + Math.sin(a) * d, angle: Math.random() * 360, alpha: 0,
+    duration: 380 + Math.random() * 260, ease: 'Quad.easeOut', onComplete: () => chip.destroy() });
+}
+}
+
 shieldBreak(enemy) {
 if (!enemy.sprite || !enemy.sprite.active) return;
 const pop = this.add.circle(enemy.sprite.x, enemy.sprite.y, enemy.data.size + 5, 0x7fe3ff, 0).setStrokeStyle(3, 0x7fe3ff, 1).setDepth(9);
@@ -1272,8 +1285,12 @@ if (enemy.ring) { enemy.ring.destroy(); enemy.ring = null; }
 if (enemy.hpBg)   { enemy.hpBg.destroy();   enemy.hpBg   = null; }
 if (enemy.hpFill) { enemy.hpFill.destroy();  enemy.hpFill = null; }
 if (enemy.sprite && enemy.sprite.active) {
+this.splash(enemy.sprite.x, enemy.sprite.y, enemy.data.size, enemy.data.colour);
+if (enemy.turnTween) enemy.turnTween.stop();
+// Sink: list over, shrink and fade
 this.tweens.add({
-targets: enemy.sprite, alpha: 0, scaleX: 1.8, scaleY: 1.8, duration: 200,
+targets: enemy.sprite, alpha: 0, scaleX: enemy.sprite.scaleX * 0.6, scaleY: enemy.sprite.scaleY * 0.6,
+rotation: enemy.sprite.rotation + 0.6, duration: 420, ease: 'Quad.easeIn',
 onComplete: () => { if (enemy.sprite) enemy.sprite.destroy(); }
 });
 }
@@ -1383,13 +1400,12 @@ waveData.enemies.forEach(group => {
 spawnEnemy(type, from) {
 const data   = ENEMY_DATA[type];
 const start  = from || this.pathPoints[0];
-const sprite = this.add.circle(start.x, start.y, data.size, data.colour).setDepth(7);
+const sprite = Art.boat(this, start.x, start.y, type).setDepth(7);
 const barW   = Math.max(data.size * 2.5, 22);
 const hpBg   = this.add.rectangle(start.x, start.y - data.size - 7, barW, 4, 0x2a3a4a).setDepth(8);
 const hpFill = this.add.rectangle(start.x - barW / 2, start.y - data.size - 7, barW, 4, 0x5eba7d).setOrigin(0, 0.5).setDepth(8);
 
 const traits = data.traits || [];
-if (traits.includes('armoured')) sprite.setStrokeStyle(3, 0xdfe6ee, 0.9);
 if (traits.includes('healer')) {
   const aura = this.add.circle(start.x, start.y, data.heal.radius, 0x52c47f, 0.06).setStrokeStyle(1, 0x52c47f, 0.35).setDepth(5);
   sprite.aura = aura;
@@ -1424,6 +1440,14 @@ enemy.moveTargetIdx  = idx;
 enemy.lastSpeedMod   = this.getSpeedModifier(enemy);
 
 if (enemy.moveTween) { enemy.moveTween.stop(); enemy.moveTween = null; }
+
+// Turn the bow toward the next waypoint (the short way round)
+const heading = Math.atan2(target.y - enemy.sprite.y, target.x - enemy.sprite.x);
+if (dist > 1) {
+  if (enemy.turnTween) enemy.turnTween.stop();
+  const cur = enemy.sprite.rotation;
+  enemy.turnTween = this.tweens.add({ targets: enemy.sprite, rotation: cur + Phaser.Math.Angle.Wrap(heading - cur), duration: enemy.moveTween === undefined ? 1 : 180 });
+}
 
 enemy.moveTween = this.tweens.add({
   targets: enemy.sprite, x: target.x, y: target.y,
@@ -1852,7 +1876,18 @@ if (!this.paused && !this.gameOver) {
   this._tickDt = delta * (this.speed || 1);
   this.updateProjectiles(this._tickDt);
   this.updateBattleTicks();
+  // Wakes behind every boat (Helix craft hover, so theirs is fainter)
+  this._wakeAcc += this._tickDt;
+  if (this._wakeAcc >= 110) {
+    this._wakeAcc = 0;
+    this.activeEnemies.forEach(e => {
+      if (!e.alive || !e.sprite || !e.sprite.active) return;
+      const r = e.sprite.rotation, back = e.data.size * 1.3;
+      this.wake.emitParticleAt(e.sprite.x - Math.cos(r) * back, e.sprite.y - Math.sin(r) * back, 1);
+    });
+  }
 }
+if (this.waterFx && !this.paused) { this.waterFx.tilePositionX += delta * 0.012; this.waterFx.tilePositionY -= delta * 0.02; }
 this._slowTick = ((this._slowTick || 0) + 1);
 
 this.activeEnemies.forEach(enemy => {

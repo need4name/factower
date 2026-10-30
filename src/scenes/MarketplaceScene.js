@@ -130,5 +130,5 @@ class MarketplaceScene extends Phaser.Scene {
     });
   }
 
-  titleCase(str) { return str.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()).replace(/\bIi\b/g, 'II'); }
+  titleCase(str) { return UI.titleCase(str); }
 }

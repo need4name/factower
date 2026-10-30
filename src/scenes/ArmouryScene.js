@@ -107,7 +107,7 @@ class ArmouryScene extends Phaser.Scene {
     if (this.dockBtn) this.dockBtn.setEnabled(total > 0);
   }
 
-  titleCase(str) { return str.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()).replace(/\bIi\b/g, 'II'); }
+  titleCase(str) { return UI.titleCase(str); }
 
   confirmSell(type) {
     const nut = TOWER_SELL_VALUE[type] || 1;

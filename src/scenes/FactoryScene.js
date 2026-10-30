@@ -94,6 +94,7 @@ create() {
   this.deleteMode         = false;
   this.progressBars       = {};
   this.machineSprites     = {};
+  this.smelterGlows       = {};
   this.machineStatusTexts = {};
   this.workerSprites      = {};
   this.workerLabels       = {};
@@ -123,6 +124,7 @@ create() {
   });
 
   this.drawFixedStations();
+  Art.ensure(this);
   this.drawGrid();
   this.drawMachines();
   this.drawWorkers();
@@ -371,9 +373,10 @@ tileCentre(row, col) {
 
 drawGrid() {
   const g = this.add.graphics();
-  // Floor plate
-  UI.drawPanel(g, this.GX + this.TILE * this.COLS / 2, this.GY + this.TILE * this.ROWS / 2, this.TILE * this.COLS + 8, this.TILE * this.ROWS + 8,
-    { fill: 0x0e131a, stroke: UI.C.lineSoft, radius: 14 });
+  // Floor: steel diamond plate inside a frame
+  const fw = this.TILE * this.COLS + 8, fh = this.TILE * this.ROWS + 8, fx = this.GX + this.TILE * this.COLS / 2, fy = this.GY + this.TILE * this.ROWS / 2;
+  this.add.tileSprite(fx, fy, fw * Art.RES, fh * Art.RES, 'floor_plate').setScale(1 / Art.RES).setDepth(-1);
+  g.lineStyle(2, UI.C.lineSoft, 1); g.strokeRoundedRect(fx - fw / 2, fy - fh / 2, fw, fh, 14);
   this.tileGfx = {};
   for (let row = 0; row < this.ROWS; row++) for (let col = 0; col < this.COLS; col++) {
     const { x, y } = this.tileCentre(row, col);
@@ -431,8 +434,12 @@ drawTile(row, col, hot) {
   const { x, y } = this.tileCentre(row, col);
   const empty = !this.factory.getMachineAt(row, col);
   t.clear();
-  t.fillStyle(hot ? 0x1f2b3a : UI.C.surface, 1);
+  // A bolted floor socket where a machine can go
+  t.fillStyle(hot ? 0x1f2b3a : 0x121821, hot ? 1 : 0.75);
   t.fillRoundedRect(x - this.TILE / 2 + 3, y - this.TILE / 2 + 3, this.TILE - 6, this.TILE - 6, 10);
+  t.lineStyle(1, 0x2a3442, 1); t.strokeRoundedRect(x - this.TILE / 2 + 3, y - this.TILE / 2 + 3, this.TILE - 6, this.TILE - 6, 10);
+  t.fillStyle(0x2a3442, 1);
+  [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sy]) => t.fillCircle(x + sx * (this.TILE / 2 - 10), y + sy * (this.TILE / 2 - 10), 1.8));
   if (empty && this.placingMachine) {
     t.lineStyle(1.5, UI.C.amber, hot ? 0.9 : 0.35);
     t.strokeRoundedRect(x - this.TILE / 2 + 3, y - this.TILE / 2 + 3, this.TILE - 6, this.TILE - 6, 10);
@@ -803,27 +810,41 @@ drawMachineAt(row, col, type) {
   bg.lineStyle(isConveyor ? 1 : 1.5, mt.colour, isConveyor ? 0.5 : 0.85);
   bg.strokeRoundedRect(x - s / 2, y - s / 2, s, s, 10);
 
-  let lbl, sub = null, barBg = null, bar = null, statusTxt = null, icon = null;
+  let lbl, sub = null, barBg = null, bar = null, statusTxt = null, icon = null, art = null, extra = null, glow = null;
   if (isConveyor) {
-    // Belt chevrons pointing along the direction of travel
+    // A belt, with chevrons creeping along the direction of travel
     const ang = { N: -Math.PI / 2, E: 0, S: Math.PI / 2, W: Math.PI }[machine?.direction || 'E'];
+    art = this.add.image(x, y, 'belt').setScale((s - 4) / (64 * Art.RES)).setRotation(ang).setDepth(2.5);
     icon = this.add.graphics({ x, y }).setDepth(3).setRotation(ang);
     icon.lineStyle(3, mt.colour, 0.9);
     [-12, 4].forEach(off => { icon.beginPath(); icon.moveTo(off, -10); icon.lineTo(off + 10, 0); icon.lineTo(off, 10); icon.strokePath(); });
-    lbl = UI.text(this, x, y + s / 2 - 10, this.TILE >= 80 ? 'HOLD TO TURN' : '', 'label', { size: 8.5, origin: 0.5, color: UI.T.faint, ls: 0.5, depth: 3 });
+    const dx = Math.cos(ang), dy = Math.sin(ang);
+    icon.setPosition(x - dx * 5, y - dy * 5);
+    this.tweens.add({ targets: icon, x: x + dx * 5, y: y + dy * 5, duration: 600, repeat: -1 });
+    lbl = UI.text(this, x, y + s / 2 - 10, this.TILE >= 80 ? 'HOLD TO TURN' : '', 'label', { size: 8.5, origin: 0.5, color: UI.T.mute, ls: 0.5, depth: 3 }).setStroke('#0a0d12', 3);
   } else {
     const isAsm = this.factory.isAssemblyType(type);
     const ts = this.TS;
-    lbl = UI.text(this, x, y - 14 * ts, this.machineLabel(type), 'tag', { size: (type === 'assembly_barricade' ? 11 : 12.5) * ts, origin: 0.5, color: mt.colourHex, depth: 3, ls: ts < 0.9 ? 0.5 : 1.5 });
-    sub = UI.text(this, x, y + 2 * ts, this.TILE >= 80 ? (isAsm ? 'BENCH' : 'SCRAP → REF') : '', 'label', { size: 9, origin: 0.5, color: UI.T.mute, ls: 1, depth: 3 });
-    statusTxt = UI.text(this, x, y + 20 * ts, '', 'tag', { size: 10, origin: 0.5, color: UI.T.green, depth: 3 });
+    lbl = UI.text(this, x, y - s / 2 + 11 * ts, this.machineLabel(type), 'tag', { size: (type === 'assembly_barricade' ? 10.5 : 12) * ts, origin: 0.5, color: mt.colourHex, depth: 3, ls: ts < 0.9 ? 0.5 : 1.2 });
+    // Machine art: a workbench with the tower on it, or the furnace
+    const ay = y + 3 * ts;
+    if (isAsm) {
+      art = this.add.image(x, ay + 4 * ts, 'bench').setScale(ts * 0.85 / Art.RES).setDepth(2.5);
+      extra = this.add.image(x - 4 * ts, ay + 1 * ts, 'twr_head_' + mt.produces).setScale(ts * 0.8 / Art.RES).setRotation(-Math.PI / 2).setDepth(2.6);
+    } else {
+      art = this.add.image(x, ay, 'smelter_art').setScale(ts * 0.8 / Art.RES).setDepth(2.5);
+      glow = this.add.image(x, ay + 6 * ts, 'fx_dot').setTint(0xe8a020).setScale(1.6 * ts).setAlpha(0).setDepth(2.6);
+      this.smelterGlows = this.smelterGlows || {};
+      this.smelterGlows[key] = glow;
+    }
+    statusTxt = UI.text(this, x, y + 24 * ts, '', 'tag', { size: 10, origin: 0.5, color: UI.T.green, depth: 3 }).setStroke('#0a0d12', 3);
     barBg = this.add.rectangle(x, y + s / 2 - 8, s - 16, 4, UI.C.line).setDepth(3);
     bar = this.add.rectangle(x - (s - 16) / 2, y + s / 2 - 8, 0, 4, mt.colour).setOrigin(0, 0.5).setDepth(3);
     bar._maxW = s - 16;
     this.progressBars[key] = bar;
     this.machineStatusTexts[key] = statusTxt;
   }
-  this.machineSprites[key] = { bg, lbl, sub, barBg, bar, statusTxt, icon };
+  this.machineSprites[key] = { bg, lbl, sub, barBg, bar, statusTxt, icon, art, extra, glow };
   this.drawTile(row, col, false);
 
   // Input: tap = interact; long-press a belt = rotate it
@@ -858,6 +879,7 @@ destroyMachineSprites(key) {
   delete this.machineSprites[key];
   delete this.progressBars[key];
   delete this.machineStatusTexts[key];
+  if (this.smelterGlows) delete this.smelterGlows[key];
 }
 
 redrawMachineAt(row, col) {
@@ -879,8 +901,8 @@ drawWorkers() {
   this.workerLabels  = {};
   this.factory.getUnlockedWorkers().forEach(w => {
     const home = this.workerHome(w.id);
-    const sprite = this.add.circle(home.x, home.y, 15, WORKER_COLOURS[w.id]).setDepth(10).setStrokeStyle(2, 0x0a0d12);
-    const label  = UI.text(this, home.x, home.y, WORKER_LABELS[w.id], 'tag', { size: 10, origin: 0.5, color: UI.T.dark, depth: 11 });
+    const sprite = this.add.image(home.x, home.y, 'worker_' + Math.min(2, w.id)).setScale(1 / Art.RES).setDepth(10);
+    const label  = UI.text(this, home.x, home.y - 2, WORKER_LABELS[w.id], 'tag', { size: 9, origin: 0.5, color: UI.T.dark, depth: 11 });
     this.workerSprites[w.id] = sprite;
     this.workerLabels[w.id]  = label;
   });
@@ -1299,7 +1321,7 @@ update(time, delta) {
 
   this.factory.getUnlockedWorkers().forEach(w => {
     const sprite = this.workerSprites[w.id], label = this.workerLabels[w.id];
-    if (sprite && label) label.setPosition(sprite.x, sprite.y);
+    if (sprite && label) label.setPosition(sprite.x, sprite.y - 2);
   });
 
   const updateBar = (key) => {
@@ -1325,6 +1347,8 @@ update(time, delta) {
     updateBar(key);
     const machine = this.factory.getMachineAt(r, c);
     const statusTxt = this.machineStatusTexts[key];
+    const glow = this.smelterGlows && this.smelterGlows[key];
+    if (glow) glow.setAlpha(machine && machine.heldMaterial ? 0.45 + 0.25 * Math.sin(time / 180) : 0);
     if (statusTxt && machine && this.factory.machineInput(machine)) {
       // A belt pointing in with the wrong material jams the feed (M4);
       // AUTO = loaded with a belt to output onto (M6); FULL = output belt blocked

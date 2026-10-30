@@ -38,6 +38,7 @@ const Art = {
     Object.keys(TOWER_DATA).forEach(t => Art._tower(scene, t));
     Art._raid(scene);
     Art._island(scene);
+    Art._factory(scene);
   },
 
   // Draw into a temporary Graphics at RES scale and save it as a texture
@@ -375,6 +376,54 @@ const Art = {
       }
       g.fillStyle(0xb7bec8, 1); g.fillCircle(c, c, 12 * R);
       g.fillStyle(0x6f7b8d, 1); g.fillCircle(c, c, 5 * R);
+    });
+  },
+
+  // ── Factory: floor plate, benches, smelter, belt and the crew ──────────
+  _factory(scene) {
+    // Steel diamond plate
+    Art._make(scene, 'floor_plate', 32, 32, (g, R) => {
+      g.fillStyle(0x161c24, 1); g.fillRect(0, 0, 32 * R, 32 * R);
+      g.fillStyle(0x222a35, 1);
+      [[8, 8, 1], [24, 8, -1], [8, 24, -1], [24, 24, 1]].forEach(([x, y, d]) => {
+        const a = d * 0.6, c = Math.cos(a), sn = Math.sin(a), l = 5 * R, w = 1.4 * R;
+        g.fillPoints([[l, 0], [0, w], [-l, 0], [0, -w]].map(([px, py]) => new Phaser.Geom.Point(x * R + px * c - py * sn, y * R + px * sn + py * c)), true);
+      });
+    });
+    // Workbench: a wooden top with a vise; the tower being built sits on it
+    Art._make(scene, 'bench', 56, 34, (g, R) => {
+      g.fillStyle(0x000000, 0.35); g.fillRoundedRect(3 * R, 5 * R, 52 * R, 28 * R, 4 * R);
+      g.fillStyle(0x6b5232, 1); g.fillRoundedRect(2 * R, 2 * R, 52 * R, 28 * R, 4 * R);
+      g.lineStyle(1 * R, 0x4a3820, 1); [9, 16, 23].forEach(y => g.lineBetween(4 * R, y * R, 52 * R, y * R));
+      g.fillStyle(0x8a8f96, 1); g.fillRect(44 * R, 6 * R, 8 * R, 10 * R); g.fillStyle(0x5a6068, 1); g.fillRect(46 * R, 16 * R, 4 * R, 10 * R);   // vise
+      g.fillStyle(0x2a2a2a, 1); g.fillRect(5 * R, 22 * R, 10 * R, 4 * R);                                                                  // tools
+    });
+    // Smelter: a squat furnace; its mouth glows when working (see FactoryScene)
+    Art._make(scene, 'smelter_art', 46, 40, (g, R) => {
+      g.fillStyle(0x000000, 0.35); g.fillRoundedRect(4 * R, 6 * R, 40 * R, 33 * R, 8 * R);
+      g.fillStyle(0x4a4038, 1); g.fillRoundedRect(3 * R, 3 * R, 40 * R, 33 * R, 8 * R);
+      g.lineStyle(2 * R, 0xe8a020, 0.8); g.strokeRoundedRect(3 * R, 3 * R, 40 * R, 33 * R, 8 * R);
+      g.fillStyle(0x1a1410, 1); g.fillRoundedRect(13 * R, 18 * R, 20 * R, 12 * R, 5 * R);
+      g.fillStyle(0x0b0f14, 1); g.fillCircle(36 * R, 9 * R, 4 * R);                                     // flue
+    });
+    // Belt: dark rubber with rollers, running left→right (rotated per direction)
+    Art._make(scene, 'belt', 64, 40, (g, R) => {
+      g.fillStyle(0x0b0f14, 1); g.fillRect(0, 4 * R, 64 * R, 32 * R);
+      g.fillStyle(0x232a33, 1); g.fillRect(0, 7 * R, 64 * R, 26 * R);
+      g.fillStyle(0x3a4452, 1); for (let x = 4; x < 64; x += 10) g.fillRect(x * R, 7 * R, 2 * R, 26 * R);
+      g.fillStyle(0x8a96a6, 1); [4, 36].forEach(y => { for (let x = 6; x < 64; x += 14) g.fillCircle(x * R, y * R, 2 * R); });
+    });
+    // The crew, from above: shoulders and a coloured hard hat
+    [[0, 0xf2a93b, false], [1, 0x3a8fc4, false], [2, 0x9d7ff0, true]].forEach(([id, col, big]) => {
+      Art._make(scene, 'worker_' + id, 40, 40, (g, R) => {
+        const sh = big ? 15 : 12;
+        g.fillStyle(0x000000, 0.35); g.fillEllipse(21 * R, 23 * R, sh * 2.2 * R, sh * 1.3 * R);
+        g.fillStyle(big ? 0x3a3f4a : 0x4a5868, 1); g.fillEllipse(20 * R, 21 * R, sh * 2.2 * R, sh * 1.3 * R);
+        if (big) { g.fillStyle(0x7fe3ff, 1); g.fillCircle(8 * R, 20 * R, 2.5 * R); g.fillCircle(32 * R, 20 * R, 2.5 * R); }   // cyber joints
+        g.fillStyle(col, 1); g.fillCircle(20 * R, 19 * R, (big ? 11 : 10) * R);
+        g.lineStyle(1.5 * R, 0x0a0d12, 1); g.strokeCircle(20 * R, 19 * R, (big ? 11 : 10) * R);
+        g.fillStyle(0xffffff, 0.25); g.fillEllipse(17 * R, 15 * R, 8 * R, 4 * R);                         // hat shine
+      });
     });
   },
 

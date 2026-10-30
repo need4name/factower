@@ -5,6 +5,7 @@ class DockScene extends Phaser.Scene {
 
   create() {
     this.saveData = applyTestStock() || SaveManager.load() || {};
+    this.chartBg = null; this.contentContainer = null;   // scene objects are reused between visits
     UI.backdrop(this);
     UI.fadeIn(this);
 
@@ -49,6 +50,7 @@ class DockScene extends Phaser.Scene {
 
   clearContent() {
     if (this.contentContainer) { this.contentContainer.destroy(true); this.contentContainer = null; }
+    if (this.chartBg) { this.chartBg.forEach(o => o.destroy()); this.chartBg = null; }
     this.input.off('pointerdown', this._onDown);
     this.input.off('pointermove', this._onMove);
     this.input.off('pointerup',   this._onUp);
@@ -148,69 +150,91 @@ class DockScene extends Phaser.Scene {
   }
 
   // ── Level list ─────────────────────────────────────────────────────────
+  // A sea chart: each mission is an island on a dotted voyage route, from the
+  // top down. Tap one for its briefing.
   showLevelList(storyline) {
     this.clearContent();
     this.currentView = 'levels';
-    const { height } = this.scale;
+    const { width, height } = this.scale;
     this.hdr.title.setText(storyline.title.toUpperCase());
     this.hdr.sub.setText(storyline.short.toUpperCase() + '  \u00b7  VS ' + storyline.faction.toUpperCase());
+    Art.ensure(this);
+    const T = Art.theme(storyline.id), R = Art.RES;
+    // Sea behind the chart (stays put while the chart scrolls)
+    const top = UI.HEADER_H;
+    const sea = this.add.graphics().setDepth(1);
+    sea.fillStyle(T.waterDeep, 1); sea.fillRect(0, top, width, height - top);
+    const waves = this.add.tileSprite(width / 2, top + (height - top) / 2, width * R, (height - top) * R, 'water').setScale(1 / R)
+      .setTint(T.glint).setAlpha(0.18).setDepth(1);
+    this.chartBg = [sea, waves];
     this.contentContainer = this.add.container(0, 0).setDepth(5);
 
-    let y = UI.HEADER_H + 16;
-    let nextMarked = false;
-    storyline.levels.forEach(level => {
+    const gap = 92, y0 = top + 64;
+    const nodes = storyline.levels.map((level, i) => {
       const isDone = Progress.done(this.saveData, Progress.key(storyline.id, level.id));
-      const lock   = Progress.levelLock(this.saveData, storyline.id, level);
-      const isNext = !lock && !isDone && !nextMarked;
-      if (isNext) nextMarked = true;
-      y = this.addLevelCard(storyline, level, y, !lock, isDone, isNext, lock) + 10;
+      const lock = Progress.levelLock(this.saveData, storyline.id, level);
+      return { level, isDone, lock, x: i % 2 ? width - 92 : 92, y: y0 + i * gap };
     });
-    this.scrollMinY = Math.min(0, height - (y + 20));
+    const next = nodes.find(n => !n.lock && !n.isDone);
+
+    // Route: solid where you've sailed, dotted ahead
+    const route = this.add.graphics();
+    for (let i = 0; i < nodes.length - 1; i++) {
+      const a = nodes[i], b = nodes[i + 1], sailed = a.isDone && b.isDone;
+      const len = Math.hypot(b.x - a.x, b.y - a.y), steps = Math.floor(len / 10);
+      for (let k = 0; k < steps; k++) {
+        if (!sailed && k % 2) continue;
+        const t0 = k / steps, t1 = (k + (sailed ? 1 : 0.6)) / steps;
+        route.lineStyle(sailed ? 3 : 2, sailed ? T.glint : 0x8b9bb0, sailed ? 0.8 : 0.45);
+        route.lineBetween(a.x + (b.x - a.x) * t0, a.y + (b.y - a.y) * t0, a.x + (b.x - a.x) * t1, a.y + (b.y - a.y) * t1);
+      }
+    }
+    this.contentContainer.add(route);
+    nodes.forEach(n => this.addChartNode(storyline, n, n === next, T));
+    const endY = y0 + (nodes.length - 1) * gap + 70;
+    this.scrollMinY = Math.min(0, height - (endY + 20));
     this.enableScroll();
   }
 
-
-  addLevelCard(storyline, level, top, unlocked, done, isNext, lock) {
+  addChartNode(storyline, n, isNext, T) {
     const { width } = this.scale;
-    const w = width - 32;
-    const colour = done ? UI.C.green : unlocked ? UI.C.amber : UI.C.line;
+    const { level, isDone, lock, x, y } = n;
+    const unlocked = !lock, raid = level.type === 'raid';
     const items = [];
-    const bx = 16 + 34, lx = bx + 34, textW = w - (lx - 16) - 40;
+    // The island: a round patch of raft with a rim
+    const g = this.add.graphics();
+    g.fillStyle(0x000000, 0.35); g.fillCircle(x + 2, y + 4, 27);
+    g.fillStyle(unlocked ? T.deck : 0x1a1f27, 1); g.fillCircle(x, y, 26);
+    g.lineStyle(3, isDone ? UI.C.green : raid && unlocked ? UI.C.red : unlocked ? UI.C.amber : 0x3a4452, unlocked ? 1 : 0.8);
+    g.strokeCircle(x, y, 26);
+    if (level.boss && unlocked) { g.lineStyle(2, UI.C.red, 0.7); g.strokeCircle(x, y, 32); }
+    items.push(g);
+    if (isDone)        items.push(UI.icon(this, x, y, 'check', 18, UI.C.green));
+    else if (!unlocked) items.push(UI.icon(this, x, y, 'lock', 16, 0x6f7b8d));
+    else if (raid)     items.push(UI.icon(this, x, y, 'anchor', 18, UI.C.red));
+    else if (level.boss) items.push(UI.icon(this, x, y, 'star', 18, UI.C.red));
+    else               items.push(UI.text(this, x, y, String(level.id), 'number', { size: 20, origin: 0.5, color: UI.T.amber }));
+    if (isNext) {
+      const ring = this.add.circle(x, y, 30, UI.C.amber, 0).setStrokeStyle(3, UI.C.amber, 0.9);
+      this.tweens.add({ targets: ring, scale: 1.35, alpha: 0, duration: 1200, repeat: -1 });
+      items.push(ring);
+    }
 
-    // Text first, so the card can grow to fit the description
-    const raid   = level.type === 'raid';
-    const waves  = level.waves ? level.waves.length : 1;
-    const enemyN = (level.waves || []).reduce((s, wv) => s + wv.enemies.reduce((a, g) => a + g.count, 0), 0);
-    const meta   = level.soon ? 'COMING SOON' : raid ? 'RAID  \u00b7  ' + (level.turrets || []).length + ' enemy turrets'
-                 : waves + ' wave' + (waves === 1 ? '' : 's') + '  \u00b7  ' + enemyN + ' raiders' + (level.boss ? '  \u00b7  BOSS' : '');
-    const titleT = UI.text(this, lx, top + 16, this.titleCase(level.name), 'heading', { size: 17, color: unlocked ? UI.T.text : UI.T.faint });
-    const descT  = UI.text(this, lx, top + 40, level.description + (lock && !level.soon ? '\n' + lock + '.' : ''), 'small',
-      { size: 12, wrap: textW, color: unlocked ? UI.T.mute : UI.T.faint });
-    const metaT  = UI.text(this, lx, top + 46 + descT.height, meta, 'label',
-      { size: 11, color: raid && unlocked ? UI.T.red : unlocked ? UI.T.dim : UI.T.faint });
-    const h = Math.max(92, 46 + descT.height + 16 + 16);
-    const cy = top + h / 2;
-
-    const panel = UI.panel(this, width / 2, cy, w, h, {
-      fill: unlocked ? UI.C.surface : 0x10151c, stroke: isNext ? UI.C.amber : UI.C.lineSoft,
-      strokeAlpha: isNext ? 0.8 : 1, radius: 14, glow: isNext ? UI.C.amber : undefined
-    });
-    items.push(panel);
-
-    const badge = this.add.graphics();
-    badge.fillStyle(colour, unlocked ? 0.16 : 0.5); badge.fillRoundedRect(bx - 20, cy - 20, 40, 40, 10);
-    items.push(badge);
-    if (done)            items.push(UI.icon(this, bx, cy, 'check', 16, UI.C.green));
-    else if (!unlocked)  items.push(UI.icon(this, bx, cy, 'lock', 15, 0x465163));
-    else if (raid)       items.push(UI.icon(this, bx, cy, 'anchor', 16, UI.C.red));
-    else                 items.push(UI.text(this, bx, cy, String(level.id), 'number', { size: 20, origin: 0.5, color: UI.T.amber }));
-
-    items.push(titleT, descT, metaT);
-    if (isNext) items.push(UI.text(this, width - 16 - 16, top + 16, 'NEXT', 'tag', { size: 10, origin: [1, 0] }));
-    if (unlocked) items.push(UI.icon(this, width - 16 - 22, cy + 6, 'chevron', 13, 0x6f7b8d));
+    // Label on the open side of the island
+    const right = x < width / 2, lx = right ? x + 40 : x - 40, wrap = width - 92 - 40 - 24;
+    const raidTxt = raid ? 'RAID  \u00b7  ' + (level.turrets || []).length + ' turrets' : null;
+    const waves = level.waves ? level.waves.length : 0;
+    const meta = level.soon ? 'COMING SOON' : !unlocked ? lock.toUpperCase() : isDone ? 'CLEARED' : raidTxt
+      || (waves + ' waves' + (level.boss ? '  \u00b7  BOSS' : '') + (level.recommendedTowers ? '  \u00b7  ' + level.recommendedTowers + ' towers' : ''));
+    const name = UI.text(this, lx, y - 10, this.titleCase(level.name), 'heading', { size: 16, origin: [right ? 0 : 1, 0.5], color: unlocked ? UI.T.text : UI.T.faint });
+    const metaT = UI.text(this, lx, y + 12, meta, 'label', { size: 10, origin: [right ? 0 : 1, 0.5], wrap, align: right ? 'left' : 'right',
+      color: !unlocked ? UI.T.faint : isDone ? UI.T.green : raid ? UI.T.red : UI.T.dim });
+    items.push(name, metaT);
+    if (isNext) items.push(UI.text(this, lx + (right ? name.width + 8 : -name.width - 8), y - 10, 'NEXT', 'tag', { size: 10, origin: [right ? 0 : 1, 0.5], color: UI.T.amber }));
 
     if (unlocked) {
-      const zone = this.add.zone(width / 2, cy, w, h).setInteractive();
+      const zx = right ? x - 30 : lx - Math.max(name.width, metaT.width), zw = 30 + 40 + Math.max(name.width, metaT.width) + 10;
+      const zone = this.add.zone(zx + zw / 2 - (right ? 0 : 0), y, zw, 70).setInteractive();
       let pressed = false;
       zone.on('pointerdown', () => { pressed = true; });
       zone.on('pointerout',  () => { pressed = false; });
@@ -218,7 +242,6 @@ class DockScene extends Phaser.Scene {
       items.push(zone);
     }
     this.contentContainer.add(items);
-    return top + h;
   }
 
   // ── Mission briefing ───────────────────────────────────────────────────

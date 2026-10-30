@@ -27,6 +27,7 @@ class ArmouryScene extends Phaser.Scene {
     if (this.saveData.nuts === undefined) this.saveData.nuts = 0;
     UI.backdrop(this);
     UI.fadeIn(this);
+    Art.ensure(this);
 
     this.hdr = UI.header(this, {
       title: 'ARMOURY', sub: 'TOWERS READY FOR BATTLE', accent: UI.C.green,
@@ -66,7 +67,13 @@ class ArmouryScene extends Phaser.Scene {
       const count = stockpile[type] || 0;
       const unlocked = isOpen(type);
       const cy = y + h / 2;
-      const lx = 16 + 20;
+      // Tower art on the left of the card, the text beside it
+      const ax = 16 + 34, ay = y + (compact ? 34 : 44), sc = compact ? 1 : 1.25;
+      const art = Art.tower(this, ax, ay, type);
+      art.base.setScale(sc / Art.RES).setDepth(1); art.head.setScale(sc / Art.RES).setRotation(-Math.PI / 2).setDepth(1);
+      if (!unlocked) [art.base, art.head].forEach(o => o.setTint(0x3a424e).setAlpha(0.7));
+      this.cardItems.push(art.base, art.head);
+      const lx = 16 + 68;
       const add = (o) => { this.cardItems.push(o); return o; };
 
       add(UI.panel(this, width / 2, cy, w, h, {
@@ -75,14 +82,14 @@ class ArmouryScene extends Phaser.Scene {
       }));
       add(UI.text(this, lx, y + (compact ? 12 : 18), this.titleCase(d.name), 'title', { size: compact ? 19 : 22, color: unlocked ? UI.T.text : UI.T.faint }));
       const role = unlocked ? TOWER_ROLE[type] : 'Unlocks after ' + Progress.levelName(UNLOCKS[type].at) + '.';
-      if (!compact || !unlocked) add(UI.text(this, lx, y + (compact ? 38 : 48), role, 'small', { size: 12, wrap: w - 140, color: unlocked ? UI.T.mute : UI.T.faint }));
+      if (!compact || !unlocked) add(UI.text(this, lx, y + (compact ? 38 : 48), role, 'small', { size: 12, wrap: w - 190, color: unlocked ? UI.T.mute : UI.T.faint }));
 
       // Stat row
       const stats = type === 'barricade' ? [['SLOW', Math.round((1 - d.slowAmount) * 100) + '%'], ['RANGE', d.range]]
         : type === 'siphon' ? [['DRAIN', d.dps + '/s'], ['RANGE', d.range], ['BEAMS', d.beams]]
         : [['DAMAGE', d.damage], ['RANGE', d.range], ['RATE', (1000 / d.fireRate).toFixed(1) + '/s']];
       if (unlocked || !compact) stats.forEach(([k, v], i) => {
-        const sx = lx + i * 80;
+        const sx = lx + i * 66;
         add(UI.text(this, sx, y + h - 50, k, 'label', { size: 10, color: unlocked ? UI.T.mute : UI.T.faint }));
         add(UI.text(this, sx, y + h - 34, String(v), 'number', { size: 17, color: unlocked ? UI.T.text : UI.T.faint }));
       });

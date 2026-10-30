@@ -440,6 +440,10 @@ const UI = {
         g.lineBetween(-7 * s, -5 * s, 7 * s, -5 * s);
         g.lineBetween(-2 * s, -7 * s, 2 * s, -7 * s);
         break;
+      case 'book':
+        poly([[-8, -6], [-1, -4], [-1, 7], [-8, 5]], false);
+        poly([[8, -6], [1, -4], [1, 7], [8, 5]], false);
+        break;
       case 'sound': case 'mute':
         poly([[-7, -3], [-3, -3], [2, -7], [2, 7], [-3, 3], [-7, 3]], true);
         if (name === 'sound') { g.beginPath(); g.arc(3 * s, 0, 5 * s, -0.9, 0.9); g.strokePath(); g.beginPath(); g.arc(3 * s, 0, 8 * s, -0.9, 0.9); g.strokePath(); }
@@ -452,6 +456,19 @@ const UI = {
         g.fillCircle(0, 0, 5 * s);
     }
     return g;
+  },
+
+  // A small round icon button (used over maps, where full buttons are too big)
+  roundButton(scene, x, y, icon, onTap, depth) {
+    const c = scene.add.container(x, y).setDepth(depth || 20);
+    const bg = scene.add.graphics();
+    bg.fillStyle(0x0d131a, 0.9); bg.fillCircle(0, 0, 17); bg.lineStyle(1.5, UI.C.line, 1); bg.strokeCircle(0, 0, 17);
+    const zone = scene.add.zone(0, 0, 40, 40).setInteractive();
+    c.add([bg, UI.icon(scene, 0, 0, icon, 15, 0xeef2f7), zone]);
+    zone.on('pointerdown', () => c.setScale(0.92));
+    zone.on('pointerout', () => c.setScale(1));
+    zone.on('pointerup', () => { c.setScale(1); if (UI.blocked(scene)) return; Sfx.play('tap'); onTap(); });
+    return c;
   },
 
   // A round speaker button that mutes / unmutes all sound

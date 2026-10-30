@@ -220,6 +220,7 @@ drawIsland(zones, top, bottom, nextKey) {
 
   // Sound on / off, in the corner of the sea
   UI.soundToggle(this, L + W - 24, top + 24, 9);
+  UI.roundButton(this, L + W - 66, top + 24, 'book', () => UI.go(this, 'ManualScene'), 9);
 
   // Smoke from the factory chimney
   const chim = { x: X(0.26) + 17, y: Y(0.15) - 21 };

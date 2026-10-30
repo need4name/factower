@@ -399,6 +399,7 @@ class RaidScene extends Phaser.Scene {
     if (this.over) return;
     this.over = true;
     Sfx.play(won ? 'win' : 'lose');
+    Music.set(null);
     if (this._uiToast && this._uiToast.scene) this._uiToast.destroy();
     this.paused = false;
     const key = Progress.key(this.storylineId, this.levelId);

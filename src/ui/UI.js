@@ -603,6 +603,8 @@ const UI = {
 
   fadeIn(scene) {
     scene._uiLeaving = false;
+    // Battles get the battle theme; everywhere else the calm sea theme
+    if (typeof Music !== 'undefined') Music.set(['CombatScene', 'RaidScene'].includes(scene.scene.key) ? 'battle' : 'calm');
     scene.cameras.main.fadeIn(200, 10, 13, 18);
   }
 };

@@ -1677,6 +1677,7 @@ UI.toast(this, lines[(wavesDone - 1) % lines.length], 'warn', { y: this.PLAY_TOP
 triggerGameOver(victory) {
 this.gameOver   = true;
 Sfx.play(victory ? 'win' : 'lose');
+Music.set(null);
 this.waveActive = false;
 this.hidePreview();
 this.dismissUpgradePanel();

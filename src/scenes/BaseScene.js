@@ -65,15 +65,10 @@ create() {
       info: '', lock: 'Later in the story' }
   ];
 
-  const cols = 2, gap = 12, tileW = (width - 32 - gap) / 2, tileH = 128;
-  const gridTop = 116 + this.goalH + 34;
-  UI.text(this, 18, gridTop - 2, 'ISLAND', 'label', { origin: [0, 1], size: 11 });
-  zones.forEach((z, i) => {
-    const col = i % cols, row = Math.floor(i / cols);
-    const x = 16 + tileW / 2 + col * (tileW + gap);
-    const y = gridTop + 8 + tileH / 2 + row * (tileH + gap);
-    this.drawZoneTile(z, x, y, tileW, tileH, goal.scene === z.key);
-  });
+  // The island keeps a fixed place at the bottom so buildings don't move
+  // between visits; only an unusually long goal card pushes it down
+  const islandBottom = this.scale.height - 12;
+  this.drawIsland(zones, Math.max(islandBottom - 470, 116 + this.goalH + 14), islandBottom, goal.scene);
 
   // First visit to a new save: how you washed up here
   if (Story.has('intro')) this.time.delayedCall(250, () => Story.play(this, 'intro'));
@@ -165,36 +160,108 @@ drawGoalCard(goal, top) {
   });
 }
 
-drawZoneTile(z, x, y, w, h, recommended) {
-  const lx = x - w / 2 + 16;
-  const panel = UI.panel(this, x, y, w, h, {
-    fill: z.unlocked ? UI.C.surface : 0x10151c,
-    stroke: recommended ? z.colour : (z.unlocked ? UI.C.line : UI.C.lineSoft),
-    strokeAlpha: recommended ? 0.9 : 1, radius: 14
+// The home raft seen from above: buildings around the dead Tianxia turbine,
+// each one a way into its part of the game
+drawIsland(zones, top, bottom, nextKey) {
+  const { width } = this.scale;
+  Art.ensure(this);
+  const L = 12, W = width - 24, H = bottom - top, R = Art.RES;
+  const X = f => L + f * W, Y = f => top + f * H;
+  // Sea
+  const sea = this.add.graphics().setDepth(-3);
+  sea.fillStyle(0x0d2f40, 1); sea.fillRoundedRect(L, top, W, H, 18);
+  const maskG = this.make.graphics({ add: false }); maskG.fillStyle(0xffffff, 1); maskG.fillRoundedRect(L, top, W, H, 18);
+  this.seaFx = this.add.tileSprite(L + W / 2, top + H / 2, W * R, H * R, 'water').setScale(1 / R).setTint(0x7fc4dc).setAlpha(0.25)
+    .setDepth(-2.9).setMask(maskG.createGeometryMask());
+  // The raft: decking clipped to an uneven outline, with a dark rim and tyres
+  const outline = [[0.07, 0.07], [0.42, 0.03], [0.93, 0.08], [0.96, 0.4], [0.92, 0.72], [0.62, 0.74], [0.6, 0.93], [0.08, 0.92], [0.03, 0.55]]
+    .map(([fx, fy]) => new Phaser.Geom.Point(X(fx), Y(fy)));
+  const rim = this.add.graphics().setDepth(-2.5);
+  rim.fillStyle(0x0b1820, 1); rim.fillPoints(outline.map(p => new Phaser.Geom.Point(p.x + 2, p.y + 4)), true);
+  const deckMask = this.make.graphics({ add: false }); deckMask.fillStyle(0xffffff, 1); deckMask.fillPoints(outline, true);
+  this.add.tileSprite(L + W / 2, top + H / 2, W * R, H * R, 'deck_1').setScale(1 / R).setDepth(-2.4).setMask(deckMask.createGeometryMask());
+  const edge = this.add.graphics().setDepth(-2.3);
+  edge.lineStyle(3, 0x1c232c, 1); edge.strokePoints(outline, true);
+  outline.forEach((a, i) => {
+    const b = outline[(i + 1) % outline.length], len = Math.hypot(b.x - a.x, b.y - a.y);
+    for (let d = 14; d < len - 8; d += 30) {
+      const t = d / len, x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t;
+      edge.fillStyle(0x0d1116, 1); edge.fillCircle(x, y, 4.5); edge.lineStyle(1.5, 0x3a4452, 1); edge.strokeCircle(x, y, 2.8);
+    }
+  });
+  // Pier out to open water, with your barge tied up
+  const pier = this.add.graphics().setDepth(-2.2);
+  pier.fillStyle(0x5a4a3a, 1); pier.fillRect(X(0.72) - 11, Y(0.7), 22, Y(0.97) - Y(0.7));
+  pier.lineStyle(1, 0x3a2e22, 1); for (let y = Y(0.7) + 6; y < Y(0.97); y += 7) pier.lineBetween(X(0.72) - 11, y, X(0.72) + 11, y);
+  pier.fillStyle(0x2a2016, 1); [Y(0.76), Y(0.86), Y(0.95)].forEach(y => { pier.fillCircle(X(0.72) - 12, y, 3); pier.fillCircle(X(0.72) + 12, y, 3); });
+  this.add.image(X(0.85), Y(0.86), 'barge').setScale(1 / R).setRotation(-Math.PI / 2).setDepth(-2.1);
+
+  // Turbine in the middle; the rotor still turns in the wind
+  this.add.image(X(0.5), Y(0.43), 'turbine_base').setScale(1 / R).setDepth(-1);
+  const rotor = this.add.image(X(0.5), Y(0.43), 'turbine_rotor').setScale(0.55 / R).setDepth(3).setAlpha(0.92);
+  this.tweens.add({ targets: rotor, angle: 360, duration: 26000, repeat: -1 });
+
+  const spots = {
+    FactoryScene:     { fx: 0.26, fy: 0.15, tex: 'bld_factory' },
+    ArmouryScene:     { fx: 0.75, fy: 0.15, tex: 'bld_armoury' },
+    MarketplaceScene: { fx: 0.2,  fy: 0.47, tex: 'bld_market' },
+    SkillTreeScene:   { fx: 0.8,  fy: 0.4,  tex: 'bld_uplink' },
+    null:             { fx: 0.25, fy: 0.76, tex: 'bld_housing' },
+    DockScene:        { fx: 0.72, fy: 0.66, tex: null }
+  };
+  this.zoneSpots = [];
+  zones.forEach(z => {
+    const sp = spots[z.key];
+    if (!sp) return;
+    const x = X(sp.fx), y = Y(sp.fy);
+    this.drawBuilding(z, sp, x, y, z.key === nextKey);
+    if (z.key) this.zoneSpots.push({ key: z.key, x, y });
   });
 
-  // Icon disc
-  const iy = y - h / 2 + 34;
-  const disc = this.add.graphics();
-  disc.fillStyle(z.unlocked ? z.colour : UI.C.surface2, z.unlocked ? 0.16 : 1);
-  disc.fillCircle(lx + 18, iy, 18);
-  UI.icon(this, lx + 18, iy, z.unlocked ? z.icon : 'lock', 17, z.unlocked ? z.colour : 0x465163);
+  // Smoke from the factory chimney
+  const chim = { x: X(0.26) + 17, y: Y(0.15) - 21 };
+  this.add.particles(chim.x, chim.y, 'fx_dot', { lifespan: 2200, speedY: { min: -16, max: -10 }, speedX: { min: 2, max: 8 },
+    scale: { start: 0.5, end: 1.8 }, alpha: { start: 0.35, end: 0 }, tint: 0x8a96a6, frequency: 380 }).setDepth(4);
+}
 
-  UI.text(this, lx, y + 14, z.name, 'heading', { size: 18, origin: [0, 0.5], color: z.unlocked ? UI.T.text : UI.T.faint });
-  UI.text(this, lx, y + 38, z.unlocked ? z.info : z.lock, 'small',
-    { size: 12, origin: [0, 0.5], wrap: w - 32, color: z.unlocked ? UI.T.mute : UI.T.faint });
+// A building, its name plate and its tap area
+drawBuilding(z, sp, x, y, recommended) {
+  const R = Art.RES;
+  if (sp.tex) {
+    const img = this.add.image(x, y, sp.tex).setScale(1 / R).setDepth(1);
+    if (!z.unlocked) img.setTint(0x4a525e).setAlpha(0.85);
+  }
+  // Name plate under the building (the Dock's sits on the pier)
+  const py = sp.tex ? y + 44 : y;
+  const name = UI.text(this, x, py - 8, z.name, 'heading', { size: 14, origin: 0.5, depth: 6, color: z.unlocked ? UI.T.text : UI.T.faint });
+  const info = UI.text(this, x, py + 2, z.unlocked ? z.info : z.lock, 'small', { size: 10.5, origin: [0.5, 0], depth: 6, color: z.unlocked ? UI.T.mute : UI.T.faint, wrap: 132, align: 'center' });
+  const pw = Math.max(name.width + (z.unlocked ? 0 : 24), info.width) + 22, ph = 28 + info.height, pcy = py - 18 + ph / 2;
+  const plate = this.add.graphics().setDepth(5);
+  UI.drawPanel(plate, x, pcy, pw, ph, { fill: 0x0d131a, stroke: recommended ? z.colour : (z.unlocked ? z.colour : UI.C.lineSoft),
+    strokeAlpha: recommended ? 1 : (z.unlocked ? 0.45 : 1), radius: 10 });
+  plate.setAlpha(0.94);
+  if (!z.unlocked) UI.icon(this, x - name.width / 2 - 12, py - 8, 'lock', 10, 0x6f7b8d).setDepth(6);
 
   if (recommended) {
-    const badge = UI.text(this, x + w / 2 - 14, y - h / 2 + 18, 'NEXT', 'tag', { size: 10, origin: [1, 0.5], color: UI.hex(z.colour) });
-    this.tweens.add({ targets: badge, alpha: 0.4, duration: 700, yoyo: true, repeat: -1 });
+    if (sp.tex) {
+      const ring = this.add.circle(x, y, 38, z.colour, 0).setStrokeStyle(3, z.colour, 0.9).setDepth(0.5);
+      this.tweens.add({ targets: ring, scale: 1.25, alpha: 0, duration: 1200, repeat: -1 });
+    }
+    const tag = UI.text(this, x + pw / 2 - 4, pcy - ph / 2 - 2, 'NEXT', 'tag', { size: 9, origin: [1, 1], depth: 7, color: UI.T.dark })
+      .setBackgroundColor(UI.hex(z.colour)).setPadding(5, 2, 5, 2);
+    this.tweens.add({ targets: tag, alpha: 0.35, duration: 700, yoyo: true, repeat: -1 });
   }
 
   if (!z.unlocked || !z.key) return;
-  UI.icon(this, x + w / 2 - 20, y + 14, 'chevron', 12, 0x6f7b8d);
-  const zone = this.add.zone(x, y, w, h).setInteractive();
+  const top = sp.tex ? y - 34 : y - 50, bottom = pcy + ph / 2;
+  const zone = this.add.zone(x, (top + bottom) / 2, 130, bottom - top).setInteractive().setDepth(8);
   let pressed = false;
-  zone.on('pointerdown', () => { pressed = true; panel.setAlpha(0.75); });
-  zone.on('pointerout',  () => { pressed = false; panel.setAlpha(1); });
-  zone.on('pointerup',   () => { panel.setAlpha(1); if (pressed && !UI.blocked(this)) UI.go(this, z.key); pressed = false; });
+  zone.on('pointerdown', () => { pressed = true; plate.setAlpha(0.7); });
+  zone.on('pointerout',  () => { pressed = false; plate.setAlpha(0.94); });
+  zone.on('pointerup',   () => { plate.setAlpha(0.94); if (pressed && !UI.blocked(this)) UI.go(this, z.key); pressed = false; });
+}
+
+update(time, delta) {
+  if (this.seaFx) { this.seaFx.tilePositionX += delta * 0.008; this.seaFx.tilePositionY -= delta * 0.012; }
 }
 }

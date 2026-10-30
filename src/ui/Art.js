@@ -37,6 +37,7 @@ const Art = {
     Object.keys(ENEMY_DATA).forEach(t => Art._boat(scene, t));
     Object.keys(TOWER_DATA).forEach(t => Art._tower(scene, t));
     Art._raid(scene);
+    Art._island(scene);
   },
 
   // Draw into a temporary Graphics at RES scale and save it as a texture
@@ -303,6 +304,78 @@ const Art = {
     head('tur_head_gun',   (g, R, cx, cy) => { gun(g, R, cx, cy, 16, 4.5, 0); g.fillStyle(0xc43a3a, 1); g.fillCircle(cx, cy, 7 * R); g.lineStyle(1.5 * R, 0x6e2222, 1); g.strokeCircle(cx, cy, 7 * R); });
     head('tur_head_salvo', (g, R, cx, cy) => { [-4, 0, 4].forEach(o => gun(g, R, cx, cy, 13, 3, o)); g.fillStyle(0x3fae8e, 1); g.fillRoundedRect(cx - 7 * R, cy - 7 * R, 12 * R, 14 * R, 3 * R); });
     head('tur_head_heavy', (g, R, cx, cy) => { gun(g, R, cx, cy, 20, 8, 0); g.fillStyle(0x8a2a2a, 1); g.fillCircle(cx, cy, 10 * R); g.lineStyle(2 * R, 0x3a1010, 1); g.strokeCircle(cx, cy, 10 * R); });
+  },
+
+  // ── The home island: buildings seen from above, and the turbine ────────
+  _island(scene) {
+    const shadow = (g, R, f) => { g.fillStyle(0x000000, 0.35); f(3 * R, 4 * R); };
+    // Factory: a long shed with a corrugated roof and a chimney
+    Art._make(scene, 'bld_factory', 96, 70, (g, R) => {
+      shadow(g, R, (dx, dy) => g.fillRoundedRect(4 * R + dx, 8 * R + dy, 86 * R, 56 * R, 6 * R));
+      g.fillStyle(0x2a3a4c, 1); g.fillRoundedRect(4 * R, 8 * R, 86 * R, 56 * R, 6 * R);
+      g.fillStyle(0x3a8fc4, 1); g.fillRoundedRect(4 * R, 8 * R, 86 * R, 44 * R, 6 * R);
+      g.lineStyle(1.2 * R, 0x23628a, 1); for (let x = 10; x < 88; x += 6) g.lineBetween(x * R, 10 * R, x * R, 50 * R);
+      g.fillStyle(0x1a2430, 1); g.fillRect(36 * R, 52 * R, 22 * R, 12 * R);                     // loading door
+      g.fillStyle(0x0b0f14, 1); g.fillCircle(80 * R, 14 * R, 7 * R);                            // chimney
+      g.fillStyle(0x4a5868, 1); g.fillCircle(80 * R, 14 * R, 4 * R);
+    });
+    // Armoury: a sandbagged bunker with crates
+    Art._make(scene, 'bld_armoury', 84, 66, (g, R) => {
+      shadow(g, R, (dx, dy) => g.fillRoundedRect(6 * R + dx, 6 * R + dy, 72 * R, 54 * R, 14 * R));
+      g.fillStyle(0x8a7a5a, 1); for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; g.fillEllipse(42 * R + Math.cos(a) * 34 * R, 33 * R + Math.sin(a) * 24 * R, 14 * R, 9 * R); }
+      g.fillStyle(0x2f5a3f, 1); g.fillRoundedRect(14 * R, 12 * R, 56 * R, 42 * R, 10 * R);
+      g.lineStyle(2 * R, 0x52c47f, 0.8); g.strokeRoundedRect(14 * R, 12 * R, 56 * R, 42 * R, 10 * R);
+      g.fillStyle(0x1b2a20, 1); g.fillCircle(42 * R, 33 * R, 9 * R);                            // hatch
+      g.fillStyle(0x6b5232, 1); g.fillRect(58 * R, 40 * R, 9 * R, 9 * R); g.fillRect(50 * R, 44 * R, 8 * R, 8 * R);  // crates
+    });
+    // Uplink: a dish on a mast
+    Art._make(scene, 'bld_uplink', 70, 70, (g, R) => {
+      shadow(g, R, (dx, dy) => g.fillCircle(35 * R + dx, 35 * R + dy, 26 * R));
+      g.fillStyle(0x2a323d, 1); g.fillRect(25 * R, 25 * R, 20 * R, 20 * R);
+      g.fillStyle(0xd9dee5, 1); g.fillCircle(35 * R, 35 * R, 24 * R);
+      g.fillStyle(0xb7bec8, 1); g.fillCircle(35 * R, 35 * R, 17 * R);
+      g.lineStyle(2 * R, 0xe8a020, 1); g.lineBetween(35 * R, 35 * R, 52 * R, 18 * R);
+      g.fillStyle(0xe8a020, 1); g.fillCircle(52 * R, 18 * R, 4 * R); g.fillCircle(35 * R, 35 * R, 3 * R);
+    });
+    // Market: a striped awning over a stall, and Chrome's lights
+    Art._make(scene, 'bld_market', 84, 66, (g, R) => {
+      shadow(g, R, (dx, dy) => g.fillRect(6 * R + dx, 8 * R + dy, 72 * R, 50 * R));
+      g.fillStyle(0x3a3046, 1); g.fillRect(6 * R, 30 * R, 72 * R, 28 * R);
+      for (let i = 0; i < 6; i++) { g.fillStyle(i % 2 ? 0xe8e1c8 : 0x9d7ff0, 1); g.fillRect((6 + i * 12) * R, 8 * R, 12 * R, 24 * R); }
+      g.fillStyle(0x0b0f14, 0.35); g.fillRect(6 * R, 28 * R, 72 * R, 4 * R);
+      g.fillStyle(0x1a1420, 1); g.fillRoundedRect(54 * R, 36 * R, 18 * R, 18 * R, 3 * R);         // slot machine
+      [0xe5534b, 0xe8a020, 0x52c47f].forEach((c, i) => { g.fillStyle(c, 1); g.fillCircle((58 + i * 5) * R, 41 * R, 1.8 * R); });
+      g.fillStyle(0x6b5232, 1); g.fillRect(14 * R, 40 * R, 12 * R, 10 * R); g.fillRect(30 * R, 42 * R, 10 * R, 8 * R);
+    });
+    // Housing: a couple of shacks
+    Art._make(scene, 'bld_housing', 84, 62, (g, R) => {
+      [[6, 10, 36, 30, 0x6b5a45], [44, 20, 34, 34, 0x5a6470]].forEach(([x, y, w, h, c]) => {
+        g.fillStyle(0x000000, 0.35); g.fillRect((x + 3) * R, (y + 4) * R, w * R, h * R);
+        g.fillStyle(c, 1); g.fillRect(x * R, y * R, w * R, h * R);
+        g.lineStyle(1 * R, 0x0b0f14, 0.6); g.lineBetween(x * R, (y + h / 2) * R, (x + w) * R, (y + h / 2) * R);
+      });
+    });
+    // Turbine: a round base, and a three-bladed rotor that turns slowly
+    Art._make(scene, 'turbine_base', 60, 60, (g, R) => {
+      g.fillStyle(0x000000, 0.35); g.fillCircle(32 * R, 33 * R, 26 * R);
+      g.fillStyle(0x3a4452, 1); g.fillCircle(30 * R, 30 * R, 26 * R);
+      g.lineStyle(2 * R, 0x5a6878, 1); g.strokeCircle(30 * R, 30 * R, 20 * R);
+      g.fillStyle(0xc9b48a, 0.9); g.fillRect(8 * R, 28 * R, 10 * R, 4 * R);          // Tianxia stencil, faded
+    });
+    Art._make(scene, 'turbine_rotor', 200, 200, (g, R) => {
+      const c = 100 * R;
+      for (let i = 0; i < 3; i++) {
+        const a = i * Math.PI * 2 / 3, ca = Math.cos(a), sa = Math.sin(a), px = -sa, py = ca;
+        const tip = 94 * R, root = 10 * R, w = 7 * R;
+        g.fillStyle(0x000000, 0.25);
+        g.fillTriangle(c + ca * root + px * w + 4 * R, c + sa * root + py * w + 6 * R, c + ca * tip + 4 * R, c + sa * tip + 6 * R, c + ca * root - px * w + 4 * R, c + sa * root - py * w + 6 * R);
+        g.fillStyle(0xdfe6ee, 1);
+        g.fillTriangle(c + ca * root + px * w, c + sa * root + py * w, c + ca * tip, c + sa * tip, c + ca * root - px * w, c + sa * root - py * w);
+        g.fillStyle(0xc43a3a, 1); g.fillCircle(c + ca * (tip - 6 * R), c + sa * (tip - 6 * R), 2.5 * R);
+      }
+      g.fillStyle(0xb7bec8, 1); g.fillCircle(c, c, 12 * R);
+      g.fillStyle(0x6f7b8d, 1); g.fillCircle(c, c, 5 * R);
+    });
   },
 
   tower(scene, x, y, type) {

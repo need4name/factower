@@ -13,6 +13,7 @@ class MarketplaceScene extends Phaser.Scene {
     this.tradeItems = [];
     UI.backdrop(this);
     UI.fadeIn(this);
+    Art.ensure(this);
 
     this.hdr = UI.header(this, {
       title: 'MARKET', sub: 'MERCHANT GUILD', accent: UI.C.purple,
@@ -61,6 +62,7 @@ class MarketplaceScene extends Phaser.Scene {
     UI.text(this, width - 16 - 18, top + 40, Merchants.cost(m.id, fatigue, fx) + ' nuts / ' + m.unit.toLowerCase(), 'small',
       { size: 11, origin: [1, 0.5], color: UI.T.dim });
     UI.icon(this, width - 16 - 24, cy + 22, 'chevron', 14, m.colour);
+    if (this.textures.exists('mer_' + m.id)) this.add.image(width - 16 - 66, cy + 20, 'mer_' + m.id).setScale(0.95 / Art.RES);
     if (isNew) {
       const badge = UI.text(this, lx + nameT.width + 10, top + 45, 'NEW', 'tag', { size: 11, origin: [0, 0.5], color: UI.T.green });
       this.tweens.add({ targets: badge, alpha: 0.35, duration: 650, yoyo: true, repeat: -1 });
@@ -92,9 +94,7 @@ class MarketplaceScene extends Phaser.Scene {
       const d = TOWER_DATA[type], n = stock[type] || 0, nut = TOWER_SELL_VALUE[type] || 1;
       const ry = top + 44 + i * rowH + rowH / 2;
       if (i > 0) add(this.add.rectangle(width / 2, ry - rowH / 2, w - 32, 1, UI.C.lineSoft));
-      const disc = add(this.add.graphics());
-      disc.fillStyle(d.colour, n > 0 ? 1 : 0.3);
-      disc.fillCircle(44, ry, 7);
+      add(this.add.image(44, ry, 'twr_head_' + type).setScale(0.75 / Art.RES).setRotation(-Math.PI / 2).setAlpha(n > 0 ? 1 : 0.35));
       add(UI.text(this, 60, ry, this.titleCase(d.name), 'heading', { size: 16, origin: [0, 0.5], color: n > 0 ? UI.T.text : UI.T.faint }));
       add(UI.text(this, 172, ry, '×' + n + ' in stock', 'small', { size: 12, origin: [0, 0.5], color: n > 0 ? UI.T.dim : UI.T.faint }));
       const b = add(UI.button(this, width - 16 - 16 - 48, ry, 96, 38, {

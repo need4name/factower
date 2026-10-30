@@ -39,6 +39,7 @@ const Art = {
     Art._raid(scene);
     Art._island(scene);
     Art._factory(scene);
+    Art._merchants(scene);
   },
 
   // Draw into a temporary Graphics at RES scale and save it as a texture
@@ -424,6 +425,44 @@ const Art = {
         g.lineStyle(1.5 * R, 0x0a0d12, 1); g.strokeCircle(20 * R, 19 * R, (big ? 11 : 10) * R);
         g.fillStyle(0xffffff, 0.25); g.fillEllipse(17 * R, 15 * R, 8 * R, 4 * R);                         // hat shine
       });
+    });
+  },
+
+  // ── Market: each merchant's game ───────────────────────────────────────
+  _merchants(scene) {
+    // Chrome: a slot machine cabinet with three reels and a handle
+    Art._make(scene, 'mer_chrome', 46, 46, (g, R) => {
+      g.fillStyle(0x000000, 0.35); g.fillRoundedRect(7 * R, 6 * R, 32 * R, 39 * R, 5 * R);
+      g.fillStyle(0xb8862a, 1); g.fillRoundedRect(5 * R, 3 * R, 32 * R, 39 * R, 5 * R);
+      g.fillStyle(0xe8a020, 1); g.fillRoundedRect(5 * R, 3 * R, 32 * R, 9 * R, 4 * R);
+      g.fillStyle(0xf4efe2, 1); [9, 18, 27].forEach(x => g.fillRect(x * R, 16 * R, 7 * R, 11 * R));
+      [[12.5, 0xe5534b], [21.5, 0x52c47f], [30.5, 0xe5534b]].forEach(([x, c]) => { g.fillStyle(c, 1); g.fillCircle(x * R, 21.5 * R, 2.2 * R); });
+      g.fillStyle(0x3a2a10, 1); g.fillRect(9 * R, 32 * R, 25 * R, 5 * R);
+      g.lineStyle(2 * R, 0xb7bec8, 1); g.lineBetween(40 * R, 26 * R, 40 * R, 10 * R);
+      g.fillStyle(0xe5534b, 1); g.fillCircle(40 * R, 9 * R, 3.2 * R);
+    });
+    // Ricochet: a peg board with a ball dropping through
+    Art._make(scene, 'mer_ricochet', 46, 46, (g, R) => {
+      g.fillStyle(0x000000, 0.35); g.fillRoundedRect(6 * R, 5 * R, 36 * R, 39 * R, 5 * R);
+      g.fillStyle(0x1f4a35, 1); g.fillRoundedRect(4 * R, 3 * R, 36 * R, 39 * R, 5 * R);
+      g.lineStyle(2 * R, 0x52c47f, 1); g.strokeRoundedRect(4 * R, 3 * R, 36 * R, 39 * R, 5 * R);
+      g.fillStyle(0xdfe6ee, 1);
+      for (let r = 0; r < 4; r++) for (let c = 0; c < (r % 2 ? 3 : 4); c++) g.fillCircle((10 + c * 8 + (r % 2) * 4) * R, (11 + r * 7) * R, 1.5 * R);
+      g.fillStyle(0xe8a020, 1); g.fillCircle(25 * R, 20 * R, 3 * R);
+      g.fillStyle(0x0b0f14, 0.6); [10, 18, 26, 34].forEach(x => g.fillRect((x - 3) * R, 36 * R, 6 * R, 4 * R));
+    });
+    // Double-Down: a pair of dice
+    Art._make(scene, 'mer_doubleDown', 46, 46, (g, R) => {
+      const die = (cx, cy, a, pips) => {
+        const pts = [[-9, -9], [9, -9], [9, 9], [-9, 9]].map(([x, y]) => new Phaser.Geom.Point((cx + x * Math.cos(a) - y * Math.sin(a)) * R, (cy + x * Math.sin(a) + y * Math.cos(a)) * R));
+        g.fillStyle(0x000000, 0.35); g.fillPoints(pts.map(p => new Phaser.Geom.Point(p.x + 2 * R, p.y + 3 * R)), true);
+        g.fillStyle(0xf4efe2, 1); g.fillPoints(pts, true);
+        g.lineStyle(1.5 * R, 0xc43a3a, 1); g.strokePoints(pts, true);
+        g.fillStyle(0xc43a3a, 1);
+        pips.forEach(([x, y]) => g.fillCircle((cx + x * Math.cos(a) - y * Math.sin(a)) * R, (cy + x * Math.sin(a) + y * Math.cos(a)) * R, 1.8 * R));
+      };
+      die(15, 17, -0.25, [[-4.5, -4.5], [0, 0], [4.5, 4.5]]);
+      die(30, 29, 0.3, [[-4.5, -4.5], [4.5, -4.5], [-4.5, 4.5], [4.5, 4.5], [0, 0], [-4.5, 0]]);
     });
   },
 

@@ -195,6 +195,7 @@ checkNewTowerTutorials() {
 }
 
 showTowerUnlockBanner(towerType) {
+  Sfx.play('unlock');
   const cfg = {
     barricade: { colour: UI.C.red, title: 'Barricade unlocked',
       body: 'Barricades slow every raider in their field. They need 1 Salvaged Metal each — no smelter required, the bench takes metal directly.' },
@@ -467,6 +468,7 @@ tileTapped(row, col) {
       return;
     }
     if (this.factory.placeMachine(row, col, type)) {
+      Sfx.play('place');
       if (cost) this.spendBuildCost(cost);
       this.drawMachineAt(row, col, type);
       this.factory.save();
@@ -538,6 +540,7 @@ showAssemblyTypeMenu(targetRow, targetCol) {
       this.setPlacing(null);
       if (!this.canAffordBuild(cost)) { this.showMessage('Need ' + this.formatCost(cost) + ' to build', 'bad'); return; }
       if (this.factory.placeMachine(targetRow, targetCol, t.key)) {
+        Sfx.play('place');
         this.spendBuildCost(cost);
         this.drawMachineAt(targetRow, targetCol, t.key);
         this.factory.save();
@@ -1392,6 +1395,7 @@ _renderTileItems() {
 }
 
 addTowerToStockpile(type, quiet) {
+  if (!quiet) Sfx.play('build');
   this.saveData = SaveManager.update(save => {
     if (!save.stockpile) save.stockpile = { gunner: 0, bomber: 0, barricade: 0 };
     save.stockpile[type] = (save.stockpile[type] || 0) + 1;

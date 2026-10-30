@@ -223,7 +223,7 @@ const UI = {
       if (!was || !enabled) return;
       if (UI.blocked(scene) && !o.ignoreBlock) return;
       if (o.guard && o.guard() === false) return;
-      if (o.onTap) o.onTap();
+      if (o.onTap) { if (typeof Sfx !== 'undefined') Sfx.play(o.sound || 'tap'); o.onTap(); }
     });
 
     c.zone = zone;
@@ -279,7 +279,7 @@ const UI = {
       let pressed = false;
       zone.on('pointerdown', () => { pressed = true; draw(true); });
       zone.on('pointerout',  () => { pressed = false; draw(false); });
-      zone.on('pointerup',   () => { if (!pressed) return; pressed = false; draw(false); o.onBack(); });
+      zone.on('pointerup',   () => { if (!pressed) return; pressed = false; draw(false); if (typeof Sfx !== 'undefined') Sfx.play('tap'); o.onBack(); });
       tx = 70;
     }
 
@@ -440,6 +440,11 @@ const UI = {
         g.lineBetween(-7 * s, -5 * s, 7 * s, -5 * s);
         g.lineBetween(-2 * s, -7 * s, 2 * s, -7 * s);
         break;
+      case 'sound': case 'mute':
+        poly([[-7, -3], [-3, -3], [2, -7], [2, 7], [-3, 3], [-7, 3]], true);
+        if (name === 'sound') { g.beginPath(); g.arc(3 * s, 0, 5 * s, -0.9, 0.9); g.strokePath(); g.beginPath(); g.arc(3 * s, 0, 8 * s, -0.9, 0.9); g.strokePath(); }
+        else { g.lineBetween(5 * s, -4 * s, 11 * s, 4 * s); g.lineBetween(11 * s, -4 * s, 5 * s, 4 * s); }
+        break;
       case 'star':
         poly([[0, -8], [2.3, -2.5], [8, -2.5], [3.5, 1.2], [5, 7.5], [0, 4], [-5, 7.5], [-3.5, 1.2], [-8, -2.5], [-2.3, -2.5]], true);
         break;
@@ -447,6 +452,21 @@ const UI = {
         g.fillCircle(0, 0, 5 * s);
     }
     return g;
+  },
+
+  // A round speaker button that mutes / unmutes all sound
+  soundToggle(scene, x, y, depth) {
+    const c = scene.add.container(x, y).setDepth(depth || 20);
+    const bg = scene.add.graphics();
+    bg.fillStyle(0x0d131a, 0.9); bg.fillCircle(0, 0, 17); bg.lineStyle(1.5, UI.C.line, 1); bg.strokeCircle(0, 0, 17);
+    let ic = UI.icon(scene, 0, 0, Sfx.muted ? 'mute' : 'sound', 15, Sfx.muted ? 0x6f7b8d : 0xeef2f7);
+    const zone = scene.add.zone(0, 0, 40, 40).setInteractive();
+    c.add([bg, ic, zone]);
+    zone.on('pointerup', () => {
+      const m = Sfx.toggleMute();
+      ic.destroy(); ic = UI.icon(scene, 0, 0, m ? 'mute' : 'sound', 15, m ? 0x6f7b8d : 0xeef2f7); c.addAt(ic, 1);
+    });
+    return c;
   },
 
   // ── Modal dialog ───────────────────────────────────────────────────────

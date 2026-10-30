@@ -80,7 +80,7 @@ const Story = {
       bodyT.setText(text).setAlpha(0);
       scene.tweens.add({ targets: bodyT, alpha: 1, duration: 200 });
     };
-    dim.on('pointerup', () => { if (finished) return; i++; if (i >= lines.length) finish(); else show(); });
+    dim.on('pointerup', () => { if (finished) return; Sfx.play('tick'); i++; if (i >= lines.length) finish(); else show(); });
     show();
     return { finish };
   }

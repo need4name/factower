@@ -398,6 +398,7 @@ if (Math.abs(mult - 1) > 0.04) {
   if (towerData.slowAmount) towerData.slowAmount = parseFloat((towerData.slowAmount / mult).toFixed(3));
 }
 
+Sfx.play('place');
 const hitZone    = this.add.circle(x, y, 20, 0xffffff, 0).setDepth(10).setInteractive();
 const art        = Art.tower(this, x, y, type);
 const towerCircle = art.base.setDepth(4);
@@ -593,6 +594,7 @@ const m = this.nextMod(tower, i);
 if (!m || !this.canTakePath(tower, i) || !this.canAffordMod(m)) return;
 
 this.parts -= m.cost;
+Sfx.play('upgrade');
 if (m.rare) this.rare[m.rare]--;
 this.partsText.setText('' + this.parts);
 tower.mods[i]++;
@@ -936,7 +938,8 @@ const g = tower.beamGfx;
 g.clear();
 const inRange = this.activeEnemies.filter(e => e.alive && e.sprite && e.sprite.active &&
   Phaser.Math.Distance.Between(tower.x, tower.y, e.sprite.x, e.sprite.y) <= d.range);
-if (!inRange.length) return;
+if (!inRange.length) { tower._beaming = false; return; }
+if (!tower._beaming) { tower._beaming = true; Sfx.play('zap'); }
 const first = this.pickTarget(tower, inRange);
 const targets = [first].concat(inRange.filter(e => e !== first).slice(0, (d.beams || 1) - 1));
 if (tower.barrel) tower.barrel.setRotation(Phaser.Math.Angle.Between(tower.x, tower.y, first.sprite.x, first.sprite.y));
@@ -978,6 +981,7 @@ const inRange = this.activeEnemies.filter(e => {
 if (inRange.length === 0) return;
 
 const target = this.pickTarget(tower, inRange);
+Sfx.play(tower.type === 'bomber' ? 'bomb' : tower.type === 'gunner2' ? 'shot2' : 'shot');
 // Keep the cadence on slow frames: step lastFired by the fire rate rather
 // than snapping it to now, and fire again this frame if still behind.
 // After an idle spell it restarts from now.
@@ -1043,6 +1047,7 @@ const d = tower.data;
 const tx = target.sprite.x, ty = target.sprite.y;
 const hitOpts = { pierce: d.pierce || 0 };
 const dmgFor = (e) => d.damage + ((d.armourBonus && e.data.armour) ? d.armourBonus : 0);
+Sfx.play(tower.type === 'bomber' ? 'boom' : target.data.armour ? 'clank' : 'hit');
 if (tower.type === 'bomber') {
   const splashR = d.splashRadius || 80;
   this.activeEnemies.filter(e => {
@@ -1134,6 +1139,7 @@ this.pickups.push(p);
 collectPickup(p) {
 if (p.done) return;
 p.done = true;
+Sfx.play('coin');
 p.zone.destroy();
 let label;
 if (p.what.rare) { this.rare[p.what.rare]++; label = '+1 ' + RARE_PARTS[p.what.rare].name; }
@@ -1266,6 +1272,7 @@ for (let i = 0; i < n; i++) {
 }
 
 shieldBreak(enemy) {
+Sfx.play('shield');
 if (!enemy.sprite || !enemy.sprite.active) return;
 const pop = this.add.circle(enemy.sprite.x, enemy.sprite.y, enemy.data.size + 5, 0x7fe3ff, 0).setStrokeStyle(3, 0x7fe3ff, 1).setDepth(9);
 this.tweens.add({ targets: pop, scale: 1.8, alpha: 0, duration: 260, onComplete: () => pop.destroy() });
@@ -1285,6 +1292,7 @@ if (enemy.ring) { enemy.ring.destroy(); enemy.ring = null; }
 if (enemy.hpBg)   { enemy.hpBg.destroy();   enemy.hpBg   = null; }
 if (enemy.hpFill) { enemy.hpFill.destroy();  enemy.hpFill = null; }
 if (enemy.sprite && enemy.sprite.active) {
+Sfx.play(enemy.data.isBoss ? 'bigsink' : 'sink');
 this.splash(enemy.sprite.x, enemy.sprite.y, enemy.data.size, enemy.data.colour);
 if (enemy.turnTween) enemy.turnTween.stop();
 // Sink: list over, shrink and fade
@@ -1350,6 +1358,7 @@ this.time.delayedCall(500, () => {
   this._awaitingSpawn = false;
   if (this.gameOver) return;
   this.waveText.setText('Wave ' + (this.currentWave + 1) + ' of ' + total + ' — hold the line').setColor(UI.T.dim);
+  Sfx.play('horn');
   this.spawnWave(waveData);
 });
 }
@@ -1465,6 +1474,7 @@ if (!enemy.alive) return;
 enemy.alive = false;
 this.activeEnemies = this.activeEnemies.filter(e => e !== enemy);
 this.enemiesEscaped++;
+Sfx.play('leak');
 if (enemy.sprite && enemy.sprite.aura) { enemy.sprite.aura.destroy(); enemy.sprite.aura = null; }
 if (enemy.ring) { enemy.ring.destroy(); enemy.ring = null; }
 if (enemy.hpBg)   { enemy.hpBg.destroy();   enemy.hpBg   = null; }
@@ -1557,6 +1567,7 @@ const a = this.abilityDefs()[key];
 this.selectedAbility = null;
 this.abilityLast[key] = this.simNow;
 if (this.abilityPreview) { this.abilityPreview.destroy(); this.abilityPreview = null; }
+Sfx.play(key === 'flare' ? 'flare' : 'net');
 if (key === 'flare') {
   // A short whistle, then a blast that ignores some armour
   const mark = this.add.circle(x, y, a.radius, UI.C.amber, 0.12).setStrokeStyle(2, UI.C.amber, 0.7).setDepth(6);
@@ -1665,6 +1676,7 @@ UI.toast(this, lines[(wavesDone - 1) % lines.length], 'warn', { y: this.PLAY_TOP
 // ── Game over / results ───────────────────────────────────────────────
 triggerGameOver(victory) {
 this.gameOver   = true;
+Sfx.play(victory ? 'win' : 'lose');
 this.waveActive = false;
 this.hidePreview();
 this.dismissUpgradePanel();

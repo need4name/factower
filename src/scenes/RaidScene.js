@@ -166,6 +166,7 @@ class RaidScene extends Phaser.Scene {
     this.lastDeploy = this.simNow;
     this.stock[type]--;
     this.started = true;
+    Sfx.play('place');
     const d = TOWER_DATA[type];
     const p = this.path[0];
     // A barge carrying the tower; the turret head turns separately
@@ -259,6 +260,7 @@ class RaidScene extends Phaser.Scene {
         const ally = this.units.filter(o => o.alive && o !== u && o.hp < o.maxHp).sort((a, b) => Math.abs(a.s - u.s) - Math.abs(b.s - u.s))[0];
         if (ally) ally.hp = Math.min(ally.maxHp, ally.hp + dmg * 0.6);
       }
+      Sfx.play(u.type === 'bomber' ? 'bomb' : u.type === 'siphon' ? 'zap' : u.type === 'gunner2' ? 'shot2' : 'shot');
       this.fire(p.x, p.y, target, u.type === 'bomber' ? 340 : 700, dmg, u.type === 'bomber' ? (u.d.splashRadius || 80) : 0, u.type === 'bomber' ? u.d.colour : u.type === 'siphon' ? 0xc9b6ff : 0xfff2c4, 'unit');
     });
 
@@ -272,6 +274,7 @@ class RaidScene extends Phaser.Scene {
       const target = pool.reduce((a, b) => Phaser.Math.Distance.Between(t.x, t.y, a.sprite.x, a.sprite.y) <= Phaser.Math.Distance.Between(t.x, t.y, b.sprite.x, b.sprite.y) ? a : b);
       t.last = this.simNow;
       t.barrel.setRotation(Phaser.Math.Angle.Between(t.x, t.y, target.sprite.x, target.sprite.y));
+      Sfx.play(t.kind === 'heavy' ? 'bomb' : 'shot');
       this.fire(t.x, t.y, target, t.kind === 'heavy' ? 360 : 620, t.k.dmg, 0, t.k.colour, 'turret');
     });
 
@@ -326,6 +329,7 @@ class RaidScene extends Phaser.Scene {
     if (u.hp > 0) return;
     u.alive = false;
     this.lost[u.type]++;
+    Sfx.play('boom');
     [u.barrel, u.hpBg, u.hpFill].forEach(o => o && o.destroy());
     this.tweens.add({ targets: u.sprite, scale: 1.8, alpha: 0, duration: 220, onComplete: () => u.sprite.destroy() });
     UI.toast(this, this.titleCase(u.d.name) + ' wrecked', 'bad', { y: this.PLAY_TOP + 30, duration: 1000 });
@@ -337,6 +341,7 @@ class RaidScene extends Phaser.Scene {
     t.hpFill.setSize((t.size + 6) * Math.max(0, t.hp / t.maxHp), 4);
     if (t.hp > 0) return;
     t.alive = false;
+    Sfx.play('boom');
     [t.barrel, t.hpBg, t.hpFill, t.range].forEach(o => o.destroy());
     t.body.setTint(0x555555);
     const boom = this.add.circle(t.x, t.y, 26, UI.C.amber, 0.5).setDepth(11);
@@ -350,7 +355,8 @@ class RaidScene extends Phaser.Scene {
     this.core.hp -= dmg;
     this.coreFill.setSize(this.coreBarW * Math.max(0, this.core.hp / this.core.maxHp), 8);
     this.cameras.main.shake(60, 0.002);
-    if (this.core.hp <= 0) { this.core.alive = false; this.finish(true); }
+    Sfx.play('hit');
+    if (this.core.hp <= 0) { this.core.alive = false; Sfx.play('bigsink'); this.finish(true); }
   }
 
   // ── Salvage (same idea as defence levels) ─────────────────────────────
@@ -392,6 +398,7 @@ class RaidScene extends Phaser.Scene {
   finish(won, retreated) {
     if (this.over) return;
     this.over = true;
+    Sfx.play(won ? 'win' : 'lose');
     if (this._uiToast && this._uiToast.scene) this._uiToast.destroy();
     this.paused = false;
     const key = Progress.key(this.storylineId, this.levelId);

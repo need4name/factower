@@ -218,6 +218,9 @@ drawIsland(zones, top, bottom, nextKey) {
     if (z.key) this.zoneSpots.push({ key: z.key, x, y });
   });
 
+  // Sound on / off, in the corner of the sea
+  UI.soundToggle(this, L + W - 24, top + 24, 9);
+
   // Smoke from the factory chimney
   const chim = { x: X(0.26) + 17, y: Y(0.15) - 21 };
   this.add.particles(chim.x, chim.y, 'fx_dot', { lifespan: 2200, speedY: { min: -16, max: -10 }, speedX: { min: 2, max: 8 },

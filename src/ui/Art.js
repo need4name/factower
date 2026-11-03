@@ -466,6 +466,90 @@ const Art = {
     });
   },
 
+  // ── Upgrade looks (like Bloons: every mod tier changes the tower) ──────
+  // Drawn in the turret head's own coordinates (barrel along +x, pivot at
+  // 0,0, game units) into a Graphics that turns with the head. mods is
+  // [path0, path1, path2] tiers, 0..3 each.
+  drawHeadMods(g, type, mods) {
+    g.clear();
+    const [a, b, c] = mods || [0, 0, 0];
+    const steel = 0xdfe6ee, dark = 0x0b0f14, brass = 0xd9a441, rust = 0x8a5a2b;
+    const tube = (x0, x1, w, off, col) => { g.fillStyle(col || steel, 1); g.fillRect(x0, off - w / 2, x1 - x0, w); g.fillStyle(dark, 0.55); g.fillRect(x1 - 2, off - w / 2, 2, w); };
+    const coil = (x0, x1, y, h, col) => { g.lineStyle(1.6, col, 1); g.beginPath(); for (let i = 0, n = Math.round((x1 - x0) / 2.5); i <= n; i++) { const x = x0 + (x1 - x0) * i / n; i ? g.lineTo(x, y + (i % 2 ? -h : h)) : g.moveTo(x, y); } g.strokePath(); };
+    const spikes = (r0, r1, n, col, ofs) => { g.fillStyle(col, 1); for (let i = 0; i < n; i++) { const t = (ofs || 0) + i * Math.PI * 2 / n, w = 0.22; g.fillTriangle(Math.cos(t - w) * r0, Math.sin(t - w) * r0, Math.cos(t) * r1, Math.sin(t) * r1, Math.cos(t + w) * r0, Math.sin(t + w) * r0); } };
+    const box = (x, y, w, h, col, edge) => { g.fillStyle(col, 1); g.fillRect(x, y, w, h); g.lineStyle(1, edge || dark, 0.8); g.strokeRect(x, y, w, h); };
+
+    if (type === 'gunner') {
+      if (a >= 1) tube(16, 24, 4, 0);                                                     // longer pipe
+      if (a >= 2) { g.lineStyle(1.5, rust, 1); g.lineBetween(4, -5, 14, -2.5); g.lineBetween(4, 5, 14, 2.5); box(2, -9, 7, 3, 0x5a6472); }   // braces + sight
+      if (a >= 3) { g.fillStyle(0xc0c8d2, 1); g.fillTriangle(24, -5, 31, 0, 24, 5); g.fillStyle(0xe5534b, 1); g.fillTriangle(24, -5, 21, -3, 24, -1); g.fillTriangle(24, 5, 21, 3, 24, 1); }   // harpoon tip
+      if (b >= 1) coil(-6, 4, 9.5, 2.2, 0xb7bec8);                                       // bedspring
+      if (b >= 2) { g.lineStyle(1.6, 0x9aa3ad, 1); g.strokeEllipse(-4, 0, 10, 20); g.fillStyle(0x8a8f96, 1); [-8, 6].forEach(y => g.fillCircle(-4, y, 1.4)); }   // bike chain
+      if (b >= 3) { box(-17, -5, 8, 10, 0x5a6472); g.fillStyle(0xe8a020, 1); g.fillRect(-15, -3.5, 4, 2); g.lineStyle(2, 0x8a8f96, 1); g.lineBetween(-17, -7, -17, 7); }   // outboard motor
+      if (c >= 1) spikes(8, 11, 7, 0xb7bec8, 0.4);                                      // nails on the dome
+      if (c >= 2) { box(-3, -15, 10, 6, 0x7d8f4a); g.fillStyle(0xe8a020, 1); g.fillRect(-1, -13.5, 6, 1.5); }   // shrapnel box
+      if (c >= 3) tube(2, 18, 3.5, -6);                                                   // double barrel
+    } else if (type === 'gunner2') {
+      if (a >= 1) { g.lineStyle(1, dark, 0.7); [8, 12, 16].forEach(x => { g.lineBetween(x, -4.5, x, -0.8); g.lineBetween(x, 0.8, x, 4.5); }); }   // rifling rings
+      if (a >= 2) { box(-2, -12, 12, 4, 0x1f2a36, 0x7fe3ff); g.fillStyle(0x7fe3ff, 1); g.fillCircle(10, -10, 1.6); }   // scope
+      if (a >= 3) { g.fillStyle(0xc0c8d2, 1); g.fillTriangle(19, -5, 30, 0, 19, 5); g.lineStyle(1, dark, 0.7); g.lineBetween(19, 0, 29, 0); }   // hull-piercer spike
+      if (b >= 1) { g.fillStyle(brass, 1); for (let i = 0; i < 5; i++) g.fillRect(-10 + i * 2.6, 9 + i * 0.6, 1.8, 4); }      // ammo belt
+      if (b >= 2) { g.fillStyle(brass, 1); for (let i = 0; i < 5; i++) g.fillRect(-10 + i * 2.6, -13 - i * 0.6, 1.8, 4); }    // second belt
+      if (b >= 3) { box(-19, -6, 8, 12, 0x5a6472); g.lineStyle(1.2, 0x8a8f96, 1); g.strokeCircle(-15, 0, 3.5); g.lineBetween(-18.5, 0, -11.5, 0); g.lineBetween(-15, -3.5, -15, 3.5); }   // motor + fan
+      if (c >= 1) { g.lineStyle(3, 0x5a6878, 1); g.beginPath(); g.arc(4, 0, 13, -0.9, 0.9); g.strokePath(); }               // flak plate
+      if (c >= 2) { g.lineStyle(3, 0x5a6878, 1); g.beginPath(); g.arc(4, 0, 13, -1.3, -0.9); g.strokePath(); g.beginPath(); g.arc(4, 0, 13, 0.9, 1.3); g.strokePath(); g.fillStyle(dark, 0.8); [-0.6, 0, 0.6].forEach(t => g.fillCircle(4 + Math.cos(t) * 13, Math.sin(t) * 13, 1)); }
+      if (c >= 3) tube(3, 19, 3, 0, 0xb7bec8);                                           // third barrel down the middle
+    } else if (type === 'bomber') {
+      const can = (y, col) => { g.fillStyle(col, 1); g.fillRoundedRect(-9, y - 3, 13, 6, 3); g.fillStyle(0xffffff, 0.35); g.fillRect(-7, y - 2, 9, 1); g.fillStyle(dark, 1); g.fillRect(4, y - 1, 2, 2); };
+      if (a >= 1) can(13, 0x52c47f);                                                      // gas canister
+      if (a >= 2) can(-13, 0x52c47f);
+      if (a >= 3) { can(13, 0xe5534b); can(-13, 0xe5534b); g.fillStyle(0xe8a020, 0.9); g.fillTriangle(-3, 10, -1, 6, 1, 10); g.fillTriangle(-3, -16, -1, -20, 1, -16); }   // napalm
+      if (b >= 1) { g.lineStyle(2, rust, 1); g.strokeCircle(0, 0, 11); }                 // reinforced band
+      if (b >= 2) { g.fillStyle(0x8a8f96, 1); for (let i = 0; i < 8; i++) { const t = i * Math.PI / 4; g.fillCircle(Math.cos(t) * 11, Math.sin(t) * 11, 1.2); } }   // rivets
+      if (b >= 3) { box(10, -6.5, 8, 13, 0x3a4a5a); g.lineStyle(1, 0x8fb3c9, 1); g.lineBetween(10, -2, 18, -2); g.lineBetween(10, 2, 18, 2); }   // depth-charge drum
+      if (c >= 1) tube(12, 20, 8, 0, 0x7a838f);                                           // drainpipe tube
+      if (c >= 2) { box(-18, -5, 7, 10, 0x8a6a42); g.fillStyle(brass, 1); [-3, 0, 3].forEach(y => g.fillCircle(-14.5, y, 1.3)); }   // loader tray
+      if (c >= 3) { g.lineStyle(2, 0x5a6068, 1); [[-14, -14], [-14, 14], [16, 0]].forEach(([x, y]) => g.lineBetween(0, 0, x, y)); g.fillStyle(0x2a2a2a, 1); g.fillCircle(-14, -14, 2); g.fillCircle(-14, 14, 2); }   // mortar legs
+    } else if (type === 'barricade') {
+      const net = (r, alpha, w) => { g.lineStyle(w, 0xc9b48a, alpha); g.strokeCircle(0, 0, r); for (let i = 0; i < 8; i++) { const t = i * Math.PI / 4; g.lineBetween(Math.cos(t) * 5, Math.sin(t) * 5, Math.cos(t) * r, Math.sin(t) * r); } g.strokeCircle(0, 0, r * 0.6); };
+      if (a >= 1) net(14, 0.7, 1);                                                        // fishing net
+      if (a >= 2) net(17, 0.6, 1);
+      if (a >= 3) { net(17, 0.95, 2); g.lineStyle(2, 0x6b5232, 1); g.strokeCircle(0, 0, 20); }   // tangle
+      const buoys = (n, r) => { for (let i = 0; i < n; i++) { const t = i * Math.PI * 2 / n + 0.3; g.fillStyle(0xe8a020, 1); g.fillCircle(Math.cos(t) * r, Math.sin(t) * r, 2.6); g.fillStyle(0xffffff, 0.8); g.fillRect(Math.cos(t) * r - 2.6, Math.sin(t) * r - 0.6, 5.2, 1.2); } };
+      if (b >= 1) buoys(3, 19);
+      if (b >= 2) buoys(6, 19);
+      if (b >= 3) { g.lineStyle(1, 0xc9b48a, 0.8); g.strokeCircle(0, 0, 19); buoys(6, 19); }
+      if (c >= 1) spikes(12, 17, 8, 0xb7bec8, Math.PI / 8);                               // nails
+      if (c >= 2) { g.lineStyle(1.3, 0x8a8f96, 1); g.beginPath(); for (let i = 0; i <= 40; i++) { const t = i / 40 * Math.PI * 2, r = 21 + (i % 2 ? 2 : -2); i ? g.lineTo(Math.cos(t) * r, Math.sin(t) * r) : g.moveTo(Math.cos(t) * r, Math.sin(t) * r); } g.strokePath(); }   // barbed wire
+      if (c >= 3) { g.lineStyle(1.5, 0xe5534b, 1); g.beginPath(); for (let i = 0; i <= 60; i++) { const t = i / 60 * Math.PI * 4, r = 9 + i / 60 * 12; i ? g.lineTo(Math.cos(t) * r, Math.sin(t) * r) : g.moveTo(Math.cos(t) * r, Math.sin(t) * r); } g.strokePath(); }   // razor coil
+    } else if (type === 'siphon') {
+      const hose = (r, col) => { g.lineStyle(2.5, col, 1); g.beginPath(); g.arc(-9, 0, r, Math.PI * 0.35, Math.PI * 1.65); g.strokePath(); };
+      if (a >= 1) hose(6, 0x8a96a6);                                                      // hose coil
+      if (a >= 2) hose(9, 0x8a96a6);
+      if (a >= 3) { hose(6, 0xc43a3a); hose(9, 0xc43a3a); g.fillStyle(brass, 1); g.fillRect(14, -2, 5, 4); }   // fire hose + brass nozzle
+      const prongs = n => { g.fillStyle(0xd9c9ff, 1); for (let i = 0; i < n; i++) { const t = (i - (n - 1) / 2) * 0.45; g.fillTriangle(6 * Math.cos(t), 6 * Math.sin(t) - 2, 17 * Math.cos(t), 17 * Math.sin(t), 6 * Math.cos(t), 6 * Math.sin(t) + 2); } };
+      if (b >= 1) prongs(b + 1);                                                          // splitter / manifold / octopus
+      if (c >= 1) { g.lineStyle(2, 0x8a8f96, 1); g.lineBetween(-4, -9, -12, -15); g.fillStyle(0x2a2a2a, 1); g.fillCircle(-12, -15, 2); }   // hand pump
+      if (c >= 2) box(-6, 8, 10, 7, 0x4a3f5a, 0x9d7ff0);                                  // bilge pump
+      if (c >= 3) { g.fillStyle(0x9d7ff0, 0.35); g.fillCircle(0, 0, 13); g.fillStyle(0xffffff, 1); g.fillCircle(0, 0, 3); }   // engine core glow
+    }
+  },
+
+  // On the (non-turning) platform: a pip per tier on the paths taken, and a
+  // gold rim once any path reaches tier 3
+  drawBaseMods(g, type, mods, colour) {
+    g.clear();
+    const m = mods || [0, 0, 0];
+    if (m.some(t => t >= 3)) { g.lineStyle(2, 0xf2c14b, 0.95); g.strokeRoundedRect(-15.5, -15.5, 31, 31, 6); }
+    const cols = [0xe8a020, 0x7fe3ff, 0xe5534b];
+    let row = 0;
+    m.forEach((t, p) => {
+      if (!t) return;
+      for (let i = 0; i < t; i++) { g.fillStyle(cols[p], 1); g.fillCircle(-10 + i * 5, 19 + row * 5, 1.8); }
+      row++;
+    });
+  },
+
   tower(scene, x, y, type) {
     const base = scene.add.image(x, y, 'twr_base_' + type).setScale(1 / Art.RES);
     const head = scene.add.image(x, y, 'twr_head_' + type).setScale(1 / Art.RES);

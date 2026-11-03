@@ -402,9 +402,13 @@ Sfx.play('place');
 const hitZone    = this.add.circle(x, y, 20, 0xffffff, 0).setDepth(10).setInteractive();
 const art        = Art.tower(this, x, y, type);
 const towerCircle = art.base.setDepth(4);
-const towerLabel  = art.head.setDepth(4.5).setRotation(-Math.PI / 2);
+// The turret head and its upgrade parts turn together; pips and the
+// tier-3 rim sit on the platform (see refreshTowerArt)
+const modGfx     = this.add.graphics();
+const towerLabel = this.add.container(x, y, [art.head.setPosition(0, 0), modGfx]).setDepth(4.5).setRotation(-Math.PI / 2);
+const baseGfx    = this.add.graphics({ x, y }).setDepth(4.2);
 // Drop-in: the platform lands with a little bounce
-[art.base, art.head].forEach(o => { const sc = o.scale; o.setScale(sc * 1.35).setAlpha(0); this.tweens.add({ targets: o, scale: sc, alpha: 1, duration: 220, ease: 'Back.easeOut' }); });
+[art.base, towerLabel].forEach(o => { const sc = o.scale; o.setScale(sc * 1.35).setAlpha(0); this.tweens.add({ targets: o, scale: sc, alpha: 1, duration: 220, ease: 'Back.easeOut' }); });
 
 if (type === 'barricade') {
   this.add.circle(x, y, towerData.range, data.colour, 0.04).setDepth(2);
@@ -436,7 +440,7 @@ this.towersUsed[type] = (this.towersUsed[type] || 0) + 1;
 // A barrel that turns to face whatever the tower is shooting at
 const barrel = type === 'barricade' ? null : towerLabel;
 if (type === 'barricade') this.tweens.add({ targets: towerLabel, angle: 360, duration: 9000, repeat: -1 });   // the spiked boom turns slowly
-const tower = { type, x, y, data: towerData, lastFired: -1e9, upgradeTier: 0, mods: [0, 0, 0], targetMode: 'first', towerCircle, towerLabel, tierBadge: null, hitZone, powerMult: mult, barrel };
+const tower = { type, x, y, data: towerData, lastFired: -1e9, upgradeTier: 0, mods: [0, 0, 0], targetMode: 'first', towerCircle, towerLabel, tierBadge: null, hitZone, powerMult: mult, barrel, modGfx, baseGfx };
 this.placedTowers.push(tower);
 
 hitZone.on('pointerup', () => {
@@ -587,6 +591,31 @@ this.upgradePanel = null;
 this.activeTower = null;
 }
 
+// Redraw a tower's upgrade parts; it also grows a little with every tier.
+// pop: a bounce and a burst of sparks, for a fresh upgrade
+refreshTowerArt(tower, pop) {
+if (!tower.modGfx) return;
+Art.drawHeadMods(tower.modGfx, tower.type, tower.mods);
+Art.drawBaseMods(tower.baseGfx, tower.type, tower.mods, TOWER_DATA[tower.type].colour);
+const total = tower.mods.reduce((a, b) => a + b, 0), sc = 1 + total * 0.04;
+[tower.towerLabel, tower.towerCircle].forEach(o => { this.tweens.killTweensOf(o); o.setAlpha(1); });   // (also cuts short the drop-in)
+const base = 1 / Art.RES;
+tower.towerCircle.setScale(base * sc);
+if (tower.type !== 'barricade') tower.towerLabel.setScale(sc);
+if (pop) {
+  this.tweens.add({ targets: tower.towerLabel, scale: { from: sc * 1.3, to: sc }, duration: 260, ease: 'Back.easeOut' });
+  for (let k = 0; k < 8; k++) {
+    const a = k * Math.PI / 4, spark = this.add.image(tower.x, tower.y, 'fx_dot').setTint(0xf2c14b).setScale(0.35).setDepth(9);
+    this.tweens.add({ targets: spark, x: tower.x + Math.cos(a) * 26, y: tower.y + Math.sin(a) * 26, alpha: 0, scale: 0.1, duration: 380, onComplete: () => spark.destroy() });
+  }
+}
+if (tower.type === 'barricade') {
+  // the boom keeps turning: restart its spin at the new size
+  tower.towerLabel.setScale(sc);
+  this.tweens.add({ targets: tower.towerLabel, angle: tower.towerLabel.angle + 360, duration: 9000, repeat: -1 });
+}
+}
+
 applyUpgrade(tower, pathIdx) {
 if (!tower) return;
 const i = pathIdx || 0;
@@ -599,6 +628,7 @@ if (m.rare) this.rare[m.rare]--;
 this.partsText.setText('' + this.parts);
 tower.mods[i]++;
 tower.upgradeTier++;
+this.refreshTowerArt(tower, true);
 
 const d = tower.data;
 if (m.fireRate     !== undefined) d.fireRate     = m.fireRate;
@@ -634,8 +664,7 @@ if (m.burnDps) {
   }
 }
 
-if (tower.tierBadge) tower.tierBadge.destroy();
-tower.tierBadge = UI.text(this, tower.x + 13, tower.y - 19, '+' + tower.upgradeTier, 'tag', { size: 10, color: UI.T.amber, depth: 6 });
+if (tower.tierBadge) tower.tierBadge.destroy();   // (old saves' text badge; the art shows tiers now)
 
 const flash = this.add.circle(tower.x, tower.y, 28, d.colour, 0.45).setDepth(6);
 this.tweens.add({ targets: flash, alpha: 0, scaleX: 2, scaleY: 2, duration: 380, onComplete: () => flash.destroy() });

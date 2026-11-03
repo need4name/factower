@@ -726,6 +726,19 @@ confirmStopJob(workerId) {
 
 tryAssignWorker(workerId, stationKey) {
   const W = 'W' + (workerId + 1) + ': ';
+  // A route planned ahead (e.g. smelter → bench before anything is ready)
+  const plan = this.factory.planStop(stationKey, workerId);
+  if (plan) {
+    const change = this.factory.addPlannedStop(stationKey, workerId, plan);
+    const w = this.factory.workers[workerId], L = WORKER_LABELS[workerId];
+    if (!this.tutorialActive) {
+      if (change === 'start' && plan === 'collect_refined') this.showMessage(L + ' will collect refined plastic here — now tap where it should go', 'good');
+      else if (change !== 'start') this.showMessage(L + ' remembers: ' + this.jobLabel(w), 'good');
+    }
+    this.factory.save();
+    this.updateStatus();
+    return;
+  }
   // Carrying something that gets in the way of this order? Put it down in
   // Lost & Found (finished towers go straight to the Armoury).
   if (!this.factory.canWorkerStartAt(stationKey, workerId) && this.factory.canStartIfEmpty(stationKey, workerId)) {
@@ -771,7 +784,12 @@ tryAssignWorker(workerId, stationKey) {
   const L = WORKER_LABELS[workerId];
   if (!this.tutorialActive) {
     if (change === 'loop' || change === 'extend') this.showMessage(L + ' remembers: ' + this.jobLabel(w), 'good');
-    else if (change === 'operate') this.showMessage(L + ' now runs this bench — they’ll build whatever is brought to it', 'good');
+    else if (change === 'operate') {
+      const [r, c] = stationKey.split(',').map(Number), m = this.factory.getMachineAt(r, c);
+      const refined = m && MACHINE_TYPES[m.type] && MACHINE_TYPES[m.type].primaryInput === 'refinedPlastic';
+      this.showMessage(refined ? L + ' runs this bench. It needs Refined Plastic: send a worker Smelter → this bench'
+                               : L + ' now runs this bench — they’ll build whatever is brought to it', refined ? 'info' : 'good');
+    }
     else if (change === 'full') this.showMessage(L + ' can only remember ' + this.factory.routeLength + ' stops — this starts a new route', 'info');
   }
 

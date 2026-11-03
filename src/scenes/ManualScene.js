@@ -76,11 +76,12 @@ class ManualScene extends Phaser.Scene {
       { key: 'factory', title: 'The Factory', icon: 'factory', colour: UI.C.blue, open: true, body: () => [
         'Towers are built in the Factory, one material each. Build a bench for each tower type, then give your workers jobs.',
         ['h', 'Workers'],
-        'Tap a station (a store, a bench, the Depository) to give a worker a job there. A worker remembers one route, from A to B: fetch scrap from the store and build at the bench, or carry towers to the Depository. Uplink upgrades let routes have more stops.',
+        'Pick a worker, then tap where to fetch from and where to take it: a store then a bench, and they\u2019ll carry and build on their own, sending each finished tower to the Depository. A worker remembers one route, A to B; Uplink upgrades let routes have more stops.',
+        'Tap an empty bench first instead and that worker stays to run it, building whatever others bring.',
         'If a worker has to put something down that doesn’t fit, it goes in the Lost & Found.',
         ['h', 'Materials'],
         'Gunners are built from Plastic Scrap.' + (has('metal') ? ' Barricades' + (has('gunner2') ? ' and Mk IIs' : '') + ' take Salvaged Metal.' : '') +
-          (has('smelter') ? ' Bombers' + (has('siphon') ? ' and Siphons' : '') + ' need Refined Plastic: load a Smelter with scrap and it refines it by itself.' : ''),
+          (has('smelter') ? ' Bombers' + (has('siphon') ? ' and Siphons' : '') + ' need Refined Plastic: one worker runs scrap store \u2192 Smelter, another runs Smelter \u2192 bench. The Smelter refines by itself in between.' : ''),
         has('belts') ? ['h', 'Belts'] : null,
         has('belts') ? 'Belts move items without workers. A belt under a store is fed from it; a belt pointing into a machine loads it; a bottom-row belt pointing down delivers to the Depository. Hold a belt to turn it.' : null,
         ['h', 'While you’re away'],

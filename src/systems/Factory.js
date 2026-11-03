@@ -604,7 +604,49 @@ class Factory {
     return false;
   }
 
-  allowedFor(stopAction) { return stopAction === 'assemble' ? ['assemble', 'assemble_swap'] : [stopAction]; }
+  // A bench stop can also just load an empty bench: a hauler's first trip
+  // fills it, every trip after builds with what's there (assemble_swap)
+  allowedFor(stopAction) { return stopAction === 'assemble' ? ['assemble', 'assemble_swap', 'deposit'] : [stopAction]; }
+
+  // ── Planning a route before it can run ─────────────────────────────────
+  // Orders are normally judged by what the worker holds right now. That
+  // breaks chains like scrap → smelter → bench, where the second tap comes
+  // before the worker is carrying anything. These let a tap be judged by
+  // what the route WILL hand the worker.
+  plannedItem(w) {
+    if (w.inventory.length) return w.inventory[0];
+    const j = w.job;
+    if (!j || !j.stops.length) return null;
+    return { collect_scrap: 'plasticScrap', collect_metal: 'salvagedMetal', collect_refined: 'refinedPlastic' }[j.stops[j.stops.length - 1].action] || null;
+  }
+
+  // The stop a tap should add for an empty-handed worker, or null to use
+  // the normal rules
+  planStop(stationKey, workerId) {
+    const w = this.workers[workerId];
+    if (!w || w.inventory.length || !stationKey.includes(',')) return null;
+    const m = this.getMachineAt(...stationKey.split(',').map(Number));
+    if (!m) return null;
+    const j = w.job, item = this.plannedItem(w), roomy = j && j.stops.length < this.routeLength;
+    if (item && roomy) {
+      if (this.isAssemblyType(m.type) && MACHINE_TYPES[m.type].primaryInput === item) return 'assemble';
+      if (m.type === 'smelter' && item === 'plasticScrap') return 'deposit';
+    }
+    // Collect from a smelter even if nothing is ready yet: they'll wait for it
+    if (m.type === 'smelter' && (this.getWorkerAction(stationKey, workerId) !== 'collect_refined' || !this.canWorkerStartAt(stationKey, workerId))) return 'collect_refined';
+    return null;
+  }
+
+  addPlannedStop(stationKey, workerId, action) {
+    const w = this.workers[workerId], stop = { station: stationKey, action };
+    if (this.isSourceAction(action) || !w.job || w.job.stops.length >= this.routeLength) {
+      w.job = { type: 'route', stops: [stop], pos: 0 };
+      return 'start';
+    }
+    w.job.stops.push(stop);
+    w.job.pos = 0;
+    return w.job.stops.length === 2 ? 'loop' : 'extend';
+  }
 
   // Updates the worker's route from a hand-given order. Returns what changed:
   // 'start' (first stop of a new route) | 'loop' (now repeats) | 'extend' |

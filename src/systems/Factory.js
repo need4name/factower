@@ -624,9 +624,18 @@ class Factory {
   // the normal rules
   planStop(stationKey, workerId) {
     const w = this.workers[workerId];
-    if (!w || w.inventory.length || !stationKey.includes(',')) return null;
+    if (!w || !stationKey.includes(',')) return null;
     const m = this.getMachineAt(...stationKey.split(',').map(Number));
     if (!m) return null;
+    // Carrying what this machine takes but it's busy: wait for it (and loop
+    // back for more) rather than dropping the load in Lost & Found
+    if (w.inventory.length) {
+      if (this.canWorkerStartAt(stationKey, workerId)) return null;
+      const held = w.inventory[0];
+      if (this.isAssemblyType(m.type) && MACHINE_TYPES[m.type].primaryInput === held) return 'assemble';
+      if (m.type === 'smelter' && held === 'plasticScrap') return 'deposit';
+      return null;
+    }
     const j = w.job, item = this.plannedItem(w), roomy = j && j.stops.length < this.routeLength;
     if (item && roomy) {
       if (this.isAssemblyType(m.type) && MACHINE_TYPES[m.type].primaryInput === item) return 'assemble';
@@ -637,8 +646,32 @@ class Factory {
     return null;
   }
 
+  // Where a material comes from: its store, or a smelter for refined plastic
+  sourceOf(item) {
+    if (item === 'plasticScrap') return { station: 'store_scrap', action: 'collect_scrap' };
+    if (item === 'salvagedMetal') return { station: 'store_metal', action: 'collect_metal' };
+    if (item === 'refinedPlastic') {
+      for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) {
+        const m = this.getMachineAt(r, c);
+        if (m && m.type === 'smelter') return { station: r + ',' + c, action: 'collect_refined' };
+      }
+    }
+    return null;
+  }
+
   addPlannedStop(stationKey, workerId, action) {
     const w = this.workers[workerId], stop = { station: stationKey, action };
+    // Already holding the load: make the whole loop (its source → here),
+    // starting with this delivery
+    const held = w.inventory[0];
+    if (held && !this.isSourceAction(action)) {
+      const j = w.job, last = j && j.stops.length ? j.stops[j.stops.length - 1] : null;
+      if (!j || j.stops.length >= this.routeLength || !last || !this.isSourceAction(last.action)) {
+        const src = this.sourceOf(held);
+        w.job = { type: 'route', stops: src ? [src, stop] : [stop], pos: src ? 1 : 0 };
+        return 'loop';
+      }
+    }
     if (this.isSourceAction(action) || !w.job || w.job.stops.length >= this.routeLength) {
       w.job = { type: 'route', stops: [stop], pos: 0 };
       return 'start';

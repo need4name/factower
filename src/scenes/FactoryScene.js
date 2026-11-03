@@ -580,7 +580,7 @@ openWorkerMenu(stationKey) {
   // Remembered so update() can rebuild the menu the moment a worker frees up
   this._workerMenu = { key: stationKey, sig: this.workerMenuSig(stationKey), dismiss };
   // When nobody can act here, say how to get unstuck instead of a dead menu
-  const anyCan = unlocked.some(w => this.factory.canWorkerStartAt(stationKey, w.id) || this.factory.canStartIfEmpty(stationKey, w.id));
+  const anyCan = unlocked.some(w => this.factory.planStop(stationKey, w.id) || this.factory.canWorkerStartAt(stationKey, w.id) || this.factory.canStartIfEmpty(stationKey, w.id));
   const fullHands = !anyCan && unlocked.some(w => this.factory.whyCantWork(stationKey, w.id) === 'Hands full');
   items.push(UI.text(this, width / 2, menuY + menuH / 2 - 12,
     fullHands ? 'Tip: tap a store to put a carried item back' : 'Tap outside to close', 'small',
@@ -591,15 +591,17 @@ openWorkerMenu(stationKey) {
   unlocked.forEach((w, i) => {
     const bx = width / 2 - menuW / 2 + 12 + bw / 2 + i * (bw + 12);
     const by = menuY + 6;
-    const direct  = this.factory.canWorkerStartAt(stationKey, w.id);
-    const canWork = direct || this.factory.canStartIfEmpty(stationKey, w.id);
+    const plan    = this.factory.planStop(stationKey, w.id);
+    const direct  = !plan && this.factory.canWorkerStartAt(stationKey, w.id);
+    const canWork = !!plan || direct || this.factory.canStartIfEmpty(stationKey, w.id);
     const wc = WORKER_COLOURS[w.id];
     const p = UI.panel(this, bx, by, bw, 62, { fill: canWork ? UI.C.surface2 : 0x10151c, stroke: canWork ? wc : UI.C.lineSoft, radius: 12, depth: D + 2 });
     const dot = this.add.circle(bx - bw / 2 + 24, by, 13, canWork ? wc : UI.C.line).setDepth(D + 3);
     const lbl = UI.text(this, bx - bw / 2 + 24, by, WORKER_LABELS[w.id], 'tag', { size: 10, origin: 0.5, color: UI.T.dark, depth: D + 4 });
     const st  = UI.text(this, bx - bw / 2 + 46, by - 10, this.workerStateLabel(w, true), 'bodyB', { size: 13, origin: [0, 0.5], depth: D + 3, color: canWork ? UI.T.text : UI.T.faint });
-    const sub = direct ? this.factory.getInventoryDisplay(w.id)
-              : canWork ? (w.inventory[0] === 'towerComponent' ? 'Tower → Armoury first' : 'Drops ' + this.itemName(w.inventory[0]) + ' in Lost & Found')
+    const sub = plan ? this.planLabel(plan, w)
+              : direct ? this.factory.getInventoryDisplay(w.id)
+              : canWork ? (w.inventory[0] === 'towerComponent' ? 'Tower → Armoury first' : this.dropLabel(stationKey, w))
               : this.factory.whyCantWork(stationKey, w.id);
     const inv = UI.text(this, bx - bw / 2 + 46, by + 10, sub, 'small', { size: 11, origin: [0, 0.5], depth: D + 3, wrap: bw - 54, color: canWork ? UI.T.mute : UI.T.amber });
     items.push(p, dot, lbl, st, inv);
@@ -612,10 +614,29 @@ openWorkerMenu(stationKey) {
   dismissZone.on('pointerup', dismiss);
 }
 
+// The menu note when taking this order means putting the load down first
+dropLabel(stationKey, w) {
+  const item = this.itemName(w.inventory[0]);
+  const [r, c] = stationKey.includes(',') ? stationKey.split(',').map(Number) : [-1, -1];
+  const m = r >= 0 ? this.factory.getMachineAt(r, c) : null;
+  if (m && this.factory.isAssemblyType(m.type)) {
+    const need = this.itemName(MACHINE_TYPES[m.type].primaryInput);
+    return 'Needs ' + need + ' — ' + item + ' goes to Lost & Found';
+  }
+  return 'Puts the ' + item + ' in Lost & Found';
+}
+
+// The menu's one-line note for a planned order
+planLabel(plan, w) {
+  if (plan === 'collect_refined') return 'Collects refined plastic';
+  if (w.inventory.length) return 'Takes the ' + this.itemName(w.inventory[0]) + ' here';
+  return 'Adds this stop to the route';
+}
+
 // What the worker menu shows for a station; when this changes, the open menu is redrawn
 workerMenuSig(stationKey) {
   return this.factory.getUnlockedWorkers().map(w =>
-    (this.factory.canWorkerStartAt(stationKey, w.id) ? 'a' : this.factory.canStartIfEmpty(stationKey, w.id) ? 'd' : 'n') +
+    (this.factory.planStop(stationKey, w.id) ? 'p' : this.factory.canWorkerStartAt(stationKey, w.id) ? 'a' : this.factory.canStartIfEmpty(stationKey, w.id) ? 'd' : 'n') +
     this.workerStateLabel(w, true) + w.inventory.join()).join('|');
 }
 

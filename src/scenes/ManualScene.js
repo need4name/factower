@@ -176,7 +176,7 @@ class ManualScene extends Phaser.Scene {
     const body = UI.text(this, 96, top + 52, c.body, 'small', { size: 12.5, wrap: width - 96 - 32, color: UI.T.mute });
     const h = Math.max(84, 52 + body.height + 14);
     this.keep(UI.panel(this, width / 2, top + h / 2, width - 32, h, { fill: UI.C.surface, stroke: d.colour, strokeAlpha: 0.4, radius: 14 })).setDepth(0);
-    const boat = Art.boat(this, 56, top + h / 2, type).setDepth(1).setRotation(-Math.PI / 2);
+    const boat = Art.boat(this, 56, top + h / 2, type, 0).setDepth(1).setRotation(-Math.PI / 2);
     const fit = 56 / Math.max(boat.displayWidth, boat.displayHeight);
     if (fit < 1) boat.setScale(boat.scale * fit);
     this.keep(boat);

@@ -40,6 +40,7 @@ const Art = {
     Art._island(scene);
     Art._factory(scene);
     Art._merchants(scene);
+    Art._ambient(scene);
   },
 
   // Draw into a temporary Graphics at RES scale and save it as a texture
@@ -109,15 +110,15 @@ const Art = {
     const base = { hull: d.colour, deck: Phaser.Display.Color.ValueToColor(d.colour).darken(25).color, trim: 0x0b0f14,
                    prow: 'point', beam: 0.5, cabin: false, plates: (d.traits || []).includes('armoured'), flag: null, glow: null, mast: false };
     const S = {
-      saltChild:      { prow: 'round', beam: 0.55, hull: 0x9aa3ad, deck: 0x6b5a45 },
-      scrapRunner:    { prow: 'point', beam: 0.38, hull: 0xe8a020, deck: 0x8a5a14, stripe: 0x1a1a1a },
-      bilgeRat:       { prow: 'round', beam: 0.6,  hull: 0x9aa48a, deck: 0x5e6650 },
-      driftwoodHulk:  { prow: 'blunt', beam: 0.62, hull: 0x7a6650, deck: 0x5a4a3a, planks: true },
-      frontCommander: { prow: 'point', beam: 0.5,  hull: 0xc43a3a, deck: 0x6e2222, cabin: true, flag: 0x1a1a1a, mast: true },
-      salvSkiff:      { prow: 'point', beam: 0.4,  hull: 0x3fae8e, deck: 0x22604f, stripe: 0xe8e1c8 },
-      salvCutter:     { prow: 'point', beam: 0.48, hull: 0x2f7d6a, deck: 0x1f5246, cabin: true },
-      salvRam:        { prow: 'ram',   beam: 0.55, hull: 0x1f5f52, deck: 0x163f37, cabin: true },
-      umbajiFlagship: { prow: 'point', beam: 0.46, hull: 0x1b8a64, deck: 0x6b5232, cabin: true, mast: true, flag: 0x52c47f, guns: true },
+      saltChild:      { shape: 'drums', beam: 0.62, hats: [0x1a1a1a, 0xc43a3a, 0x6b7280] },
+      scrapRunner:    { shape: 'jetski', beam: 0.42, hats: [0x1a1a1a, 0xc43a3a, 0x6b7280] },
+      bilgeRat:       { shape: 'inflatable', beam: 0.7, hats: [0x1a1a1a, 0xc43a3a, 0x6b7280] },
+      driftwoodHulk:  { prow: 'blunt', beam: 0.62, hull: 0x7a6650, deck: 0x5a4a3a, planks: true, cargo: true, crew: 2, hats: [0x1a1a1a, 0xc43a3a, 0x6b7280] },
+      frontCommander: { prow: 'point', beam: 0.5,  hull: 0xc43a3a, deck: 0x6e2222, cabin: true, flag: 0x1a1a1a, mast: true, sail: 0x3a1414, crew: 3, hats: [0x1a1a1a, 0xc43a3a, 0x6b7280] },
+      salvSkiff:      { prow: 'point', beam: 0.4,  hull: 0x3fae8e, deck: 0x22604f, stripe: 0xe8e1c8, crew: 2, hats: [0x2f7d6a, 0xe8e1c8, 0x52c47f] },
+      salvCutter:     { prow: 'point', beam: 0.48, hull: 0x2f7d6a, deck: 0x1f5246, cabin: true, cargo: true, crew: 2, hats: [0x2f7d6a, 0xe8e1c8, 0x52c47f] },
+      salvRam:        { prow: 'ram',   beam: 0.55, hull: 0x1f5f52, deck: 0x163f37, cabin: true, crew: 2, hats: [0x2f7d6a, 0xe8e1c8, 0x52c47f] },
+      umbajiFlagship: { prow: 'point', beam: 0.46, hull: 0x1b8a64, deck: 0x6b5232, cabin: true, mast: true, flag: 0x52c47f, guns: true, cargo: true, crew: 4, sail: 0xe8e1c8, hats: [0x2f7d6a, 0xe8e1c8, 0x52c47f] },
       helixDrone:     { helix: true, shape: 'dart',  hull: 0xd8e4ea, glow: 0x7fe3ff },
       helixTrooper:   { helix: true, shape: 'pod',   hull: 0x9fb4c2, glow: 0x7fe3ff },
       helixWarden:    { helix: true, shape: 'hex',   hull: 0x5fd0e6, glow: 0xe8fbff },
@@ -126,15 +127,75 @@ const Art = {
     return Object.assign(base, S);
   },
 
+  // Each raider type gets VARIANTS looks (scrap patches, crew, cargo), so a
+  // wave isn't a row of clones. Art.boat picks one at random.
+  VARIANTS: 3,
+
   _boat(scene, type) {
+    for (let v = 0; v < Art.VARIANTS; v++) Art._boatVariant(scene, type, v);
+  },
+
+  _boatVariant(scene, type, v) {
     const d = ENEMY_DATA[type], st = Art._boatStyle(type);
     const L = Math.round(d.size * 2.8), B = Math.max(8, Math.round(L * (st.beam || 0.5)));
-    const pad = 4, W = L + pad * 2, H = B + pad * 2;
-    Art._make(scene, 'boat_' + type, W, H, (g, R) => {
+    const pad = 5, W = L + pad * 2, H = B + pad * 2;
+    // Small seeded random so each variant is stable between sessions
+    let seed = (type.length * 977 + v * 131 + type.charCodeAt(0) * 17) % 2147483647;
+    const rnd = () => (seed = seed * 16807 % 2147483647) / 2147483647;
+    const pick = a => a[Math.floor(rnd() * a.length)];
+    Art._make(scene, 'boat_' + type + '_' + v, W, H, (g, R) => {
       const x0 = pad * R, cy = (H / 2) * R, l = L * R, b = B * R, hb = b / 2;
       const P = (pts) => pts.map(([x, y]) => new Phaser.Geom.Point(x0 + x * l, cy + y * hb));
+      const X = f => x0 + f * l, Y = f => cy + f * hb;
+      const skin = [0xe0b080, 0xb07850, 0x7a5030, 0xc89068];
+      const hat = st.hats || [0x1a1a1a, 0xc43a3a];
+      // A crew member from above: shoulders, then a head with a hat or bandana
+      const crew = (fx, fy, r) => {
+        g.fillStyle(0x2a2f38, 1); g.fillEllipse(X(fx), Y(fy), r * 2.6 * R, r * 1.6 * R);
+        g.fillStyle(pick(skin), 1); g.fillCircle(X(fx), Y(fy), r * R);
+        g.fillStyle(pick(hat), 1); g.slice(X(fx), Y(fy), r * R, Math.PI * 0.6, Math.PI * 1.4, false); g.fillPath();
+      };
+      const shadow = (pts) => { g.fillStyle(0x000000, 0.35); g.fillPoints(pts.map(p => new Phaser.Geom.Point(p.x + 1.5 * R, p.y + 2 * R)), true); };
       if (st.helix) return Art._helixHull(g, R, x0, cy, l, hb, st);
-      // Hull outline by prow shape (x 0..1 stern→bow, y -1..1)
+
+      // ── Front: a raft of lashed oil drums with a kid or two ──
+      if (st.shape === 'drums') {
+        const cols = [0x2f6f9a, 0xc4642a, 0x6b7280, 0x3a8f5a, 0xb03a33];
+        g.fillStyle(0x000000, 0.35); g.fillRoundedRect(X(0.02) + 1.5 * R, Y(-0.95) + 2 * R, l * 0.96, hb * 1.9, 3 * R);
+        for (let i = 0; i < 3; i++) {                                   // three drums across, lashed
+          const dy = Y(-0.66 + i * 0.66);
+          g.fillStyle(pick(cols), 1); g.fillRoundedRect(X(0.02), dy - hb * 0.3, l * 0.96, hb * 0.6, hb * 0.28);
+          g.lineStyle(1 * R, 0x0b0f14, 0.6); g.lineBetween(X(0.3), dy - hb * 0.3, X(0.3), dy + hb * 0.3); g.lineBetween(X(0.7), dy - hb * 0.3, X(0.7), dy + hb * 0.3);
+        }
+        g.fillStyle(0x8a6a42, 1); g.fillRect(X(0.25), Y(-0.75), l * 0.5, hb * 1.5);   // plank deck
+        g.lineStyle(1 * R, 0x5a4428, 1); [0.4, 0.55].forEach(f => g.lineBetween(X(f), Y(-0.75), X(f), Y(0.75)));
+        crew(0.45, v === 1 ? -0.3 : 0, 0.24 * hb / R);
+        if (v !== 0) crew(0.68, 0.35, 0.2 * hb / R);
+        g.lineStyle(1.5 * R, 0x5a4428, 1); g.lineBetween(X(0.5), Y(0.2), X(0.95), Y(0.95));   // paddle
+        return;
+      }
+      // ── Jet-ski: sleek hull, one rider leaning forward ──
+      if (st.shape === 'jetski') {
+        const hull = P([[0, -0.7], [0.55, -1], [0.85, -0.6], [1, 0], [0.85, 0.6], [0.55, 1], [0, 0.7]]);
+        shadow(hull);
+        g.fillStyle(pick([0xe8a020, 0xe5534b, 0xf2c14b]), 1); g.fillPoints(hull, true);
+        g.lineStyle(1 * R, 0x0b0f14, 0.9); g.strokePoints(hull, true);
+        g.fillStyle(0x1a1a1a, 1); g.fillEllipse(X(0.42), cy, l * 0.32, hb * 0.9);   // seat
+        g.fillStyle(0xdfe6ee, 0.9); g.fillRect(X(0.66), Y(-0.45), l * 0.05, hb * 0.9); // handlebars
+        crew(0.5, 0, 0.3 * hb / R);
+        g.fillStyle(0x0b0f14, 1); g.fillRect(X(-0.04), Y(-0.25), l * 0.06, hb * 0.5);   // jet nozzle
+        return;
+      }
+      // ── Inflatable: a grey ring with a rat-faced raider ──
+      if (st.shape === 'inflatable') {
+        g.fillStyle(0x000000, 0.35); g.fillEllipse(X(0.5) + 1.5 * R, cy + 2 * R, l * 0.98, b * 0.98);
+        g.fillStyle(pick([0x6b7280, 0x8a7a5a, 0x5a6a4a]), 1); g.fillEllipse(X(0.5), cy, l, b);
+        g.fillStyle(0x2a2f38, 1); g.fillEllipse(X(0.5), cy, l * 0.66, b * 0.56);
+        crew(0.45, 0, 0.32 * hb / R);
+        return;
+      }
+
+      // ── Proper boats ──
       const shapes = {
         point: [[0, -0.85], [0.62, -1], [0.86, -0.7], [1, 0], [0.86, 0.7], [0.62, 1], [0, 0.85]],
         round: [[0, -0.8], [0.7, -1], [0.95, -0.55], [1, 0], [0.95, 0.55], [0.7, 1], [0, 0.8]],
@@ -142,24 +203,39 @@ const Art = {
         ram:   [[0, -0.9], [0.7, -1], [0.82, -0.55], [1, -0.18], [1, 0.18], [0.82, 0.55], [0.7, 1], [0, 0.9]]
       };
       const hull = P(shapes[st.prow] || shapes.point);
-      // Shadow, hull, deck
-      g.fillStyle(0x000000, 0.35); g.fillPoints(hull.map(p => new Phaser.Geom.Point(p.x + 1.5 * R, p.y + 2 * R)), true);
+      shadow(hull);
       g.fillStyle(st.hull, 1); g.fillPoints(hull, true);
+      // Scrap patches riveted onto the hull, different on every variant
+      for (let k = 0; k < 2 + v; k++) {
+        const fx = 0.1 + rnd() * 0.6, side = rnd() < 0.5 ? -1 : 1;
+        g.fillStyle(pick([0x6b7280, 0x8a6a42, 0x5a6878, 0x9a5a3a]), 0.9);
+        g.fillRect(X(fx), side < 0 ? Y(-0.98) : Y(0.72), l * 0.12, hb * 0.26);
+      }
       g.lineStyle(1.2 * R, st.trim, 0.9); g.strokePoints(hull, true);
       const inner = hull.map(p => new Phaser.Geom.Point(x0 + (p.x - x0) * 0.86 + l * 0.05, cy + (p.y - cy) * 0.68));
       g.fillStyle(st.deck, 1); g.fillPoints(inner, true);
-      if (st.planks) { g.lineStyle(1 * R, 0x3a2e22, 0.9); for (let i = 1; i < 5; i++) g.lineBetween(x0 + l * 0.08, cy - hb * 0.68 + i * hb * 0.27, x0 + l * 0.86, cy - hb * 0.68 + i * hb * 0.27); }
-      if (st.stripe) { g.fillStyle(st.stripe, 0.9); g.fillRect(x0 + l * 0.15, cy - 1.2 * R, l * 0.6, 2.4 * R); }
+      if (st.planks) { g.lineStyle(1 * R, 0x3a2e22, 0.9); for (let i = 1; i < 5; i++) g.lineBetween(X(0.08), cy - hb * 0.68 + i * hb * 0.27, X(0.86), cy - hb * 0.68 + i * hb * 0.27); }
+      if (st.stripe) { g.fillStyle(st.stripe, 0.9); g.fillRect(X(0.15), cy - 1.2 * R, l * 0.6, 2.4 * R); }
       if (st.plates) {
         g.fillStyle(0xdfe6ee, 0.85);
-        [0.2, 0.42, 0.64].forEach(f => { g.fillRect(x0 + l * f, cy - hb * 0.98, l * 0.14, hb * 0.22); g.fillRect(x0 + l * f, cy + hb * 0.76, l * 0.14, hb * 0.22); });
+        [0.2, 0.42, 0.64].forEach(f => { g.fillRect(X(f), Y(-0.98), l * 0.14, hb * 0.22); g.fillRect(X(f), Y(0.76), l * 0.14, hb * 0.22); });
       }
-      if (st.prow === 'ram') { g.fillStyle(0xbfc7cf, 1); g.fillTriangle(x0 + l * 0.86, cy - hb * 0.45, x0 + l * 1.0, cy, x0 + l * 0.86, cy + hb * 0.45); }
-      if (st.cabin) { g.fillStyle(0x0b0f14, 0.55); g.fillRoundedRect(x0 + l * 0.18, cy - hb * 0.42, l * 0.3, hb * 0.84, 2 * R);
-                      g.fillStyle(0xdfe6ee, 0.5); g.fillRect(x0 + l * 0.42, cy - hb * 0.3, 1.5 * R, hb * 0.6); }
-      if (st.guns) { g.fillStyle(0x0b0f14, 0.9); [0.58, 0.7].forEach(f => { g.fillCircle(x0 + l * f, cy, hb * 0.22); g.fillRect(x0 + l * f, cy - 1 * R, l * 0.1, 2 * R); }); }
-      if (st.mast) { g.fillStyle(0xe8e1c8, 1); g.fillCircle(x0 + l * 0.52, cy, 1.8 * R); }
-      if (st.flag) { g.fillStyle(st.flag, 1); g.fillTriangle(x0 + l * 0.52, cy, x0 + l * 0.36, cy - hb * 0.5, x0 + l * 0.36, cy + hb * 0.1); }
+      if (st.prow === 'ram') { g.fillStyle(0xbfc7cf, 1); g.fillTriangle(X(0.86), Y(-0.45), X(1.0), cy, X(0.86), Y(0.45)); }
+      // Cargo: crates and a junk pile on the bigger hulls
+      if (st.cargo) for (let k = 0; k < 1 + v; k++) {
+        const fx = 0.55 + rnd() * 0.22, fy = -0.4 + rnd() * 0.8;
+        g.fillStyle(pick([0x8a6a42, 0x6b5232, 0x5a6878]), 1); g.fillRect(X(fx), Y(fy) - hb * 0.18, l * 0.1, hb * 0.36);
+        g.lineStyle(0.8 * R, 0x0b0f14, 0.6); g.strokeRect(X(fx), Y(fy) - hb * 0.18, l * 0.1, hb * 0.36);
+      }
+      if (st.cabin) { g.fillStyle(0x0b0f14, 0.55); g.fillRoundedRect(X(0.18), cy - hb * 0.42, l * 0.3, hb * 0.84, 2 * R);
+                      g.fillStyle(0xdfe6ee, 0.5); g.fillRect(X(0.42), cy - hb * 0.3, 1.5 * R, hb * 0.6); }
+      if (st.guns) { g.fillStyle(0x0b0f14, 0.9); [0.58, 0.7].forEach(f => { g.fillCircle(X(f), cy, hb * 0.22); g.fillRect(X(f), cy - 1 * R, l * 0.1, 2 * R); }); }
+      // Crew on deck
+      const crewN = (st.crew || 1) + (v === 2 ? 1 : 0), cr = Math.min(3.2, hb / R * 0.26);
+      for (let k = 0; k < crewN; k++) crew(0.3 + (k % 3) * 0.17 + (v * 0.03), (k % 2 ? 0.32 : -0.28) * (v === 1 ? -1 : 1), cr);
+      if (st.mast) { g.fillStyle(0xe8e1c8, 1); g.fillCircle(X(0.52), cy, 1.8 * R); }
+      if (st.flag) { g.fillStyle(st.flag, 1); g.fillTriangle(X(0.52), cy, X(0.36), Y(-0.5), X(0.36), Y(0.1)); }
+      if (st.sail) { g.fillStyle(st.sail, 0.85); g.fillTriangle(X(0.52), Y(-0.9), X(0.52), Y(0.9), X(0.32), Y(0.1)); }
       // Outboard motor at the stern
       g.fillStyle(0x0b0f14, 0.9); g.fillRect(x0 - 2.5 * R, cy - 2 * R, 3 * R, 4 * R);
     });
@@ -227,13 +303,14 @@ const Art = {
     }
     // Graphics coords are game units; scale them up into the RES× texture
     g.setScale(R); rt.draw(g, -L * R, -Tp * R); g.destroy();
+    const lamps = Art._dressMap(rt, pts, area, R);
 
     // Moving wave pattern, clipped to the channel
     const maskG = scene.make.graphics({ add: false });
     channel(maskG, 44, 0xffffff, 1);
     const water = scene.add.tileSprite(L + W / 2, Tp + H / 2, W * R, H * R, 'water').setScale(1 / R)
       .setTint(T.glint).setAlpha(0.32).setDepth(1.1).setMask(maskG.createGeometryMask());
-    return { water, theme: T };
+    return { water, theme: T, lamps, id };
   },
 
   _segDist(px, py, a, b) {
@@ -242,8 +319,9 @@ const Art = {
     return Math.hypot(px - (a.x + t * dx), py - (a.y + t * dy));
   },
 
-  boat(scene, x, y, type) {
-    return scene.add.image(x, y, 'boat_' + type).setScale(1 / Art.RES);
+  boat(scene, x, y, type, variant) {
+    const v = variant !== undefined ? variant : Math.floor(Math.random() * Art.VARIANTS);
+    return scene.add.image(x, y, 'boat_' + type + '_' + v).setScale(1 / Art.RES);
   },
 
   // ── Towers: a raft platform plus a turret head that turns ──────────────
@@ -426,6 +504,98 @@ const Art = {
         g.fillStyle(0xffffff, 0.25); g.fillEllipse(17 * R, 15 * R, 8 * R, 4 * R);                         // hat shine
       });
     });
+  },
+
+  // ── Battle-map dressing: deck clutter, flotsam, gulls, the base gate ───
+  _ambient(scene) {
+    const sh = (g, R, f) => { g.fillStyle(0x000000, 0.35); f(); };
+    Art._make(scene, 'prop_crate', 18, 18, (g, R) => {
+      g.fillStyle(0x000000, 0.35); g.fillRect(3 * R, 4 * R, 14 * R, 14 * R);
+      g.fillStyle(0x8a6a42, 1); g.fillRect(2 * R, 2 * R, 14 * R, 14 * R);
+      g.lineStyle(1.2 * R, 0x5a4428, 1); g.strokeRect(2 * R, 2 * R, 14 * R, 14 * R); g.lineBetween(2 * R, 2 * R, 16 * R, 16 * R); g.lineBetween(16 * R, 2 * R, 2 * R, 16 * R);
+    });
+    Art._make(scene, 'prop_drums', 24, 22, (g, R) => {
+      [[7, 7, 0x2f6f9a], [17, 8, 0xc4642a], [11, 16, 0x6b7280]].forEach(([x, y, c]) => {
+        g.fillStyle(0x000000, 0.35); g.fillCircle((x + 1) * R, (y + 2) * R, 5.5 * R);
+        g.fillStyle(c, 1); g.fillCircle(x * R, y * R, 5.5 * R); g.lineStyle(1 * R, 0x0b0f14, 0.6); g.strokeCircle(x * R, y * R, 3.5 * R);
+      });
+    });
+    Art._make(scene, 'prop_tyres', 18, 18, (g, R) => {
+      g.fillStyle(0x000000, 0.35); g.fillCircle(10 * R, 11 * R, 8 * R);
+      g.fillStyle(0x1a1d22, 1); g.fillCircle(9 * R, 9 * R, 8 * R); g.fillStyle(0x3a3f48, 1); g.fillCircle(9 * R, 9 * R, 4.5 * R); g.fillStyle(0x1a1d22, 1); g.fillCircle(9 * R, 9 * R, 2.5 * R);
+    });
+    Art._make(scene, 'prop_tarp', 28, 20, (g, R) => {
+      g.fillStyle(0x000000, 0.35); g.fillRoundedRect(3 * R, 4 * R, 24 * R, 15 * R, 4 * R);
+      g.fillStyle(0x2f5f8a, 1); g.fillRoundedRect(2 * R, 2 * R, 24 * R, 15 * R, 4 * R);
+      g.lineStyle(1 * R, 0x1f3f5a, 1); [8, 14, 20].forEach(x => g.lineBetween(x * R, 3 * R, (x - 2) * R, 16 * R));
+      g.lineStyle(1 * R, 0xc9b48a, 0.9); g.lineBetween(2 * R, 9 * R, 26 * R, 10 * R);
+    });
+    Art._make(scene, 'prop_solar', 26, 18, (g, R) => {
+      g.fillStyle(0x000000, 0.35); g.fillRect(3 * R, 4 * R, 22 * R, 13 * R);
+      g.fillStyle(0x1a2a4a, 1); g.fillRect(2 * R, 2 * R, 22 * R, 13 * R);
+      g.lineStyle(1 * R, 0x5a7aa8, 0.8); [7.5, 13, 18.5].forEach(x => g.lineBetween(x * R, 2 * R, x * R, 15 * R)); g.lineBetween(2 * R, 8.5 * R, 24 * R, 8.5 * R);
+      g.lineStyle(1 * R, 0xb7bec8, 1); g.strokeRect(2 * R, 2 * R, 22 * R, 13 * R);
+    });
+    Art._make(scene, 'prop_rope', 16, 16, (g, R) => {
+      g.lineStyle(1.6 * R, 0xc9b48a, 1); [6.5, 4.5, 2.5].forEach(r => g.strokeCircle(8 * R, 8 * R, r * R));
+    });
+    Art._make(scene, 'prop_lamp', 12, 12, (g, R) => {
+      g.fillStyle(0x3a4452, 1); g.fillCircle(6 * R, 6 * R, 4.5 * R); g.fillStyle(0xffd27a, 1); g.fillCircle(6 * R, 6 * R, 2.5 * R);
+    });
+    // Flotsam that drifts down the channels
+    Art._make(scene, 'flot_bottle', 10, 6, (g, R) => { g.fillStyle(0x7fc4a8, 0.9); g.fillRoundedRect(0, 1 * R, 7 * R, 4 * R, 2 * R); g.fillRect(7 * R, 2 * R, 3 * R, 2 * R); });
+    Art._make(scene, 'flot_crate', 9, 9, (g, R) => { g.fillStyle(0x8a6a42, 0.95); g.fillRect(0, 0, 9 * R, 9 * R); g.lineStyle(1 * R, 0x5a4428, 1); g.strokeRect(0, 0, 9 * R, 9 * R); });
+    Art._make(scene, 'flot_ring', 10, 10, (g, R) => { g.lineStyle(2.5 * R, 0xe5534b, 1); g.strokeCircle(5 * R, 5 * R, 3.6 * R); g.lineStyle(2.5 * R, 0xf4efe2, 1); g.beginPath(); g.arc(5 * R, 5 * R, 3.6 * R, 0, 0.8); g.strokePath(); g.beginPath(); g.arc(5 * R, 5 * R, 3.6 * R, Math.PI, Math.PI + 0.8); g.strokePath(); });
+    // A gull, wings out
+    Art._make(scene, 'gull', 20, 10, (g, R) => {
+      g.fillStyle(0xf4f6f8, 1);
+      g.fillTriangle(10 * R, 5 * R, 0, 2 * R, 2 * R, 6 * R); g.fillTriangle(10 * R, 5 * R, 20 * R, 2 * R, 18 * R, 6 * R);
+      g.fillEllipse(10 * R, 5.5 * R, 4 * R, 7 * R); g.fillStyle(0xe8a020, 1); g.fillCircle(10 * R, 1.5 * R, 0.9 * R);
+    });
+    // Your base: a palisade gate across the channel with two lamps
+    Art._make(scene, 'base_gate', 76, 26, (g, R) => {
+      g.fillStyle(0x000000, 0.35); g.fillRect(3 * R, 9 * R, 72 * R, 16 * R);
+      g.fillStyle(0x6b5232, 1); for (let x = 2; x < 74; x += 6) { g.fillRect(x * R, 8 * R, 5 * R, 14 * R); g.fillTriangle(x * R, 8 * R, (x + 2.5) * R, 4 * R, (x + 5) * R, 8 * R); }
+      g.fillStyle(0x3a4452, 1); g.fillRect(2 * R, 13 * R, 72 * R, 3 * R);
+      [[6, 0x3a8fc4], [70, 0x3a8fc4]].forEach(([x, c]) => { g.fillStyle(0x2a323d, 1); g.fillCircle(x * R, 15 * R, 5 * R); g.fillStyle(0xffd27a, 1); g.fillCircle(x * R, 15 * R, 2.5 * R); });
+      g.fillStyle(0x3a8fc4, 1); g.fillTriangle(38 * R, 0, 38 * R, 8 * R, 46 * R, 3 * R); g.fillStyle(0xdfe6ee, 1); g.fillRect(37 * R, 0, 1.5 * R, 12 * R);
+    });
+    // Soft glow: white middle fading to nothing (lamps, fog, smoke)
+    if (!scene.textures.exists('glow')) {
+      const tex = scene.textures.createCanvas('glow', 64, 64), ctx = tex.getContext();
+      const grd = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+      grd.addColorStop(0, 'rgba(255,255,255,1)'); grd.addColorStop(0.4, 'rgba(255,255,255,0.45)'); grd.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = grd; ctx.fillRect(0, 0, 64, 64); tex.refresh();
+    }
+    // Vignette: transparent middle, dark edges
+    if (!scene.textures.exists('vignette')) {
+      const tex = scene.textures.createCanvas('vignette', 256, 256), ctx = tex.getContext();
+      const grd = ctx.createRadialGradient(128, 128, 60, 128, 128, 182);
+      grd.addColorStop(0, 'rgba(0,0,0,0)'); grd.addColorStop(1, 'rgba(0,0,0,0.85)');
+      ctx.fillStyle = grd; ctx.fillRect(0, 0, 256, 256); tex.refresh();
+    }
+  },
+
+  // Scatter deck clutter into the baked map: seeded by the path so a level
+  // always looks the same. Returns lamp positions (they glow at night).
+  _dressMap(rt, pts, area, R) {
+    const { x: L, y: Tp, w: W, h: H } = area;
+    let seed = Math.round(pts.reduce((a, p) => a + p.x * 7 + p.y * 3, 0)) % 2147483646 + 1;
+    const rnd = () => (seed = seed * 16807 % 2147483647) / 2147483647;
+    const near = (x, y) => { let best = 1e9; for (let i = 0; i < pts.length - 1; i++) best = Math.min(best, Art._segDist(x, y, pts[i], pts[i + 1])); return best; };
+    const keys = ['prop_crate', 'prop_crate', 'prop_drums', 'prop_tyres', 'prop_tarp', 'prop_solar', 'prop_rope', 'prop_lamp', 'prop_lamp'];
+    const lamps = [], img = rt.scene.make.image({ x: 0, y: 0, key: 'prop_crate', add: false });
+    for (let y = Tp + 18; y < Tp + H - 14; y += 30) for (let x = L + 16; x < L + W - 14; x += 30) {
+      if (rnd() > 0.2) continue;
+      const px = x + (rnd() - 0.5) * 14, py = y + (rnd() - 0.5) * 14;
+      if (near(px, py) < 38) continue;
+      const k = keys[Math.floor(rnd() * keys.length)];
+      img.setTexture(k).setRotation(k === 'prop_lamp' ? 0 : (rnd() - 0.5) * 0.9).setPosition((px - L) * R, (py - Tp) * R);
+      rt.draw(img);
+      if (k === 'prop_lamp') lamps.push({ x: px, y: py });
+    }
+    img.destroy();
+    return lamps;
   },
 
   // ── Market: each merchant's game ───────────────────────────────────────

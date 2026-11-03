@@ -143,6 +143,12 @@ Art.ensure(this);
 // Boat wakes: one shared emitter, fed from update()
 this.wake = this.add.particles(0, 0, 'fx_dot', { lifespan: 800, scale: { start: 0.18, end: 0.7 }, alpha: { start: 0.2, end: 0 }, emitting: false }).setDepth(1.5);
 this._wakeAcc = 0;
+// Damage smoke and fire, Helix glow trails (fed from update() with the wakes)
+this.smokeFx = this.add.particles(0, 0, 'glow', { lifespan: 1400, speedY: { min: -14, max: -6 }, speedX: { min: -4, max: 4 }, scale: { start: 0.2, end: 0.7 },
+  alpha: { start: 0.6, end: 0 }, tint: 0x3a3f48, emitting: false }).setDepth(7.5);
+this.fireFx = this.add.particles(0, 0, 'fx_dot', { lifespan: 420, speedY: { min: -18, max: -8 }, scale: { start: 0.4, end: 0.05 }, alpha: { start: 0.95, end: 0 },
+  tint: [0xffd27a, 0xe8a020, 0xe5534b], blendMode: 'ADD', emitting: false }).setDepth(7.6);
+this.glowFx = this.add.particles(0, 0, 'fx_dot', { lifespan: 520, scale: { start: 0.38, end: 0.05 }, alpha: { start: 0.6, end: 0 }, tint: 0x7fe3ff, blendMode: 'ADD', emitting: false }).setDepth(6.9);
 this.drawHotspots();
 this.drawUBZs();
 this.drawPath();
@@ -749,6 +755,7 @@ drawPath() {
 const map = Art.drawMap(this, this.pathPoints, { x: this.PLAY_LEFT, y: this.PLAY_TOP, w: this.PLAY_RIGHT - this.PLAY_LEFT, h: this.PLAY_BOTTOM - this.PLAY_TOP }, this.storylineId);
 this.waterFx = map.water;
 this._mapTheme = map.theme;
+this.drawAmbience(map);
 
 // Direction chevrons along the road
 const cg = this.add.graphics().setDepth(1.3);
@@ -768,7 +775,87 @@ const startRight = start.x > this.scale.width - 130;
 UI.text(this, start.x + (startRight ? -28 : 28), this.CT + 10, 'RAIDERS ENTER', 'tag', { size: 10, origin: [startRight ? 1 : 0, 0.5], color: UI.T.red, depth: 2 });
 const exitPt = this.pathPoints[this.pathPoints.length - 1];
 const baseRight = exitPt.x > this.scale.width - 110;   // keep the label on screen
-UI.text(this, exitPt.x + (baseRight ? -28 : 28), this.CB - 10, 'YOUR BASE', 'tag', { size: 10, origin: [baseRight ? 1 : 0, 0.5], color: UI.T.blue, depth: 2 });
+UI.text(this, exitPt.x + (baseRight ? -44 : 44), this.CB - 10, 'YOUR BASE', 'tag', { size: 10, origin: [baseRight ? 1 : 0, 0.5], color: UI.T.blue, depth: 2 });
+}
+
+// ── Ambience: light, fog, the base gate, gulls and flotsam ────────────
+// Each story has its own light: dawn, SALV haze, dusk, night.
+drawAmbience(map) {
+const L = this.PLAY_LEFT, T = this.PLAY_TOP, W = this.PLAY_RIGHT - this.PLAY_LEFT, H = this.PLAY_BOTTOM - this.PLAY_TOP;
+const light = { 1: [0xffa860, 0xffa860, 0.12, 0, 0.35], 2: [0x52c4a0, 0x0b1820, 0.06, 0.12, 0.4],
+                3: [0x6a4f8f, 0xe8805a, 0.18, 0.08, 0.5], 4: [0x050a18, 0x050a18, 0.34, 0.34, 0.7] }[map.id] || [0, 0, 0, 0, 0.35];
+// Tint and vignette are painted once into one texture per story, so the
+// whole effect costs a single full-screen image per frame
+const key = 'light_' + map.id;
+if (!this.textures.exists(key)) {
+  const tex = this.textures.createCanvas(key, 128, 192), ctx = tex.getContext();
+  const rgba = (c, a) => 'rgba(' + ((c >> 16) & 255) + ',' + ((c >> 8) & 255) + ',' + (c & 255) + ',' + a + ')';
+  const lin = ctx.createLinearGradient(0, 0, 0, 192);
+  lin.addColorStop(0, rgba(light[0], light[2])); lin.addColorStop(1, rgba(light[1], light[3]));
+  ctx.fillStyle = lin; ctx.fillRect(0, 0, 128, 192);
+  const rad = ctx.createRadialGradient(64, 96, 40, 64, 96, 124);
+  rad.addColorStop(0, 'rgba(0,0,0,0)'); rad.addColorStop(1, 'rgba(0,0,0,' + (0.85 * light[4]) + ')');
+  ctx.fillStyle = rad; ctx.fillRect(0, 0, 128, 192);
+  tex.refresh();
+}
+this.add.image(L + W / 2, T + H / 2, key).setDisplaySize(W, H).setDepth(9);
+// Lamps glow when the light is low
+if (map.id >= 3) map.lamps.forEach(p => {
+  const glow = this.add.image(p.x, p.y, 'glow').setTint(0xffc46a).setBlendMode('ADD').setScale(0.9).setAlpha(0.55).setDepth(9.1);
+  this.tweens.add({ targets: glow, alpha: 0.4, duration: 900 + Math.random() * 600, yoyo: true, repeat: -1 });
+});
+// Fog bank where the raiders come in
+const s0 = this.pathPoints[0];
+this.add.particles(s0.x, s0.y + 10, 'glow', { lifespan: 3200, speedX: { min: -6, max: 6 }, speedY: { min: 2, max: 8 }, scale: { start: 1.4, end: 2.4 },
+  alpha: { start: 0.24, end: 0 }, tint: 0xdfe6ee, frequency: 420, emitZone: { type: 'random', source: new Phaser.Geom.Circle(0, 0, 26) } }).setDepth(8.8);
+// Your base: a palisade gate across the channel where it leaves the map
+const e1 = this.pathPoints[this.pathPoints.length - 1], e0 = this.pathPoints[this.pathPoints.length - 2];
+const vertical = Math.abs(e1.y - e0.y) > Math.abs(e1.x - e0.x);
+this.add.image(e1.x, vertical ? this.CB - 6 : e1.y, 'base_gate').setScale(1 / Art.RES).setRotation(vertical ? 0 : Math.PI / 2).setDepth(7.2);
+// Path lengths, for flotsam drifting along the channel
+this._segs = []; let tot = 0;
+for (let i = 0; i < this.pathPoints.length - 1; i++) {
+  const a = this.pathPoints[i], b = this.pathPoints[i + 1], len = Math.hypot(b.x - a.x, b.y - a.y);
+  this._segs.push({ a, b, len, start: tot }); tot += len;
+}
+this._pathLen = tot;
+this.flotsam = []; this._nextFlot = 1500; this._nextGull = 4000;
+}
+
+pointOnPath(d) {
+const sg = this._segs.find(q => d <= q.start + q.len) || this._segs[this._segs.length - 1];
+const t = sg.len ? Math.min(1, (d - sg.start) / sg.len) : 0;
+return { x: sg.a.x + (sg.b.x - sg.a.x) * t, y: sg.a.y + (sg.b.y - sg.a.y) * t, ang: Math.atan2(sg.b.y - sg.a.y, sg.b.x - sg.a.x) };
+}
+
+// Gulls overhead and rubbish drifting down the channels (ticked from update)
+ambienceTick(dt) {
+if (!this._segs) return;
+this._nextFlot -= dt; this._nextGull -= dt;
+if (this._nextFlot <= 0 && this.flotsam.length < 5) {
+  this._nextFlot = 3500 + Math.random() * 4500;
+  const img = this.add.image(0, 0, Phaser.Utils.Array.GetRandom(['flot_bottle', 'flot_crate', 'flot_ring'])).setScale(1 / Art.RES).setDepth(1.4);
+  this.flotsam.push({ img, d: 0, off: (Math.random() - 0.5) * 22, spin: (Math.random() - 0.5) * 0.002, rot: Math.random() * 6 });
+}
+this.flotsam = this.flotsam.filter(f => {
+  f.d += 14 * dt / 1000;
+  if (f.d >= this._pathLen) { f.img.destroy(); return false; }
+  const p = this.pointOnPath(f.d);
+  f.rot += f.spin * dt;
+  f.img.setPosition(p.x - Math.sin(p.ang) * f.off, p.y + Math.cos(p.ang) * f.off).setRotation(f.rot);
+  return true;
+});
+if (this._nextGull <= 0) {
+  this._nextGull = 7000 + Math.random() * 9000;
+  const L = this.PLAY_LEFT - 20, R = this.PLAY_RIGHT + 20, ltr = Math.random() < 0.5;
+  const y0 = this.PLAY_TOP + 40 + Math.random() * (this.PLAY_BOTTOM - this.PLAY_TOP - 80), y1 = y0 + (Math.random() - 0.5) * 120;
+  const gull = this.add.image(ltr ? L : R, y0, 'gull').setScale(0.75 / Art.RES).setDepth(8.95).setFlipX(!ltr);
+  const shadow = this.add.image(gull.x + 16, y0 + 22, 'gull').setScale(0.6 / Art.RES).setTint(0x000000).setAlpha(0.22).setDepth(2);
+  const dur = 5500 + Math.random() * 2500;
+  this.tweens.add({ targets: gull, scaleY: 0.34 / Art.RES, duration: 220, yoyo: true, repeat: -1 });
+  this.tweens.add({ targets: gull, x: ltr ? R : L, y: y1, duration: dur, onComplete: () => gull.destroy() });
+  this.tweens.add({ targets: shadow, x: (ltr ? R : L) + 16, y: y1 + 22, duration: dur, onComplete: () => shadow.destroy() });
+}
 }
 
 // ── Header redesign (REQ 7) ───────────────────────────────────────────
@@ -1281,14 +1368,22 @@ enemy.hp -= damage;
 if (sourceType && this.towerStats[sourceType] && this.towerStats[sourceType].damageDealt !== undefined) {
 this.towerStats[sourceType].damageDealt += damage;
 }
-if (enemy.sprite && enemy.sprite.active) {
-this.tweens.add({ targets: enemy.sprite, alpha: 0.3, duration: 60, yoyo: true });
+if (enemy.sprite && enemy.sprite.active && !enemy.flashUntil) {
+enemy.sprite.setTintFill(0xffffff);
+enemy.flashUntil = this.simNow + 50;
 }
 if (enemy.hp <= 0) this.killEnemy(enemy, sourceType);
 }
 
 // Wreck effect: a ring of foam and a few bits of debris
-splash(x, y, size, colour) {
+splash(x, y, size, colour, crew) {
+for (let i = 0; i < (crew || 0); i++) {
+  // The crew jump overboard and swim for it
+  const a = Math.random() * Math.PI * 2, d = size + 10 + Math.random() * 12;
+  const head = this.add.circle(x, y, 2, [0xe0b080, 0xb07850, 0x7a5030][i % 3]).setDepth(6.7);
+  this.tweens.add({ targets: head, x: x + Math.cos(a) * d, y: y + Math.sin(a) * d, duration: 1400 + Math.random() * 600, ease: 'Sine.easeOut',
+    onComplete: () => this.tweens.add({ targets: head, alpha: 0, duration: 500, onComplete: () => head.destroy() }) });
+}
 const ring = this.add.image(x, y, 'fx_ring').setScale(size / 32).setAlpha(0.7).setDepth(6.5);
 this.tweens.add({ targets: ring, scale: size / 10, alpha: 0, duration: 520, ease: 'Quad.easeOut', onComplete: () => ring.destroy() });
 const n = size > 16 ? 8 : 5;
@@ -1322,7 +1417,8 @@ if (enemy.hpBg)   { enemy.hpBg.destroy();   enemy.hpBg   = null; }
 if (enemy.hpFill) { enemy.hpFill.destroy();  enemy.hpFill = null; }
 if (enemy.sprite && enemy.sprite.active) {
 Sfx.play(enemy.data.isBoss ? 'bigsink' : 'sink');
-this.splash(enemy.sprite.x, enemy.sprite.y, enemy.data.size, enemy.data.colour);
+this.splash(enemy.sprite.x, enemy.sprite.y, enemy.data.size, enemy.data.colour, enemy.type.startsWith('helix') ? 0 : Math.min(3, 1 + Math.floor(enemy.data.size / 9)));
+if (enemy.flashUntil) enemy.sprite.clearTint();
 if (enemy.turnTween) enemy.turnTween.stop();
 // Sink: list over, shrink and fade
 this.tweens.add({
@@ -1454,7 +1550,7 @@ if (data.shieldAura) {
 // hpScale (per level) toughens hulls and shields without new waves
 const k = (this.levelData && this.levelData.hpScale) || 1;
 const shield = data.shield ? Math.round(data.shield.hp * k) : 0, hp = Math.round(data.hp * k);
-const enemy = { type, data: { ...data }, sprite, hp, maxHp: hp, alive: true, pathProgress: 0, hpBg, hpFill,
+const enemy = { type, data: { ...data }, sprite, hp, maxHp: hp, baseScale: sprite.scaleX, phase: Math.random() * 6.3, alive: true, pathProgress: 0, hpBg, hpFill,
   lastHeal: this.simNow, burnDps: 0, burnUntil: 0, shield, maxShield: shield, lastHitAt: 0, lastSpawn: this.simNow };
 if (shield) this.addShieldRing(enemy);
 this.activeEnemies.push(enemy);
@@ -1924,17 +2020,36 @@ if (!this.paused && !this.gameOver) {
     this._wakeAcc = 0;
     this.activeEnemies.forEach(e => {
       if (!e.alive || !e.sprite || !e.sprite.active) return;
-      const r = e.sprite.rotation, back = e.data.size * 1.3;
-      this.wake.emitParticleAt(e.sprite.x - Math.cos(r) * back, e.sprite.y - Math.sin(r) * back, 1);
+      const r = e.sprite.rotation, back = e.data.size * 1.3, x = e.sprite.x, y = e.sprite.y;
+      const sx = x - Math.cos(r) * back, sy = y - Math.sin(r) * back;
+      const traits = e.data.traits || [];
+      if (e.type.startsWith('helix')) this.glowFx.emitParticleAt(sx, sy, 1);   // hover craft: a glow, no wake
+      else {
+        this.wake.emitParticleAt(sx, sy, traits.includes('fast') ? 2 : 1);
+        // Fast boats throw spray off the bow
+        if (traits.includes('fast')) {
+          const bx = x + Math.cos(r) * back * 0.8, by = y + Math.sin(r) * back * 0.8;
+          this.wake.emitParticleAt(bx - Math.sin(r) * 5, by + Math.cos(r) * 5, 1);
+          this.wake.emitParticleAt(bx + Math.sin(r) * 5, by - Math.cos(r) * 5, 1);
+        }
+      }
+      // Badly hurt boats smoke; nearly sunk ones burn
+      const hp = e.hp / e.maxHp;
+      if (hp < 0.5) this.smokeFx.emitParticleAt(x + (Math.random() - 0.5) * e.data.size, y + (Math.random() - 0.5) * e.data.size, 1);
+      if (hp < 0.25) this.fireFx.emitParticleAt(x + (Math.random() - 0.5) * e.data.size * 0.8, y + (Math.random() - 0.5) * e.data.size * 0.8, 2);
     });
   }
 }
+if (!this.paused && !this.gameOver) this.ambienceTick(delta * (this.speed || 1));
 if (this.waterFx && !this.paused) { this.waterFx.tilePositionX += delta * 0.012; this.waterFx.tilePositionY -= delta * 0.02; }
 this._slowTick = ((this._slowTick || 0) + 1);
 
 this.activeEnemies.forEach(enemy => {
   if (!enemy.alive || !enemy.sprite || !enemy.sprite.active) return;
   const x = enemy.sprite.x, y = enemy.sprite.y;
+  // Bob on the swell; end a hit flash
+  enemy.sprite.scaleY = enemy.baseScale * (1 + 0.04 * Math.sin(this.simNow * 0.006 + enemy.phase));
+  if (enemy.flashUntil && this.simNow > enemy.flashUntil) { enemy.flashUntil = 0; enemy.sprite.clearTint(); }
   const barW = Math.max(enemy.data.size * 2.5, 22);
   const barY = y - enemy.data.size - 7;
   if (enemy.hpBg) enemy.hpBg.setPosition(x, barY);

@@ -228,6 +228,11 @@ class Factory {
       // machines on load. Fresh 3x3 saves come through with matching size.
       this.ROWS = this.grid.length;
       this.COLS = this.grid[0] ? this.grid[0].length : this.COLS;
+      // Older saves could leave a bench or smelter without its "holding
+      // nothing" state, which made it look permanently busy
+      this.grid.forEach(row => row.forEach(m => {
+        if (m && (this.isAssemblyType(m.type) || m.type === 'smelter') && m.heldMaterial === undefined) m.heldMaterial = null;
+      }));
     }
     if (f.tileItems) {
       // Restore items-on-tiles. If the persisted array's dimensions don't match
@@ -747,6 +752,9 @@ class Factory {
       w.waitingFor = station;
       return null;
     };
+    // A worker running a bench fetches its material when nobody brings it
+    const sup = this.operatorSupply(w, j);
+    if (sup) { const go = tryAct(sup.station, [sup.action]); if (go) return go; }
     // A finished tower always goes to the Depository, on the route or not
     if (w.inventory[0] === 'towerComponent' && !j.stops.some(s => s.action === 'deliver')) {
       return tryAct('depository', ['deliver']) || moveOrWait('depository');
@@ -774,6 +782,38 @@ class Factory {
       return moveOrWait(st.station);
     }
     w.waitingFor = 'stuck';
+    return null;
+  }
+
+  // A bench operator (route: build here → Depository) whose bench is empty
+  // and who has nothing in hand goes and gets the bench's material: from
+  // its store, or for refined plastic from a smelter, loading the smelter
+  // with scrap first when it's empty. Returns { station, action } or null.
+  operatorSupply(w, j) {
+    if (j.stops.length !== 2 || j.stops[0].action !== 'assemble' || j.stops[1].action !== 'deliver') return null;
+    const [r, c] = j.stops[0].station.split(',').map(Number);
+    const bench = this.getMachineAt(r, c);
+    if (!bench || !this.isAssemblyType(bench.type) || bench.heldMaterial || bench.autoOutput) return null;
+    const pri = MACHINE_TYPES[bench.type].primaryInput, held = w.inventory[0];
+    if (held === pri) return { station: j.stops[0].station, action: 'deposit' };
+    const smelters = [];
+    for (let y = 0; y < this.ROWS; y++) for (let x = 0; x < this.COLS; x++) {
+      const m = this.getMachineAt(y, x);
+      if (m && m.type === 'smelter') smelters.push({ key: y + ',' + x, m });
+    }
+    if (held === 'plasticScrap' && pri === 'refinedPlastic') {
+      const free = smelters.find(s => !s.m.heldMaterial && !s.m.autoOutput);
+      return free ? { station: free.key, action: 'deposit' } : null;
+    }
+    if (held) return null;
+    if (pri === 'plasticScrap') return this.getMaterialCount('plasticScrap') > 0 ? { station: 'store_scrap', action: 'collect_scrap' } : null;
+    if (pri === 'salvagedMetal') return this.getMaterialCount('salvagedMetal') > 0 ? { station: 'store_metal', action: 'collect_metal' } : null;
+    if (pri === 'refinedPlastic') {
+      const ready = smelters.find(s => s.m.autoOutput === 'refinedPlastic');
+      if (ready) return { station: ready.key, action: 'collect_refined' };
+      const free = smelters.find(s => !s.m.heldMaterial && !s.m.autoOutput);
+      if (free && this.getMaterialCount('plasticScrap') > 0) return { station: 'store_scrap', action: 'collect_scrap' };
+    }
     return null;
   }
 

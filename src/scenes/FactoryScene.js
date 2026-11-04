@@ -636,11 +636,13 @@ planLabel(plan, w) {
   return 'Adds this stop to the route';
 }
 
-// What the worker menu shows for a station; when this changes, the open menu is redrawn
+// What the worker menu offers for a station; when this changes, the open
+// menu is redrawn. Only the choices count, not status text like "On the
+// way", so the menu doesn't redraw under the player's finger.
 workerMenuSig(stationKey) {
   return this.factory.getUnlockedWorkers().map(w =>
     (this.factory.planStop(stationKey, w.id) ? 'p' : this.factory.canWorkerStartAt(stationKey, w.id) ? 'a' : this.factory.canStartIfEmpty(stationKey, w.id) ? 'd' : 'n') +
-    this.workerStateLabel(w, true) + w.inventory.join()).join('|');
+    w.inventory.join()).join('|');
 }
 
 workerStateLabel(w, short) {
@@ -811,8 +813,10 @@ tryAssignWorker(workerId, stationKey) {
     else if (change === 'operate') {
       const [r, c] = stationKey.split(',').map(Number), m = this.factory.getMachineAt(r, c);
       const refined = m && MACHINE_TYPES[m.type] && MACHINE_TYPES[m.type].primaryInput === 'refinedPlastic';
-      this.showMessage(refined ? L + ' runs this bench. It needs Refined Plastic: send a worker Smelter → this bench'
-                               : L + ' now runs this bench — they’ll build whatever is brought to it', refined ? 'info' : 'good');
+      const hasSmelter = this.factory.grid.some(row => row.some(x => x && x.type === 'smelter'));
+      this.showMessage(!refined ? L + ' now runs this bench — they’ll fetch what it needs and build'
+                     : hasSmelter ? L + ' runs this bench — they’ll load the Smelter and fetch the refined plastic'
+                     : L + ' runs this bench, but it needs refined plastic: build a Smelter', refined && !hasSmelter ? 'warn' : 'good');
     }
     else if (change === 'full') this.showMessage(L + ' can only remember ' + this.factory.routeLength + ' stops — this starts a new route', 'info');
   }

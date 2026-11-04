@@ -56,6 +56,9 @@ create() {
 
   // ── Skill tree (M7): speeds + floor size from purchased upgrades ─────
   skillTreeEffects.rebuildFromSaveData(this.saveData);
+  // Bargain Hunter: every machine costs less of each material (never below 1)
+  const off = skillTreeEffects.getMachineCostFlat();
+  if (off) Object.values(this.MACHINE_BUILD_COSTS).forEach(c => Object.keys(c).forEach(k => { c[k] = Math.max(1, c[k] - off); }));
   this.factory.applySkillEffects(skillTreeEffects);
 
   // ── Layout ───────────────────────────────────────────────────────────

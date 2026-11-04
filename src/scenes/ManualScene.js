@@ -97,7 +97,7 @@ class ManualScene extends Phaser.Scene {
         has('market') ? ['h', 'Market'] : null,
         has('market') ? 'Sell spare towers for nuts at the trade counter. Stake nuts with a merchant for a chance at bolts. Merchants tire the more you play; they rest after every battle you win.' : null,
         has('uplink') ? ['h', 'Uplink'] : null,
-        has('uplink') ? 'Spend bolts on permanent upgrades: faster factories, longer worker routes, a tougher base and better odds with the merchants.' : null
+        has('uplink') ? 'Spend bolts on permanent upgrades in six branches: Factory (speed and longer worker routes), Gambling (better odds), Combat (stronger towers, more Parts), Economy (better prices, the Black Market, bigger rewards), Base (a bigger factory floor and a tougher base) and Pirate (raids).' : null
       ] }
     ];
   }

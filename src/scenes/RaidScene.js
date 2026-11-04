@@ -33,7 +33,11 @@ class RaidScene extends Phaser.Scene {
     this.stock = {}; this.lost = {};
     TOWER_ORDER.forEach(t => { this.stock[t] = stock[t] || 0; this.lost[t] = 0; });
     this.units = []; this.turrets = []; this.shots = []; this.pickups = [];
-    this.parts = 10; this.rare = { plate: 0, engine: 0 };   // enough for one repair
+    // Pirate-branch Uplink upgrades (and Overclocked from Combat)
+    skillTreeEffects.rebuildFromSaveData(this.saveData);
+    this.rk = skillTreeEffects.getRaid();
+    this.rk.dmg = skillTreeEffects.getTowerDamageMult();
+    this.parts = 10 + this.rk.parts; this.rare = { plate: 0, engine: 0 };   // enough for one repair (more with Recruiter)
     this.repairHinted = false;
     this.simNow = 0; this.lastDeploy = -1e9; this.lastRepair = -1e9;
     this.over = false; this.paused = false; this.started = false;
@@ -60,6 +64,14 @@ class RaidScene extends Phaser.Scene {
 
     this.drawRoad();
     (this.levelData.turrets || []).forEach(t => this.addTurret(t.x, this.CT + t.oy * sy, t.kind));
+    // Bribery: the turret(s) nearest the convoy's start won't fire
+    const s0 = this.path[0];
+    this.turrets.slice().sort((a, b) => Phaser.Math.Distance.Between(a.x, a.y, s0.x, s0.y) - Phaser.Math.Distance.Between(b.x, b.y, s0.x, s0.y))
+      .slice(0, this.rk.bribe).forEach(t => {
+        t.bribed = true;
+        t.body.setTint(0x8a8f96); t.barrel.setTint(0x8a8f96); t.range.setVisible(false);
+        UI.text(this, t.x, t.y + t.size / 2 + 10, 'BRIBED', 'tag', { size: 9, origin: 0.5, color: UI.T.amber, depth: 6 });
+      });
     this.drawCore(this.levelData.core.hp);
 
     this.hdr = UI.header(this, {
@@ -95,7 +107,7 @@ class RaidScene extends Phaser.Scene {
   addTurret(x, y, kind) {
     // Later raids have tougher defences: turretScale multiplies hp and damage
     const base = RAID_TURRETS[kind] || RAID_TURRETS.gun, sc = this.levelData.turretScale || 1;
-    const k = Object.assign({}, base, { hp: Math.round(base.hp * sc), dmg: Math.round(base.dmg * sc) });
+    const k = Object.assign({}, base, { hp: Math.round(base.hp * sc), dmg: Math.round(base.dmg * sc), range: Math.round(base.range * this.rk.turretRange) });   // Low Profile
     const size = kind === 'heavy' ? 30 : 24;
     const body = this.add.image(x, y, kind === 'heavy' ? 'tur_base_heavy' : 'tur_base').setScale(1 / Art.RES).setDepth(4);
     const barrel = this.add.image(x, y, 'tur_head_' + (RAID_TURRETS[kind] ? kind : 'gun')).setScale(1 / Art.RES).setDepth(5).setRotation(-Math.PI / 2);
@@ -162,7 +174,8 @@ class RaidScene extends Phaser.Scene {
   // ── Actions ───────────────────────────────────────────────────────────
   deploy(type) {
     if (this.over || this.stock[type] <= 0) return;
-    if (this.simNow - this.lastDeploy < RAID_DEPLOY_MS) { UI.toast(this, 'The road is busy — one cart at a time', 'warn', { y: this.PLAY_TOP + 30, duration: 1000 }); return; }
+    // (Faction Ally halves the wait)
+    if (this.simNow - this.lastDeploy < RAID_DEPLOY_MS * this.rk.deploy) { UI.toast(this, 'The road is busy — one cart at a time', 'warn', { y: this.PLAY_TOP + 30, duration: 1000 }); return; }
     this.lastDeploy = this.simNow;
     this.stock[type]--;
     this.started = true;
@@ -179,9 +192,9 @@ class RaidScene extends Phaser.Scene {
     if (type === 'barricade') { sprite.add(head.setPosition(0, 0)); this.tweens.add({ targets: head, angle: 360, duration: 9000, repeat: -1 }); }
     const hpBg = this.add.rectangle(p.x, p.y - 20, 26, 4, 0x2a3a4a).setDepth(9);
     const hpFill = this.add.rectangle(p.x - 13, p.y - 20, 26, 4, UI.C.green).setOrigin(0, 0.5).setDepth(9);
-    const hp = RAID_UNIT_HP[type];
+    const hp = Math.round(RAID_UNIT_HP[type] * this.rk.unitHp);   // Reputation
     this.units.push({ type, d, s: 0, hp, maxHp: hp, alive: true, last: -1e9, sprite, barrel, hpBg, hpFill,
-      speed: (d.speed || 60) * 0.9, atCore: false });
+      speed: (d.speed || 60) * 0.9 * this.rk.speed, atCore: false });   // Sea Legs
     this.status.setText(type === 'barricade' ? 'Barricade carts soak up turret fire' : 'Your convoy fires as it rolls').setColor(UI.T.dim);
     this.refreshPanel();
   }
@@ -191,7 +204,7 @@ class RaidScene extends Phaser.Scene {
     this.parts -= RAID_REPAIR.cost;
     this.lastRepair = this.simNow;
     this.units.filter(u => u.alive).forEach(u => {
-      u.hp = Math.min(u.maxHp, u.hp + u.maxHp * RAID_REPAIR.heal);
+      u.hp = Math.min(u.maxHp, u.hp + u.maxHp * (this.rk.repair || RAID_REPAIR.heal));   // Skilled Hands
       const ring = this.add.circle(u.sprite.x, u.sprite.y, 18, UI.C.green, 0.35).setDepth(7);
       this.tweens.add({ targets: ring, scale: 2, alpha: 0, duration: 400, onComplete: () => ring.destroy() });
     });
@@ -254,7 +267,7 @@ class RaidScene extends Phaser.Scene {
       u.last = this.simNow;
       const ang = Phaser.Math.Angle.Between(p.x, p.y, target.x, target.y);
       if (u.barrel) u.barrel.setRotation(ang);
-      const dmg = u.type === 'siphon' ? Math.round((u.d.dps || 12) * 0.5) : u.d.damage;
+      const dmg = Math.round((u.type === 'siphon' ? (u.d.dps || 12) * 0.5 : u.d.damage) * this.rk.dmg);
       if (u.type === 'siphon') {
         // Siphon carts drain turrets and patch up the cart in front
         const ally = this.units.filter(o => o.alive && o !== u && o.hp < o.maxHp).sort((a, b) => Math.abs(a.s - u.s) - Math.abs(b.s - u.s))[0];
@@ -266,7 +279,7 @@ class RaidScene extends Phaser.Scene {
 
     // Turrets shoot the nearest cart in range — barricades first
     this.turrets.forEach(t => {
-      if (!t.alive || this.simNow - t.last < t.k.rate) return;
+      if (!t.alive || t.bribed || this.simNow - t.last < t.k.rate) return;
       const inRange = this.units.filter(u => u.alive && Phaser.Math.Distance.Between(t.x, t.y, u.sprite.x, u.sprite.y) <= t.k.range);
       if (!inRange.length) return;
       const tank = inRange.filter(u => u.type === 'barricade');
@@ -337,6 +350,7 @@ class RaidScene extends Phaser.Scene {
 
   hitTurret(t, dmg) {
     if (!t.alive) return;
+    dmg *= this.rk.turretVuln;   // Forged Cert
     t.hp -= dmg; this.flash(t.body);
     t.hpFill.setSize((t.size + 6) * Math.max(0, t.hp / t.maxHp), 4);
     if (t.hp > 0) return;
@@ -415,11 +429,15 @@ class RaidScene extends Phaser.Scene {
       firstClear = !save.completedLevels[sk].includes(this.levelId);
       if (firstClear) save.completedLevels[sk].push(this.levelId);
       const base = this.levelData.loot || {};
-      Object.keys(base).forEach(m => { loot[m] = Math.ceil(base[m] * (firstClear ? 1 : 0.5)); });
+      // Replays pay half (full with Salvage Ops); Eye for Quality, Mass
+      // Production and Pirate King Myth scale the loot; Recycling Plant adds scrap
+      const k = (firstClear || skillTreeEffects.isReplayFull() ? 1 : 0.5) * skillTreeEffects.getMaterialDropMult() * skillTreeEffects.getRaidLootMult();
+      Object.keys(base).forEach(m => { loot[m] = Math.ceil(base[m] * k); });
+      loot.plasticScrap = (loot.plasticScrap || 0) + skillTreeEffects.getVictoryScrap();
       if (!save.materials) save.materials = { plasticScrap: 0, refinedPlastic: 0, salvagedMetal: 0 };
       save.materials.plasticScrap  = (save.materials.plasticScrap  || 0) + (loot.plasticScrap  || 0);
       save.materials.salvagedMetal = (save.materials.salvagedMetal || 0) + (loot.salvagedMetal || 0);
-      bolts = firstClear ? 2 + this.levelId : 1;
+      bolts = (firstClear ? 2 + this.levelId + skillTreeEffects.getBoltBonus() : 1) + this.rk.bolts;   // Refined Eye, Word on the Water
       save.bolts = (save.bolts || 0) + bolts;
       save.merchantFatigue = { chrome: 0, ricochet: 0, doubleDown: 0 };
     });

@@ -26,9 +26,14 @@ this.saveData = SaveManager.load();
 this.setFactoryActive(false);
 
 // ── State ────────────────────────────────────────────────────────────
-this.parts             = 0;
 // Base-branch skill upgrades (M7): max HP, damage reduction, fatal save
 skillTreeEffects.rebuildFromSaveData(this.saveData);
+// Combat-branch Uplink upgrades, read once per battle
+const E = skillTreeEffects;
+this.sk = { fire: E.getTowerFireRate(), dmg: E.getTowerDamageMult(), gunDmg: E.getArchetypeDamage('gunner'), crit: E.getArchetypeCrit('gunner'),
+            splash: E.getArchetypeSplash('bomber'), slow: E.getArchetypeSlow('barricade'), range: E.getTowerRange(), parts: E.getPartsDropMult(),
+            early: E.getEarlyBonus(), mark: E.getMarkTarget(), magnet: E.hasScrapMagnet(), elite: E.getEliteDropBonus(), boss: E.getBossDropBonus() };
+this.parts             = E.getPartsStartBonus();   // Stock Cache
 this.baseHp            = Math.round((this.levelData ? this.levelData.baseHp : 10) * skillTreeEffects.getBaseHpMult());
 this.baseHpMax         = this.baseHp;
 this.fatalSaves        = skillTreeEffects.getFatalSaveCharges();
@@ -398,6 +403,7 @@ const mult = this.getPowerMultiplier(x, y);
 
 // Apply power multiplier to tower stats (REQ 3)
 const towerData = { ...data };
+towerData.range = Math.round(towerData.range * this.sk.range);   // Cable Tap
 if (Math.abs(mult - 1) > 0.04) {
   towerData.damage = Math.round(towerData.damage * mult);
   towerData.range  = Math.round(towerData.range  * mult);
@@ -1001,7 +1007,8 @@ setPaused(paused) {
     this._pausedTweens = this.tweens.getTweens().filter(t => t.isPlaying());
     this._pausedTweens.forEach(t => t.pause());
   } else {
-    (this._pausedTweens || []).forEach(t => { if (t.isPaused()) t.resume(); });
+    // (skip tweens killed while paused, e.g. by an upgrade redrawing a tower)
+    (this._pausedTweens || []).forEach(t => { if (t.callbacks && t.isPaused()) t.resume(); });
     this._pausedTweens = null;
   }
 }
@@ -1035,7 +1042,7 @@ if (enemy.netUntil && enemy.netUntil > this.simNow) modifier = 0.15;
 this.placedTowers.forEach(tower => {
 if (tower.type !== 'barricade') return;
 if (Phaser.Math.Distance.Between(tower.x, tower.y, enemy.sprite.x, enemy.sprite.y) <= tower.data.range) {
-modifier = Math.min(modifier, tower.data.slowAmount);
+modifier = Math.min(modifier, Math.max(0.05, tower.data.slowAmount - this.sk.slow));   // Suppression
 }
 });
 return modifier;
@@ -1064,7 +1071,7 @@ targets.forEach(e => {
   g.lineStyle(4, 0x9d7ff0, flick * 0.5); g.lineBetween(tower.x, tower.y, e.sprite.x, e.sprite.y);
   g.lineStyle(1.5, 0xe9ddff, flick);     g.lineBetween(tower.x, tower.y, e.sprite.x, e.sprite.y);
   e.siphonedUntil = now + 300;
-  this.dealDamage(e, (d.dps || 12) * dt / 1000, 'siphon', { pierce: 2, beam: true });
+  this.dealDamage(e, (d.dps || 12) * this.sk.dmg * dt / 1000, 'siphon', { pierce: 2, beam: true });
 });
 }
 
@@ -1087,7 +1094,7 @@ towerShoot(tower) {
 if (!this.waveActive || this.gameOver) { if (tower.beamGfx) tower.beamGfx.clear(); return; }
 if (tower.type === 'barricade') return;
 if (tower.type === 'siphon') return this.siphonTick(tower);
-const rate = tower.data.fireRate;
+const rate = tower.data.fireRate / this.sk.fire;   // Drill
 if (this.simNow - tower.lastFired < rate) return;
 
 const inRange = this.activeEnemies.filter(e => {
@@ -1162,10 +1169,16 @@ if (!target.alive) return;
 const d = tower.data;
 const tx = target.sprite.x, ty = target.sprite.y;
 const hitOpts = { pierce: d.pierce || 0 };
-const dmgFor = (e) => d.damage + ((d.armourBonus && e.data.armour) ? d.armourBonus : 0);
+// Uplink: all towers (Overclocked), Gunners and Mk IIs (Sharp Eye); Hollow
+// Point gives Gunner rounds a chance to hit twice as hard
+const gun = tower.type === 'gunner' || tower.type === 'gunner2';
+const crit = gun && this.sk.crit > 0 && Math.random() < this.sk.crit;
+const mult = this.sk.dmg * (gun ? 1 + this.sk.gunDmg : 1) * (crit ? 2 : 1);
+const dmgFor = (e) => Math.round((d.damage + ((d.armourBonus && e.data.armour) ? d.armourBonus : 0)) * mult);
+if (crit) { const c = this.add.image(target.sprite.x, target.sprite.y, 'fx_ring').setTint(0xffd27a).setScale(0.3).setDepth(9); this.tweens.add({ targets: c, scale: 0.9, alpha: 0, duration: 220, onComplete: () => c.destroy() }); }
 Sfx.play(tower.type === 'bomber' ? 'boom' : target.data.armour ? 'clank' : 'hit');
 if (tower.type === 'bomber') {
-  const splashR = d.splashRadius || 80;
+  const splashR = (d.splashRadius || 80) * (1 + this.sk.splash);   // Cluster Rounds
   this.activeEnemies.filter(e => {
     if (!e.alive || !e.sprite || !e.sprite.active) return false;
     return Phaser.Math.Distance.Between(tx, ty, e.sprite.x, e.sprite.y) <= splashR;
@@ -1215,19 +1228,22 @@ UI.modal(this, {
 // ── Salvage ───────────────────────────────────────────────────────────
 // Wrecked raiders leave salvage on the road. Tap it to collect Parts before
 // it sinks. Elites also drop a rare part (needed for tier-3 mods).
+// Scrap Magnet: elite and boss wrecks carry extra Parts
+eliteBonus(enemy) { return enemy.data.isBoss ? this.sk.boss : enemy.data.rareDrop ? this.sk.elite : 0; }
+
 dropSalvage(enemy) {
 const x = enemy.sprite.x, y = enemy.sprite.y;
 const rare = enemy.data.rareDrop || (Math.random() < 0.03 ? (Math.random() < 0.5 ? 'plate' : 'engine') : null);
 if (enemy.siphonedUntil && enemy.siphonedUntil > this.simNow) {
   // Siphoned: double salvage, straight into Parts — nothing to tap
-  const n = enemy.data.partsReward * 2;
+  const n = Math.round((enemy.data.partsReward + this.eliteBonus(enemy)) * 2 * this.sk.parts);
   this.parts += n; this.partsText.setText('' + this.parts);
   if (rare) this.rare[rare]++;
   const t = UI.text(this, x, y - 12, '+' + n + (rare ? ' +\u2605' : ''), 'tag', { size: 12, origin: 0.5, color: '#c9b6ff', depth: 12 });
   this.tweens.add({ targets: t, y: y - 38, alpha: 0, duration: 700, onComplete: () => t.destroy() });
   return;
 }
-this.spawnPickup(x, y, { parts: enemy.data.partsReward });
+this.spawnPickup(x, y, { parts: enemy.data.partsReward + this.eliteBonus(enemy) });
 if (rare) this.spawnPickup(x + 18, y - 10, { rare });
 if (!this.salvageHintShown && !(this.saveData && this.saveData.tutorials && this.saveData.tutorials.salvage) && !this.tutorial) {
   this.salvageHintShown = true;
@@ -1259,7 +1275,7 @@ Sfx.play('coin');
 p.zone.destroy();
 let label;
 if (p.what.rare) { this.rare[p.what.rare]++; label = '+1 ' + RARE_PARTS[p.what.rare].name; }
-else { this.parts += p.what.parts; this.partsText.setText('' + this.parts); label = '+' + p.what.parts; }
+else { const n = Math.round(p.what.parts * this.sk.parts); this.parts += n; this.partsText.setText('' + this.parts); label = '+' + n; }   // Scavenge
 const t = UI.text(this, p.c.x, p.c.y - 12, label, 'tag', { size: 12, origin: 0.5, color: p.what.rare ? UI.hex(RARE_PARTS[p.what.rare].colour) : UI.T.amber, depth: 12 });
 this.tweens.add({ targets: t, y: t.y - 26, alpha: 0, duration: 650, onComplete: () => t.destroy() });
 this.tweens.killTweensOf(p.c);
@@ -1282,6 +1298,7 @@ this.pickups = this.pickups.filter(p => {
     this.tweens.add({ targets: p.c, alpha: 0, scale: 0.4, duration: 250, onComplete: () => p.c.destroy() });
     return false;
   }
+  if (this.sk.magnet && age > 1800) { this.collectPickup(p); return false; }   // Scrap Magnet
   if (age > p.life - 2000) p.c.setAlpha(0.35 + 0.65 * Math.abs(Math.sin(age / 120)));   // blinking: about to sink
   return true;
 });
@@ -1355,6 +1372,9 @@ dealDamage(enemy, damage, sourceType, opts) {
 if (!enemy.alive) return;
 const o = opts || {};
 enemy.lastHitAt = this.simNow;
+// Mark Target: the first raider a tower hits each wave takes extra damage
+if (this.sk.mark && !this._markUsed && TOWER_DATA[sourceType]) this.markEnemy(enemy);
+if (enemy.markedUntil > this.simNow) damage *= this.sk.mark.multiplier;
 // Shields soak the hit before armour; beams and burns slip past them
 if (enemy.shield > 0 && !o.trueDamage && !o.beam) {
   const soak = Math.min(enemy.shield, damage);
@@ -1393,6 +1413,18 @@ for (let i = 0; i < n; i++) {
   this.tweens.add({ targets: chip, x: x + Math.cos(a) * d, y: y + Math.sin(a) * d, angle: Math.random() * 360, alpha: 0,
     duration: 380 + Math.random() * 260, ease: 'Quad.easeOut', onComplete: () => chip.destroy() });
 }
+}
+
+markEnemy(enemy) {
+this._markUsed = true;
+enemy.markedUntil = this.simNow + this.sk.mark.duration * 1000;
+if (!enemy.sprite) return;
+const ring = this.add.image(enemy.sprite.x, enemy.sprite.y, 'fx_ring').setTint(0xe5534b).setScale((enemy.data.size + 8) / 16).setDepth(8.5);
+this.tweens.add({ targets: ring, angle: 360, duration: 1200, repeat: -1 });
+const follow = this.time.addEvent({ delay: 16, loop: true, callback: () => {
+  if (!enemy.alive || !enemy.sprite || !enemy.sprite.active || this.simNow > enemy.markedUntil) { ring.destroy(); follow.remove(); return; }
+  ring.setPosition(enemy.sprite.x, enemy.sprite.y);
+} });
 }
 
 shieldBreak(enemy) {
@@ -1484,6 +1516,7 @@ this.time.delayedCall(500, () => {
   if (this.gameOver) return;
   this.waveText.setText('Wave ' + (this.currentWave + 1) + ' of ' + total + ' — hold the line').setColor(UI.T.dim);
   Sfx.play('horn');
+  this._markUsed = false;   // Mark Target: one mark per wave
   this.spawnWave(waveData);
 });
 }
@@ -1722,7 +1755,7 @@ if (key === 'flare') {
 // ── Call the next wave early ──────────────────────────────────────────
 // Once the current wave has finished arriving, START becomes CALL EARLY:
 // the next wave comes straight away and pays bonus Parts for the risk.
-earlyBonus() { return 4 + this.activeEnemies.filter(e => e.alive).length; }
+earlyBonus() { return Math.round((4 + this.activeEnemies.filter(e => e.alive).length) * (1 + this.sk.early)); }   // Early Caller
 
 canCallEarly() {
 return this.waveActive && !this.gameOver && !this.tutorial && !this._awaitingSpawn && this._pendingSpawns <= 0
@@ -1743,6 +1776,7 @@ this.partsText.setText('' + this.parts);
 this.currentWave = nextIdx;
 this.waveIndicator.setText('WAVE ' + (nextIdx + 1) + ' / ' + this.levelData.waves.length);
 UI.toast(this, 'Wave ' + (nextIdx + 1) + ' called early  +' + bonus + ' Parts', 'good', { y: this.PLAY_TOP + 22, duration: 1600 });
+this._markUsed = false;   // a called wave gets its own mark
 this.spawnWave(next, true);
 }
 
@@ -1945,7 +1979,7 @@ if (this.firstClear) save.completedLevels[key].push(this.levelId);
 save.parts = (save.parts || 0) + this.parts;
 // Bolts for winning — the main way to afford Uplink upgrades. A first clear
 // pays more; replays and endless runs pay a little.
-this.boltsEarned = (this.firstClear && !this.isEndless) ? 2 + this.levelId : 1;
+this.boltsEarned = (this.firstClear && !this.isEndless) ? 2 + this.levelId + skillTreeEffects.getBoltBonus() : 1;   // Refined Eye
 save.bolts = (save.bolts || 0) + this.boltsEarned;
 save.level = Math.max(save.level || 1, this.levelId + 1);
 
@@ -1983,15 +2017,20 @@ if (!this.isEndless && typeof LEVEL_DATA !== 'undefined') {
     const sunk = Object.values(this.killStats || {}).reduce((t, n) => t + n, 0);
     this.materialEarned.plasticScrap += Math.floor(sunk / 15);
 
-    // Bulk reward; replays pay half
+    // Bulk reward; replays pay half (full with Salvage Ops)
     if (completionBonus) {
-      const k = this.firstClear ? 1 : 0.5;
+      const k = this.firstClear || skillTreeEffects.isReplayFull() ? 1 : 0.5;
       this.materialEarned.plasticScrap  += Math.ceil((completionBonus.plasticScrap  || 0) * k);
       this.materialEarned.salvagedMetal += Math.ceil((completionBonus.salvagedMetal || 0) * k);
     }
   }
 }
 
+// Uplink: Eye for Quality scales every material reward; the Recycling
+// Plant adds scrap on every win
+const mm = skillTreeEffects.getMaterialDropMult();
+this.materialEarned.plasticScrap  = Math.round(this.materialEarned.plasticScrap * mm) + skillTreeEffects.getVictoryScrap();
+this.materialEarned.salvagedMetal = Math.round(this.materialEarned.salvagedMetal * mm);
 if (!save.materials) save.materials = { plasticScrap: 0, refinedPlastic: 0, salvagedMetal: 0 };
 save.materials.plasticScrap  = (save.materials.plasticScrap  || 0) + this.materialEarned.plasticScrap;
 save.materials.salvagedMetal = (save.materials.salvagedMetal || 0) + this.materialEarned.salvagedMetal;

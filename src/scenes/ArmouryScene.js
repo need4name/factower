@@ -7,6 +7,12 @@ const TOWER_SELL_VALUE = {
   barricade: 2
 };
 
+// What a tower sells for right now: base value × Economy-branch upgrades
+// (Market Knowledge, Sharp Trader, Premium Goods, Market Tycoon)
+function towerSellValue(type) {
+  return Math.max(1, Math.round((TOWER_SELL_VALUE[type] || 1) * skillTreeEffects.getSellPriceMult() * skillTreeEffects.getNutsMult()));
+}
+
 // One-line role description per tower, shown wherever towers are listed.
 const TOWER_ROLE = {
   gunner:    'Fast single-target shots. Your bread and butter.',
@@ -25,6 +31,7 @@ class ArmouryScene extends Phaser.Scene {
     const { width, height } = this.scale;
     this.saveData = applyTestStock() || SaveManager.load() || {};
     if (this.saveData.nuts === undefined) this.saveData.nuts = 0;
+    skillTreeEffects.rebuildFromSaveData(this.saveData);
     UI.backdrop(this);
     UI.fadeIn(this);
     Art.ensure(this);
@@ -98,7 +105,7 @@ class ArmouryScene extends Phaser.Scene {
       const rx = width - 16 - 54;
       add(UI.text(this, rx, y + (compact ? 26 : 40), String(count), 'number', { size: compact ? 28 : 34, origin: 0.5, color: count > 0 ? UI.hex(d.colour) : UI.T.faint }));
       add(UI.text(this, rx, y + (compact ? 48 : 66), 'IN STOCK', 'label', { size: 10, origin: 0.5 }));
-      const nut = TOWER_SELL_VALUE[type] || 1;
+      const nut = towerSellValue(type);
       const sell = add(UI.button(this, rx, y + h - (compact ? 28 : 34), 84, compact ? 34 : 38, {
         label: 'SELL +' + nut, variant: 'outline', colour: UI.C.amber, size: 13, disabled: count === 0,
         onTap: () => this.confirmSell(type)
@@ -117,7 +124,7 @@ class ArmouryScene extends Phaser.Scene {
   titleCase(str) { return UI.titleCase(str); }
 
   confirmSell(type) {
-    const nut = TOWER_SELL_VALUE[type] || 1;
+    const nut = towerSellValue(type);
     UI.modal(this, {
       title: 'Sell a ' + this.titleCase(TOWER_DATA[type].name) + '?',
       body: 'You get ' + nut + ' nut' + (nut === 1 ? '' : 's') + '. Nuts can be traded for bolts at the Market, which buy upgrades in the Uplink.',
@@ -130,7 +137,7 @@ class ArmouryScene extends Phaser.Scene {
     const stockpile = this.saveData.stockpile || {};
     if (!stockpile[type] || stockpile[type] <= 0) return;
 
-    const nutValue = TOWER_SELL_VALUE[type] || 1;
+    const nutValue = towerSellValue(type);
     // Apply to the latest stored save, not just this scene's snapshot
     this.saveData = SaveManager.update(s => {
       if (!s.stockpile) s.stockpile = {};

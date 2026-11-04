@@ -61,7 +61,8 @@ const Merchants = {
     const m = Merchants.get(id);
     const e = Merchants.effFatigue(id, fatigue, fx);
     const costMult = id === 'doubleDown' ? fx.getMerchantFatigueCostMult() : 1;
-    return Math.min(Math.round(m.baseCost * (1 + Math.pow(e, 3) / 500 * costMult)), 60);
+    const raw = Math.min(Math.round(m.baseCost * (1 + Math.pow(e, 3) / 500 * costMult)), 60);
+    return Math.max(1, raw - (fx.getMerchantCostFlat ? fx.getMerchantCostFlat() : 0));   // Bulk Trading
   },
 
   // Multiplier on raw winnings: fatigue penalty × upgrade bonuses.

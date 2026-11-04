@@ -8,6 +8,7 @@ class MarketplaceScene extends Phaser.Scene {
   create() {
     const { width, height } = this.scale;
     this.saveData = SaveManager.load() || {};
+    skillTreeEffects.rebuildFromSaveData(this.saveData);
     if (!this.saveData.nuts)  this.saveData.nuts = 0;
     if (!this.saveData.bolts) this.saveData.bolts = 0;
     this.tradeItems = [];
@@ -34,7 +35,7 @@ class MarketplaceScene extends Phaser.Scene {
     this.tradeTop = y + 8;
     this.drawTradeCounter();
 
-    UI.text(this, width / 2, height - 26, 'Merchants tire of you the more you play. They rest after every battle you win.', 'small',
+    if (!skillTreeEffects.isBlackMarketUnlocked()) UI.text(this, width / 2, height - 26, 'Merchants tire of you the more you play. They rest after every battle you win.', 'small',
       { origin: 0.5, size: 11, color: UI.T.faint, wrap: width - 40, align: 'center' });
   }
 
@@ -83,15 +84,16 @@ class MarketplaceScene extends Phaser.Scene {
     const add = (o) => { this.tradeItems.push(o); return o; };
     const stock = this.saveData.stockpile || {};
     const types = TOWER_ORDER.filter(t => t === 'gunner' || (stock[t] || 0) > 0 || Progress.has(this.saveData, t));
-    const top = this.tradeTop, rowH = 50, w = width - 32;
-    const h = 44 + types.length * rowH + 6;
+    const bm = skillTreeEffects.isBlackMarketUnlocked();
+    const top = this.tradeTop, rowH = bm ? 42 : 50, w = width - 32;
+    const h = 44 + (types.length + (bm ? 1 : 0)) * rowH + 6;
 
     add(UI.panel(this, width / 2, top + h / 2, w, h, { fill: UI.C.surface, stroke: UI.C.line, radius: 16 }));
     add(UI.text(this, 36, top + 22, 'TRADE COUNTER', 'tag', { size: 11, origin: [0, 0.5], color: UI.T.amber }));
     add(UI.text(this, width - 36, top + 22, 'Towers you sell are gone for good', 'small', { size: 11, origin: [1, 0.5], color: UI.T.faint }));
 
     types.forEach((type, i) => {
-      const d = TOWER_DATA[type], n = stock[type] || 0, nut = TOWER_SELL_VALUE[type] || 1;
+      const d = TOWER_DATA[type], n = stock[type] || 0, nut = towerSellValue(type);
       const ry = top + 44 + i * rowH + rowH / 2;
       if (i > 0) add(this.add.rectangle(width / 2, ry - rowH / 2, w - 32, 1, UI.C.lineSoft));
       add(this.add.image(44, ry, 'twr_head_' + type).setScale(0.75 / Art.RES).setRotation(-Math.PI / 2).setAlpha(n > 0 ? 1 : 0.35));
@@ -103,12 +105,45 @@ class MarketplaceScene extends Phaser.Scene {
       }));
       b.setEnabled(n > 0);
     });
+
+    // Black Market (Economy upgrade): buy materials outright with nuts
+    if (bm) {
+      const ry = top + 44 + types.length * rowH + rowH / 2;
+      add(this.add.rectangle(width / 2, ry - rowH / 2, w - 32, 1, UI.C.lineSoft));
+      add(UI.text(this, 36, ry, 'BLACK MARKET', 'tag', { size: 11, origin: [0, 0.5], color: UI.T.purple || '#9d7ff0' }));
+      [['plasticScrap', 'SCRAP'], ['salvagedMetal', 'METAL']].forEach(([mat, label], i) => {
+        const price = this.blackMarketPrice(mat);
+        const b = add(UI.button(this, width - 16 - 16 - 48 - (1 - i) * 104, ry, 96, 34, {
+          label: '+1 ' + label + ' \u00b7 ' + price, variant: 'outline', colour: UI.C.purple, size: 11.5,
+          onTap: () => this.buyMaterial(mat, price)
+        }));
+        b.setEnabled((this.saveData.nuts || 0) >= price);
+      });
+    }
+  }
+
+  // Black Market prices in nuts; Market Tycoon halves them
+  blackMarketPrice(mat) {
+    const base = mat === 'salvagedMetal' ? 3 : 2;
+    return Math.max(1, Math.ceil(base / (skillTreeEffects.getNutsMult() > 1 ? 2 : 1)));
+  }
+
+  buyMaterial(mat, price) {
+    if ((this.saveData.nuts || 0) < price) return;
+    this.saveData = SaveManager.update(s => {
+      s.nuts = (s.nuts || 0) - price;
+      if (!s.materials) s.materials = { plasticScrap: 0, refinedPlastic: 0, salvagedMetal: 0 };
+      s.materials[mat] = (s.materials[mat] || 0) + 1;
+    }) || this.saveData;
+    this.hdr.chips.nuts.setValue(this.saveData.nuts).pulse();
+    this.drawTradeCounter();
+    UI.toast(this, '+1 ' + (mat === 'salvagedMetal' ? 'Salvaged Metal' : 'Plastic Scrap') + ' in the Factory', 'good');
   }
 
   sell(type) {
     const stock = this.saveData.stockpile || {};
     if (!stock[type]) return;
-    const nut = TOWER_SELL_VALUE[type] || 1;
+    const nut = towerSellValue(type);
     // The last tower is easy to sell by accident and costs a factory run to replace
     const total = Object.values(stock).reduce((a, b) => a + b, 0);
     const doSell = () => {

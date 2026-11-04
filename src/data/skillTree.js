@@ -133,8 +133,8 @@ const SKILL_TREE = {
     },
 
     // ── COMBAT ───────────────────────────────────────────────────────────────
-    // Tower bonuses, parts economy, wave-management edges.
-    // Col 0 = tower power   Col 1 = parts economy   Col 2 = wave / strategic
+    // Tower bonuses and the parts economy.
+    // Col 0 = tower power   Col 1 = parts economy   Col 2 = wave tactics
     {
       id:        'combat',
       name:      'COMBAT',
@@ -143,53 +143,53 @@ const SKILL_TREE = {
       colourHex: '#c43a3a',
       nodes: [
         // T1 — gateway
-        { id: 'COM_01', name: 'Field Manual',   tier: 1, col: 1, prereqs: [],         cost: 3,   kind: 'significant',
+        { id: 'COM_01', name: 'Drill',   tier: 1, col: 1, prereqs: [],         cost: 3,   kind: 'significant',
           effect:   'Gateway. Unlocks the Combat branch. All towers fire 5% faster.',
           mechanic: { type: 'tower_fire_rate', value: 1.05 } },
 
         // T2
         { id: 'COM_02', name: 'Sharp Eye',      tier: 2, col: 0, prereqs: ['COM_01'], cost: 6,   kind: 'incremental',
-          effect:   'Gunner damage +10%.',
+          effect:   'Gunners and Mk IIs deal 10% more damage.',
           mechanic: { type: 'archetype_damage', value: 0.10, target: 'gunner' } },
         { id: 'COM_03', name: 'Scavenge',       tier: 2, col: 1, prereqs: ['COM_01'], cost: 6,   kind: 'incremental',
-          effect:   'Enemy kills grant 10% more Parts.',
-          mechanic: { type: 'parts_drop_multiplier', value: 1.10 } },
-        { id: 'COM_04', name: 'Early Warning',  tier: 2, col: 2, prereqs: ['COM_01'], cost: 6,   kind: 'incremental',
-          effect:   'Wave countdown timer increased by 3 seconds.',
-          mechanic: { type: 'wave_warning_bonus', value: 3 } },
+          effect:   'Salvage you collect is worth 20% more Parts.',
+          mechanic: { type: 'parts_drop_multiplier', value: 1.20 } },
+        { id: 'COM_04', name: 'Early Caller',  tier: 2, col: 2, prereqs: ['COM_01'], cost: 6,   kind: 'incremental',
+          effect:   'Calling a wave EARLY pays 50% more bonus Parts.',
+          mechanic: { type: 'early_bonus', value: 0.5 } },
 
         // T3
         { id: 'COM_05', name: 'Hollow Point',   tier: 3, col: 0, prereqs: ['COM_02'], cost: 10,  kind: 'significant',
-          effect:   'Gunner shots have a 20% chance to deal double damage.',
+          effect:   'Gunner and Mk II rounds have a 20% chance to deal double damage.',
           mechanic: { type: 'archetype_crit', value: 0.20, target: 'gunner' } },
         { id: 'COM_06', name: 'Stock Cache',    tier: 3, col: 1, prereqs: ['COM_03'], cost: 10,  kind: 'significant',
-          effect:   'Start each combat level with +1 bonus Part.',
-          mechanic: { type: 'parts_starting_bonus', value: 1 } },
+          effect:   'Start every battle with 6 Parts already in hand.',
+          mechanic: { type: 'parts_starting_bonus', value: 6 } },
         { id: 'COM_07', name: 'Mark Target',    tier: 3, col: 2, prereqs: ['COM_04'], cost: 10,  kind: 'gamechanger',
-          effect:   'Game-changer. The first enemy hit each wave takes 2× damage for 3 seconds.',
-          mechanic: { type: 'mark_target', value: { multiplier: 2, duration: 3 } } },
+          effect:   'Game-changer. The first raider hit each wave is marked: it takes double damage for 4 seconds.',
+          mechanic: { type: 'mark_target', value: { multiplier: 2, duration: 4 } } },
 
         // T4
         { id: 'COM_08', name: 'Cluster Rounds', tier: 4, col: 0, prereqs: ['COM_05'], cost: 16,  kind: 'significant',
-          effect:   'Bomber splash radius +25%.',
+          effect:   'Bomber blasts are 25% wider.',
           mechanic: { type: 'archetype_splash', value: 0.25, target: 'bomber' } },
         { id: 'COM_09', name: 'Scrap Magnet',   tier: 4, col: 1, prereqs: ['COM_06'], cost: 16,  kind: 'gamechanger',
-          effect:   'Game-changer. Boss kills drop an additional 5 bonus Parts. Elite kills drop +2.',
+          effect:   'Game-changer. Salvage you miss drifts to you by itself, and elite and boss wrecks carry +2 / +5 Parts.',
           mechanic: { type: 'elite_drops', value: { boss: 5, elite: 2 } } },
         { id: 'COM_10', name: 'Suppression',    tier: 4, col: 2, prereqs: ['COM_07'], cost: 16,  kind: 'significant',
-          effect:   'Barricades slow enemies in their range by an additional 15%.',
+          effect:   'Barricades slow raiders 15% more.',
           mechanic: { type: 'archetype_slow', value: 0.15, target: 'barricade' } },
 
         // T5 — capstone
         { id: 'COM_11', name: 'Overclocked',    tier: 5, col: 1, prereqs: ['COM_09'], cost: 25,  kind: 'capstone',
-          effect:   'Capstone. All towers deal +20% damage permanently across every level.',
+          effect:   'Capstone. Every tower deals 20% more damage, in every battle.',
           mechanic: { type: 'tower_damage', value: 1.20 } }
       ]
     },
 
     // ── ECONOMY ──────────────────────────────────────────────────────────────
-    // Material handling, sell prices, Nuts income.
-    // Col 0 = sell prices / Nuts   Col 1 = material drops / quality   Col 2 = bulk operations
+    // Nuts, materials, rewards and the Market.
+    // Col 0 = selling and the Black Market   Col 1 = rewards   Col 2 = costs
     {
       id:        'economy',
       name:      'ECONOMY',
@@ -199,46 +199,46 @@ const SKILL_TREE = {
       nodes: [
         // T1 — gateway
         { id: 'ECO_01', name: 'Market Knowledge', tier: 1, col: 1, prereqs: [],         cost: 3,   kind: 'significant',
-          effect:   'Gateway. Unlocks the Economy branch. Selling towers grants 10% more Nuts.',
+          effect:   'Gateway. Unlocks the Economy branch. Towers sell for 10% more Nuts.',
           mechanic: { type: 'sell_price_multiplier', value: 1.10 } },
 
         // T2
         { id: 'ECO_02', name: 'Sharp Trader',  tier: 2, col: 0, prereqs: ['ECO_01'], cost: 6,   kind: 'incremental',
-          effect:   'Selling towers grants an additional 20% Nuts (stacks).',
+          effect:   'Towers sell for another 20% more Nuts (stacks).',
           mechanic: { type: 'sell_price_multiplier', value: 1.20 } },
         { id: 'ECO_03', name: 'Eye for Quality',tier: 2, col: 1, prereqs: ['ECO_01'], cost: 6,   kind: 'incremental',
-          effect:   '10% chance to find an extra material with each pickup.',
-          mechanic: { type: 'material_drop_multiplier', value: 1.10 } },
+          effect:   'Victories and raids pay 15% more materials.',
+          mechanic: { type: 'material_drop_multiplier', value: 1.15 } },
         { id: 'ECO_04', name: 'Bargain Hunter', tier: 2, col: 2, prereqs: ['ECO_01'], cost: 6,   kind: 'incremental',
-          effect:   'Machine build costs reduced by 10%.',
-          mechanic: { type: 'machine_cost_multiplier', value: 0.90 } },
+          effect:   'Factory machines cost 1 less of each material (never below 1).',
+          mechanic: { type: 'machine_cost_flat', value: 1 } },
 
         // T3
         { id: 'ECO_05', name: 'Black Market',  tier: 3, col: 0, prereqs: ['ECO_02'], cost: 10,  kind: 'gamechanger',
-          effect:   'Game-changer. Unlocks the Black Market Contact — purchase rare materials directly with Nuts.',
+          effect:   'Game-changer. A Black Market stall opens in the Market: buy Plastic Scrap and Salvaged Metal with Nuts.',
           mechanic: { type: 'unlock_black_market', value: true } },
         { id: 'ECO_06', name: 'Refined Eye',   tier: 3, col: 1, prereqs: ['ECO_03'], cost: 10,  kind: 'significant',
-          effect:   '15% chance for material drops to be one tier higher than expected.',
-          mechanic: { type: 'material_quality_chance', value: 0.15 } },
+          effect:   'Every first clear pays 1 extra bolt.',
+          mechanic: { type: 'bolt_bonus', value: 1 } },
         { id: 'ECO_07', name: 'Mass Production',tier: 3, col: 2, prereqs: ['ECO_04'], cost: 10,  kind: 'significant',
-          effect:   'Building 3 or more of the same machine: each additional one is 25% off.',
-          mechanic: { type: 'machine_bulk_discount', value: 0.25 } },
+          effect:   'Raid loot +25%.',
+          mechanic: { type: 'raid_loot_mult', value: 1.25 } },
 
         // T4
         { id: 'ECO_08', name: 'Premium Goods', tier: 4, col: 0, prereqs: ['ECO_05'], cost: 16,  kind: 'significant',
-          effect:   'All sell prices +30% on top of existing bonuses.',
+          effect:   'Towers sell for another 30% more Nuts (stacks).',
           mechanic: { type: 'sell_price_multiplier', value: 1.30 } },
         { id: 'ECO_09', name: 'Salvage Ops',   tier: 4, col: 1, prereqs: ['ECO_06'], cost: 16,  kind: 'gamechanger',
-          effect:   'Game-changer. Selling a tower returns 50% of its raw materials in addition to Nuts.',
-          mechanic: { type: 'sell_material_refund', value: 0.50 } },
+          effect:   'Game-changer. Replaying a mission pays full rewards instead of half.',
+          mechanic: { type: 'replay_full', value: true } },
         { id: 'ECO_10', name: 'Bulk Trading',  tier: 4, col: 2, prereqs: ['ECO_07'], cost: 16,  kind: 'significant',
-          effect:   'Selling 3 or more towers in one transaction: each tower gives +30% Nuts.',
-          mechanic: { type: 'bulk_sell_bonus', value: 0.30 } },
+          effect:   'Merchant stakes cost 1 Nut less (never below 1).',
+          mechanic: { type: 'merchant_cost_flat', value: 1 } },
 
         // T5 — capstone
         { id: 'ECO_11', name: 'Market Tycoon', tier: 5, col: 1, prereqs: ['ECO_09'], cost: 25,  kind: 'capstone',
-          effect:   'Capstone. All Nuts income permanently doubled.',
-          mechanic: { type: 'nuts_multiplier', value: 2.0 } }
+          effect:   'Capstone. Nuts from selling towers are doubled, and Black Market prices halve.',
+          mechanic: { type: 'nuts_multiplier', value: 2 } }
       ]
     },
 
@@ -262,8 +262,8 @@ const SKILL_TREE = {
           effect:   'Factory floor expands to 3 rows × 4 columns.',
           mechanic: { type: 'factory_grid', value: { rows: 3, cols: 4 } } },
         { id: 'BAS_03', name: 'Cable Tap',      tier: 2, col: 1, prereqs: ['BAS_01'], cost: 6,   kind: 'incremental',
-          effect:   'Underwater Cable Siphon power output +20%.',
-          mechanic: { type: 'power_capacity', value: 20 } },
+          effect:   'Lights on the raft: all towers reach 10% further.',
+          mechanic: { type: 'tower_range', value: 1.10 } },
         { id: 'BAS_04', name: 'Thick Walls',    tier: 2, col: 2, prereqs: ['BAS_01'], cost: 6,   kind: 'incremental',
           effect:   'Base maximum HP +15%.',
           mechanic: { type: 'base_hp_multiplier', value: 1.15 } },
@@ -273,8 +273,8 @@ const SKILL_TREE = {
           effect:   'Factory floor expands to 4 × 4.',
           mechanic: { type: 'factory_grid', value: { rows: 4, cols: 4 } } },
         { id: 'BAS_06', name: 'Recycling Plant',tier: 3, col: 1, prereqs: ['BAS_03'], cost: 10,  kind: 'gamechanger',
-          effect:   'Game-changer. Unlocks the Plastic Recycling Plant zone. Output scales with factory waste.',
-          mechanic: { type: 'unlock_zone', value: 'recycling_plant' } },
+          effect:   'Game-changer. Every victory also pays 3 Plastic Scrap from the recycling plant.',
+          mechanic: { type: 'victory_scrap', value: 3 } },
         { id: 'BAS_07', name: 'Blast Doors',    tier: 3, col: 2, prereqs: ['BAS_04'], cost: 10,  kind: 'significant',
           effect:   'Base takes 1 less damage per enemy hit (minimum 1).',
           mechanic: { type: 'base_damage_reduction', value: 1 } },
@@ -284,8 +284,8 @@ const SKILL_TREE = {
           effect:   'Factory floor expands to 4 rows × 5 columns.',
           mechanic: { type: 'factory_grid', value: { rows: 4, cols: 5 } } },
         { id: 'BAS_09', name: 'Wind Turbines',  tier: 4, col: 1, prereqs: ['BAS_06'], cost: 16,  kind: 'gamechanger',
-          effect:   'Game-changer. Unlocks Offshore Wind Turbines as a separate map. Major power boost between maintenance missions.',
-          mechanic: { type: 'unlock_zone', value: 'wind_turbines' } },
+          effect:   'Game-changer. The turbines turn again: every factory machine runs 15% faster (stacks).',
+          mechanic: { type: 'machine_speed', value: 0.85 } },
         { id: 'BAS_10', name: 'Iron Fortress',  tier: 4, col: 2, prereqs: ['BAS_07'], cost: 16,  kind: 'gamechanger',
           effect:   'Game-changer. Once per level: survive a fatal hit at 1 HP instead of dying.',
           mechanic: { type: 'fatal_save', value: 1 } },
@@ -298,57 +298,57 @@ const SKILL_TREE = {
     },
 
     // ── PIRATE ───────────────────────────────────────────────────────────────
-    // IOA resistance, recruitment quality, faction reputation.
-    // Col 0 = IOA resistance   Col 1 = recruitment / workers   Col 2 = reputation / faction
+    // Raids: the convoy, its loot and some dirty tricks.
+    // Col 0 = turrets   Col 1 = barges and crew   Col 2 = loot and the convoy
     {
       id:        'pirate',
       name:      'PIRATE',
-      desc:      'IOA resistance and reputation',
+      desc:      'Raids: convoys, loot and dirty tricks',
       colour:    0x8844dd,
       colourHex: '#8844dd',
       nodes: [
         // T1 — gateway
-        { id: 'PIR_01', name: 'Off-Grid',       tier: 1, col: 1, prereqs: [],         cost: 3,   kind: 'significant',
-          effect:   'Gateway. Unlocks the Pirate branch. IOA heat from power siphoning reduced by 25%.',
-          mechanic: { type: 'ioa_heat_reduction', value: 0.25 } },
+        { id: 'PIR_01', name: 'Sea Legs',       tier: 1, col: 1, prereqs: [],         cost: 3,   kind: 'significant',
+          effect:   'Gateway. Unlocks the Pirate branch. Raid barges move 15% faster.',
+          mechanic: { type: 'raid_speed', value: 1.15 } },
 
         // T2
-        { id: 'PIR_02', name: 'Light Footprint',tier: 2, col: 0, prereqs: ['PIR_01'], cost: 6,   kind: 'incremental',
-          effect:   'IOA heat decay between waves accelerated by 25%.',
-          mechanic: { type: 'ioa_heat_decay', value: 1.25 } },
+        { id: 'PIR_02', name: 'Low Profile',tier: 2, col: 0, prereqs: ['PIR_01'], cost: 6,   kind: 'incremental',
+          effect:   'Enemy turrets in raids see 10% less far.',
+          mechanic: { type: 'raid_turret_range', value: 0.90 } },
         { id: 'PIR_03', name: 'Recruiter',      tier: 2, col: 1, prereqs: ['PIR_01'], cost: 6,   kind: 'incremental',
-          effect:   'Recruitment missions yield +1 worker.',
-          mechanic: { type: 'worker_recruit_bonus', value: 1 } },
+          effect:   'Raids start with 10 more Parts.',
+          mechanic: { type: 'raid_parts', value: 10 } },
         { id: 'PIR_04', name: 'Word on the Water', tier: 2, col: 2, prereqs: ['PIR_01'], cost: 6,   kind: 'incremental',
-          effect:   'Marketplace prices reduced by 10%.',
-          mechanic: { type: 'marketplace_discount', value: 0.10 } },
+          effect:   'Won raids pay 2 extra bolts.',
+          mechanic: { type: 'raid_bolts', value: 2 } },
 
         // T3
         { id: 'PIR_05', name: 'Bribery',        tier: 3, col: 0, prereqs: ['PIR_02'], cost: 10,  kind: 'gamechanger',
-          effect:   'Game-changer. Once per campaign: cancel an incoming IOA audit wave for 50 Nuts.',
-          mechanic: { type: 'ioa_audit_cancel', value: 1 } },
+          effect:   'Game-changer. In every raid, the first turret is bribed and never fires.',
+          mechanic: { type: 'raid_bribe', value: 1 } },
         { id: 'PIR_06', name: 'Skilled Hands',  tier: 3, col: 1, prereqs: ['PIR_03'], cost: 10,  kind: 'significant',
-          effect:   'Recruited workers start at Engineer tier instead of Recruit tier.',
-          mechanic: { type: 'worker_starting_tier', value: 2 } },
+          effect:   'REPAIR mends barges by 75% instead of 50%.',
+          mechanic: { type: 'raid_repair', value: 0.75 } },
         { id: 'PIR_07', name: 'Reputation',     tier: 3, col: 2, prereqs: ['PIR_04'], cost: 10,  kind: 'significant',
-          effect:   'Friendly factions react to you 20% earlier in storyline progression.',
-          mechanic: { type: 'reputation_pace', value: 1.20 } },
+          effect:   'Barges have 25% more hull.',
+          mechanic: { type: 'raid_unit_hp', value: 1.25 } },
 
         // T4
         { id: 'PIR_08', name: 'Forged Cert',    tier: 4, col: 0, prereqs: ['PIR_05'], cost: 16,  kind: 'significant',
-          effect:   'IOA detection rate halved. Audit waves trigger only at maximum heat.',
-          mechanic: { type: 'ioa_detection', value: 0.50 } },
+          effect:   'Turrets take 15% more damage from your barges.',
+          mechanic: { type: 'raid_turret_vuln', value: 1.15 } },
         { id: 'PIR_09', name: 'Veteran Crew',   tier: 4, col: 1, prereqs: ['PIR_06'], cost: 16,  kind: 'significant',
-          effect:   'All workers — recruited or starting — operate at Engineer tier speed permanently.',
-          mechanic: { type: 'worker_force_tier', value: 2 } },
+          effect:   'Factory workers walk 20% faster.',
+          mechanic: { type: 'worker_speed', value: 1.20 } },
         { id: 'PIR_10', name: 'Faction Ally',   tier: 4, col: 2, prereqs: ['PIR_07'], cost: 16,  kind: 'gamechanger',
-          effect:   'Game-changer. One enemy faction can become a temporary ally during specific story missions.',
-          mechanic: { type: 'unlock_ally_mechanic', value: true } },
+          effect:   'Game-changer. Barges leave twice as often.',
+          mechanic: { type: 'raid_deploy', value: 0.5 } },
 
         // T5 — capstone
         { id: 'PIR_11', name: 'Pirate King Myth', tier: 5, col: 1, prereqs: ['PIR_10'], cost: 25,  kind: 'capstone',
-          effect:   'Capstone. Reputation maxed. All merchants give a 10% discount, IOA heat decay doubled, and unique storyline dialogue unlocks.',
-          mechanic: { type: 'pirate_king_myth', value: true } }
+          effect:   'Capstone. Raid loot is doubled.',
+          mechanic: { type: 'raid_loot_mult', value: 2 } }
       ]
     }
 

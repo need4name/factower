@@ -75,6 +75,9 @@ class SkillTreeEffects {
       waveWarningBonus:       0,      // additive seconds added to wave countdown
       eliteDrops:             { boss: 0, elite: 0 }, // bonus parts on boss/elite kills
       markTarget:             null,   // { multiplier, duration } or null
+      earlyBonus:             0,      // extra share of the EARLY wave-call bonus
+      scrapMagnet:            false,  // missed salvage drifts to you by itself
+      towerRange:             1.00,   // multiplier on every tower's range
 
       // Per-archetype bonuses. Each archetype gets damage/crit/splash/slow buffs.
       archetypeDamage:  { gunner:0, bomber:0, sniper:0, jammer:0, barricade:0, siphon:0 },
@@ -92,6 +95,12 @@ class SkillTreeEffects {
       bulkSellBonus:          0,      // bonus on selling 3+ towers in one transaction
       sellMaterialRefund:     0,      // % of raw materials refunded on sell
       blackMarketUnlocked:    false,  // unlock black market merchant
+      machineCostFlat:        0,      // materials knocked off each machine cost (min 1)
+      boltBonus:              0,      // extra bolts on a first clear
+      raidLootMult:           1.00,   // multiplier on raid loot
+      replayFull:             false,  // replays pay full rewards
+      merchantCostFlat:       0,      // nuts knocked off a merchant stake (min 1)
+      victoryScrap:           0,      // plastic scrap paid on every victory
 
       // ── BASE ────────────────────────────────────────────────────────────
       factoryGrid:            { rows: 3, cols: 3 }, // factory grid size
@@ -101,7 +110,16 @@ class SkillTreeEffects {
       fatalSaveCharges:       0,      // once-per-level survive-fatal charges
       unlockedZones:          {},     // { recycling_plant: true, wind_turbines: true, ... }
 
-      // ── PIRATE ──────────────────────────────────────────────────────────
+      // ── PIRATE (raids) ──────────────────────────────────────────────────
+      raidSpeed:              1.00,   // barge speed multiplier
+      raidTurretRange:        1.00,   // enemy turret range multiplier
+      raidParts:              0,      // extra parts at the start of a raid
+      raidBolts:              0,      // extra bolts for a won raid
+      raidBribe:              0,      // turrets bribed at the start of each raid
+      raidRepair:             0,      // REPAIR heal share (0 = the default)
+      raidUnitHp:             1.00,   // barge hull multiplier
+      raidTurretVuln:         1.00,   // damage turrets take from barges
+      raidDeploy:             1.00,   // wait between sends multiplier
       ioaHeatReduction:       0,      // % reduction on IOA heat gained
       ioaHeatDecayMult:       1.00,   // multiplier on IOA heat decay rate
       ioaDetectionMult:       1.00,   // multiplier on IOA detection rate
@@ -192,7 +210,10 @@ class SkillTreeEffects {
       case 'archetype_splash':        s.archetypeSplash[m.target] += m.value; break;
       case 'archetype_slow':          s.archetypeSlow[m.target] += m.value; break;
       case 'mark_target':             s.markTarget = m.value; break;
+      case 'early_bonus':             s.earlyBonus += m.value; break;
+      case 'tower_range':             s.towerRange *= m.value; break;
       case 'elite_drops':
+        s.scrapMagnet = true;
         s.eliteDrops.boss  = Math.max(s.eliteDrops.boss,  m.value.boss  || 0);
         s.eliteDrops.elite = Math.max(s.eliteDrops.elite, m.value.elite || 0);
         break;
@@ -207,6 +228,21 @@ class SkillTreeEffects {
       case 'bulk_sell_bonus':         s.bulkSellBonus = Math.max(s.bulkSellBonus, m.value); break;
       case 'sell_material_refund':    s.sellMaterialRefund = Math.max(s.sellMaterialRefund, m.value); break;
       case 'unlock_black_market':     s.blackMarketUnlocked = !!m.value; break;
+      case 'machine_cost_flat':       s.machineCostFlat += m.value; break;
+      case 'bolt_bonus':              s.boltBonus += m.value; break;
+      case 'raid_loot_mult':          s.raidLootMult *= m.value; break;
+      case 'replay_full':             s.replayFull = !!m.value; break;
+      case 'merchant_cost_flat':      s.merchantCostFlat += m.value; break;
+      case 'victory_scrap':           s.victoryScrap += m.value; break;
+      case 'raid_speed':              s.raidSpeed *= m.value; break;
+      case 'raid_turret_range':       s.raidTurretRange *= m.value; break;
+      case 'raid_parts':              s.raidParts += m.value; break;
+      case 'raid_bolts':              s.raidBolts += m.value; break;
+      case 'raid_bribe':              s.raidBribe += m.value; break;
+      case 'raid_repair':             s.raidRepair = Math.max(s.raidRepair, m.value); break;
+      case 'raid_unit_hp':            s.raidUnitHp *= m.value; break;
+      case 'raid_turret_vuln':        s.raidTurretVuln *= m.value; break;
+      case 'raid_deploy':             s.raidDeploy *= m.value; break;
 
       // ── BASE ────────────────────────────────────────────────────────────
       case 'factory_grid':
@@ -218,9 +254,7 @@ class SkillTreeEffects {
       case 'base_hp_multiplier':      s.baseHpMult *= m.value; break;
       case 'base_damage_reduction':   s.baseDamageReduction += m.value; break;
       case 'power_capacity':          s.powerCapacity += m.value; break;
-      case 'fatal_save',
-  'merchant_luck','merchant_payout','merchant_house_edge','merchant_fatigue_threshold',
-  'merchant_fatigue_cost','merchant_jackpot_tell','merchant_redirect','merchant_all_in':              s.fatalSaveCharges = Math.max(s.fatalSaveCharges, m.value); break;
+      case 'fatal_save':              s.fatalSaveCharges = Math.max(s.fatalSaveCharges, m.value); break;
       case 'unlock_zone':             s.unlockedZones[m.value] = true; break;
 
       // ── PIRATE ──────────────────────────────────────────────────────────
@@ -312,6 +346,9 @@ class SkillTreeEffects {
   getArchetypeSlow(t)         { return this.state.archetypeSlow[t]    || 0; }
   getMarkTarget()             { return this.state.markTarget; }
   getEliteDropBonus()         { return this.state.eliteDrops.elite; }
+  getEarlyBonus()             { return this.state.earlyBonus; }
+  hasScrapMagnet()            { return this.state.scrapMagnet; }
+  getTowerRange()             { return this.state.towerRange; }
   getBossDropBonus()          { return this.state.eliteDrops.boss; }
 
   // Economy
@@ -324,6 +361,15 @@ class SkillTreeEffects {
   getBulkSellBonus()          { return this.state.bulkSellBonus; }
   getSellMaterialRefund()     { return this.state.sellMaterialRefund; }
   isBlackMarketUnlocked()     { return this.state.blackMarketUnlocked; }
+  getMachineCostFlat()        { return this.state.machineCostFlat; }
+  getBoltBonus()              { return this.state.boltBonus; }
+  getRaidLootMult()           { return this.state.raidLootMult; }
+  isReplayFull()              { return this.state.replayFull; }
+  getMerchantCostFlat()       { return this.state.merchantCostFlat; }
+  getVictoryScrap()           { return this.state.victoryScrap; }
+  // Raids
+  getRaid()                   { const s = this.state; return { speed: s.raidSpeed, turretRange: s.raidTurretRange, parts: s.raidParts, bolts: s.raidBolts,
+                                  bribe: s.raidBribe, repair: s.raidRepair, unitHp: s.raidUnitHp, turretVuln: s.raidTurretVuln, deploy: s.raidDeploy }; }
 
   // Base
   getFactoryGrid()            { return { ...this.state.factoryGrid }; }
@@ -354,7 +400,16 @@ SkillTreeEffects.IMPLEMENTED = new Set([
   'factory_grid', 'base_hp_multiplier', 'base_damage_reduction', 'fatal_save',
   // Gambling branch (M8)
   'merchant_luck', 'merchant_payout', 'merchant_house_edge', 'merchant_fatigue_threshold',
-  'merchant_fatigue_cost', 'merchant_jackpot_tell', 'merchant_redirect', 'merchant_all_in'
+  'merchant_fatigue_cost', 'merchant_jackpot_tell', 'merchant_redirect', 'merchant_all_in',
+  // Combat branch
+  'tower_fire_rate', 'tower_damage', 'tower_range', 'parts_drop_multiplier', 'parts_starting_bonus', 'early_bonus',
+  'archetype_damage', 'archetype_crit', 'archetype_splash', 'archetype_slow', 'mark_target', 'elite_drops',
+  // Economy branch
+  'sell_price_multiplier', 'nuts_multiplier', 'material_drop_multiplier', 'machine_cost_flat', 'unlock_black_market',
+  'bolt_bonus', 'raid_loot_mult', 'replay_full', 'merchant_cost_flat', 'victory_scrap',
+  // Pirate branch (raids)
+  'raid_speed', 'raid_turret_range', 'raid_parts', 'raid_bolts', 'raid_bribe', 'raid_repair', 'raid_unit_hp',
+  'raid_turret_vuln', 'raid_deploy'
 ]);
 
 // Single global instance — scenes import implicitly via window scope.

@@ -9,6 +9,7 @@
 //               raider goes untouched; Siphon beams and burns slip past it
 //   projector — tops up the shields of raiders around it
 //   spawner   — launches smaller boats as it goes (boss)
+// Factions: the Front (NCF), the SALV Collective, Helix and the IOA Navy.
 // `card` is shown the first time a raider appears (see CombatScene).
 // `rareDrop` is the rare salvage an elite leaves behind (for tier-3 mods).
 const ENEMY_DATA = {
@@ -92,6 +93,42 @@ const ENEMY_DATA = {
     isBoss: true, colour: 0x1b8a64, size: 26, traits: ['spawner', 'armoured'], rareDrop: 'engine',
     spawn: { type: 'salvSkiff', count: 2, every: 6000, enragedEvery: 3500 },
     card: { title: 'The Makombora', trait: 'BOSS · SPAWNER', body: 'Umbaji’s flagship. 2400 hull, 6 armour, and it launches Skiffs as it sails — faster once it’s badly hurt. Bombers, Mk II hull-piercers and flares.' }
+  },
+  helixLancer: {
+    key: 'helixLancer', name: 'HELIX LANCER',
+    hp: 1100, speed: 70, partsReward: 45, baseDamage: 8, armour: 3,
+    isBoss: true, colour: 0x9fe8ff, size: 20, traits: ['fast', 'shielded', 'armoured'], rareDrop: 'engine',
+    shield: { hp: 300, regen: 3000 },
+    card: { title: 'Helix Lancer', trait: 'BOSS · FAST · SHIELDED', body: 'A strike craft built to punch through defences: quick, shielded and plated. Slow it with Barricades and nets, then hit it hard while the shield is down.' }
+  },
+  helixMothership: {
+    key: 'helixMothership', name: 'THE MOTHERSHIP',
+    hp: 5200, speed: 20, partsReward: 120, baseDamage: 20, armour: 6,
+    isBoss: true, colour: 0x2fb6d6, size: 30, traits: ['spawner', 'projector', 'shielded', 'armoured'], rareDrop: 'engine',
+    shield: { hp: 600, regen: 5000 },
+    shieldAura: { amount: 50, radius: 140, every: 3500 },
+    spawn: { type: 'helixDrone', count: 3, every: 7000, enragedEvery: 4000 },
+    card: { title: 'The Mothership', trait: 'FINAL BOSS', body: 'Helix\u2019s command ship: 5200 hull, 6 armour, a huge shield that recharges, a shield for every craft around it, and drones launched as it sails. Everything you have.' }
+  },
+  // ── IOA Navy ─────────────────────────────────────────────────────────
+  ioaCutter: {
+    key: 'ioaCutter', name: 'IOA CUTTER',
+    hp: 140, speed: 150, partsReward: 6, baseDamage: 3, armour: 2,
+    colour: 0x5a7a9a, size: 12, traits: ['fast', 'armoured'],
+    card: { title: 'IOA Cutter', trait: 'FAST · ARMOURED', body: 'Navy interceptors: quick, and plated against small rounds. Barricades slow them; Mk II hull-piercers and Bombers punch through.' }
+  },
+  ioaGunboat: {
+    key: 'ioaGunboat', name: 'IOA GUNBOAT',
+    hp: 520, speed: 50, partsReward: 18, baseDamage: 6, armour: 7,
+    colour: 0x34506e, size: 18, traits: ['armoured'], rareDrop: 'plate',
+    card: { title: 'IOA Gunboat', trait: 'HEAVY ARMOUR', body: 'A proper warship. 7 armour shrugs off Gunner rounds entirely — Bombers, flares, Siphons and hull-piercing mods.' }
+  },
+  ortegaFlagship: {
+    key: 'ortegaFlagship', name: 'THE SOVEREIGN',
+    hp: 3200, speed: 24, partsReward: 90, baseDamage: 14, armour: 8,
+    isBoss: true, colour: 0x24405e, size: 28, traits: ['spawner', 'armoured'], rareDrop: 'engine',
+    spawn: { type: 'ioaCutter', count: 2, every: 6500, enragedEvery: 3800 },
+    card: { title: 'The Sovereign', trait: 'BOSS · SPAWNER', body: 'Commander Ortega\u2019s flagship: 3200 hull, 8 armour, and Cutters launched from its davits — faster once it\u2019s hurt.' }
   },
   frontCommander: {
     key: 'frontCommander', name: 'FRONT COMMANDER',

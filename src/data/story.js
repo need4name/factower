@@ -13,7 +13,8 @@ const CHARACTERS = {
   umbaji:   { name: 'Umbaji',        colour: 0x52c47f, role: 'Captain of the SALV Collective' },
   borga:    { name: 'Borga',         colour: 0x9d7ff0, role: 'More cybernetics than woman' },
   agent:    { name: 'Rogue agent',   colour: 0x7fe3ff, role: 'Walked out on Helix' },
-  voice:    { name: 'Muffled voice', colour: 0x8b9bb0, role: 'Claims to speak for Luis Ortega, IOA' }
+  voice:    { name: 'Muffled voice', colour: 0x8b9bb0, role: 'Claims to speak for Luis Ortega, IOA' },
+  ortega:   { name: 'Cmdr. Ortega',  colour: 0xdfe6ee, role: 'Luis Ortega, IOA Navy. Wants your turbine' }
 };
 
 const STORY_BEATS = {
@@ -222,5 +223,117 @@ const STORY_BEATS = {
     ['agent', 'They don\u2019t want the Front. They don\u2019t want your raft. They want the turbines.'],
     ['tim', 'Then we\u2019re next.'],
     ['agent', 'Everyone is next.']
+  ],
+
+  // ── Story 4 · The Ortega Deal (draft) ───────────────────────────────────
+  's4-1.before': [
+    ['voice', '(on the radio) The Commander will see you. Hold your water against Helix first. He likes to watch.'],
+    ['agent', 'Helix has a forward relay west of here. It\u2019ll send everything it has at you.']
+  ],
+  's4-1.after': [
+    ['narrator', 'A grey IOA launch idles just out of range the whole fight. Nobody on it lifts a finger.'],
+    ['ortega', '(on the radio) Adequate. Bring me something real and we\u2019ll talk.']
+  ],
+  's4-2.before': [
+    ['agent', 'The relay tells the Advance Force where to sail. Blind it and they\u2019re just boats.'],
+    ['borga', 'I like blind boats.']
+  ],
+  's4-2.after': [
+    ['narrator', 'The relay mast topples into the sea, still blinking.'],
+    ['ortega', '(on the radio) Now you have my attention.']
+  ],
+  's4-3.before': [
+    ['ortega', 'Luis Ortega. IOA Navy. Let\u2019s see how your raft does against professionals.'],
+    ['tim', 'That\u2019s not a meeting. That\u2019s a fleet.']
+  ],
+  's4-3.after': [
+    ['ortega', 'Good. You held. So here is my offer.'],
+    ['ortega', 'Fly the IOA flag. My navy guards your water, and you run your turbine for us.'],
+    ['ortega', 'Or stay free, and face Helix \u2014 and me \u2014 on your own.'],
+    ['bet', 'Safe bet or long odds. Your call, boss.'],
+    ['choice', { key: 'ortega', prompt: 'What do you tell Ortega?', options: [
+      { value: 'ioa',  label: 'SIDE WITH THE IOA', sub: 'IOA escort: your base is 30% tougher in Stories 4\u20135' },
+      { value: 'free', label: 'STAY FREE',        sub: 'Your towers hit shields 40% harder' } ] }],
+    ['ortega', 'A sensible choice. Helix will hear of it soon enough.', { if: { ortega: 'ioa' } }],
+    ['tim', 'I hope we don\u2019t regret this.', { if: { ortega: 'ioa' } }],
+    ['ortega', 'Then you\u2019re a fool, and the sea is full of them.', { if: { ortega: 'free' } }],
+    ['borga', 'Nobody owns this raft. Good.', { if: { ortega: 'free' } }]
+  ],
+  's4-4.before': [
+    ['agent', 'Helix knows you\u2019ve taken the IOA flag. They\u2019re coming to make an example of you.', { if: { ortega: 'ioa' } }],
+    ['ortega', '(on the radio) My ships are busy elsewhere. Hold until they\u2019re not.', { if: { ortega: 'ioa' } }],
+    ['narrator', 'Grey hulls on the horizon. Ortega\u2019s answer.', { if: { ortega: 'free' } }],
+    ['bet', 'He\u2019s not even pretending to be friendly now.', { if: { ortega: 'free' } }]
+  ],
+  's4-4.after': [
+    ['tim', 'We held. Whose side was that again?', { if: { ortega: 'ioa' } }],
+    ['borga', 'Navy boats sink the same as any other.', { if: { ortega: 'free' } }]
+  ],
+  's4-5.before': [
+    ['ortega', 'Helix runs its advance from a relay station. Burn it and earn your flag.', { if: { ortega: 'ioa' } }],
+    ['agent', 'Ortega\u2019s fleet drinks from one depot. No fuel, no navy.', { if: { ortega: 'free' } }]
+  ],
+  's4-5.after': [
+    ['ortega', '(on the radio) Well done. The Navy remembers its friends.', { if: { ortega: 'ioa' } }],
+    ['narrator', 'The depot burns all night. Somewhere, Ortega is shouting at someone.', { if: { ortega: 'free' } }]
+  ],
+  's4-6.before': [
+    ['agent', 'That\u2019s a Lancer. Helix strike craft. They only send it when they mean it.', { if: { ortega: 'ioa' } }],
+    ['ortega', '(on the radio) My ships are\u2026 delayed. Good luck.', { if: { ortega: 'ioa' } }],
+    ['ortega', 'You burned my depot. Now you deal with me.', { if: { ortega: 'free' } }],
+    ['narrator', 'The SOVEREIGN rounds the reef, guns out.', { if: { ortega: 'free' } }]
+  ],
+  's4-6.after': [
+    ['narrator', 'The Lancer breaks apart in a long line of fire.', { if: { ortega: 'ioa' } }],
+    ['ortega', '(on the radio) Impressive. Keep the turbine running. The IOA will need it.', { if: { ortega: 'ioa' } }],
+    ['narrator', 'The SOVEREIGN lists, burns, and limps away. Ortega doesn\u2019t say a word.', { if: { ortega: 'free' } }],
+    ['agent', 'That\u2019s a lot of noise. Helix will have heard it.'],
+    ['agent', 'They\u2019re not sending the Advance Force next time. They\u2019re sending the Mothership.']
+  ],
+
+  // ── Story 5 · The Turbine War (draft) ───────────────────────────────────
+  's5-1.before': [
+    ['narrator', 'The sea goes dark to the west. Every crew that can still float is running east.'],
+    ['tim', 'Front, SALV, Salt Children\u2026 all of them. And Helix is right behind.']
+  ],
+  's5-1.after': [
+    ['agent', 'The Mothership powers its drones through a cable barge. Cut the cable and it starves.']
+  ],
+  's5-2.before': [
+    ['borga', 'A cable. I can cut a cable.'],
+    ['ortega', '(on the radio) IOA gunboats will cover your approach. For once, we want the same thing.', { if: { ortega: 'ioa' } }]
+  ],
+  's5-2.after': [
+    ['narrator', 'The cable snaps and whips back into the dark. Far away, something huge stops humming.']
+  ],
+  's5-3.before': [
+    ['bet', 'It\u2019s going to be a long night. Keep the lights on.']
+  ],
+  's5-3.after': [
+    ['narrator', 'Dawn. The raft is still here. So is the Mothership, on the horizon.'],
+    ['tim', 'Everything we\u2019ve built comes down to this.']
+  ],
+  's5-4.before': [
+    ['agent', 'Shields up front, drones underneath. Break the shield and keep shooting.'],
+    ['borga', 'Big ship. Bigger target.'],
+    ['ortega', '(on the radio) Every IOA ship I have is on its way. Hold until we get there.', { if: { ortega: 'ioa' } }],
+    ['bet', 'No navy, no Helix, no flag. Just us. I like those odds.', { if: { ortega: 'free' } }]
+  ],
+  's5-4.after': [
+    ['narrator', 'The Mothership tilts, groans, and slides under the black water.'],
+    ['ortega', '(on the radio) The IOA thanks you. Your turbine is under Navy protection now. Permanently.', { if: { ortega: 'ioa' } }],
+    ['tim', 'We won. So why does it feel like we lost something?', { if: { ortega: 'ioa' } }],
+    ['narrator', 'No navy came. None was needed. Crews start drifting in from the east to trade.', { if: { ortega: 'free' } }],
+    ['bet', 'Free water. Hard to price that.', { if: { ortega: 'free' } }],
+    ['tim', 'The turbine\u2019s still turning. Let\u2019s keep it that way.'],
+    ['narrator', 'THE END \u2014 thank you for playing. Endless and Hard Mode are waiting at the Dock.']
+  ],
+
+  // Played at the Dock if the choice after The Offer was never made
+  'ortega.pick': [
+    ['ortega', '(on the radio) I\u2019m still waiting for an answer.'],
+    ['choice', { key: 'ortega', prompt: 'What do you tell Ortega?', options: [
+      { value: 'ioa',  label: 'SIDE WITH THE IOA', sub: 'IOA escort: your base is 30% tougher in Stories 4\u20135' },
+      { value: 'free', label: 'STAY FREE',        sub: 'Your towers hit shields 40% harder' } ] }]
   ]
 };

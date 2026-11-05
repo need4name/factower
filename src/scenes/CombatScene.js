@@ -43,6 +43,11 @@ this.parts             = E.getPartsStartBonus();   // Stock Cache
 this.baseHp            = Math.round((this.levelData ? this.levelData.baseHp : 10) * skillTreeEffects.getBaseHpMult());
 this.baseHpMax         = this.baseHp;
 this.fatalSaves        = skillTreeEffects.getFatalSaveCharges();
+// Ortega's deal (Story 4): the IOA escort toughens the base in Stories 4–5;
+// staying free, the rogue agent's trick makes every tower hit shields harder
+const deal = Choices.ortega(this.saveData);
+if (deal === 'ioa' && this.storylineId >= 5) { this.baseHp = this.baseHpMax = Math.round(this.baseHp * 1.3); this.parts += 10; }
+this.shieldBreak = deal === 'free' ? 1.4 : 1;
 this.currentWave       = 0;
 this.waveActive        = false;
 this.gameOver          = false;
@@ -797,7 +802,8 @@ UI.text(this, exitPt.x + (baseRight ? -44 : 44), this.CB - 10, 'YOUR BASE', 'tag
 drawAmbience(map) {
 const L = this.PLAY_LEFT, T = this.PLAY_TOP, W = this.PLAY_RIGHT - this.PLAY_LEFT, H = this.PLAY_BOTTOM - this.PLAY_TOP;
 const light = { 1: [0xffa860, 0xffa860, 0.12, 0, 0.35], 2: [0x52c4a0, 0x0b1820, 0.06, 0.12, 0.4],
-                3: [0x6a4f8f, 0xe8805a, 0.18, 0.08, 0.5], 4: [0x050a18, 0x050a18, 0.34, 0.34, 0.7] }[map.id] || [0, 0, 0, 0, 0.35];
+                3: [0x6a4f8f, 0xe8805a, 0.18, 0.08, 0.5], 4: [0x050a18, 0x050a18, 0.34, 0.34, 0.7],
+                5: [0xb7d4ea, 0x1a2c3c, 0.08, 0.12, 0.45], 6: [0x1a0a10, 0x0a1818, 0.3, 0.26, 0.75] }[map.id] || [0, 0, 0, 0, 0.35];
 // Tint and vignette are painted once into one texture per story, so the
 // whole effect costs a single full-screen image per frame
 const key = 'light_' + map.id;
@@ -1418,8 +1424,9 @@ if (this.sk.mark && !this._markUsed && TOWER_DATA[sourceType]) this.markEnemy(en
 if (enemy.markedUntil > this.simNow) damage *= this.sk.mark.multiplier;
 // Shields soak the hit before armour; beams and burns slip past them
 if (enemy.shield > 0 && !o.trueDamage && !o.beam) {
-  const soak = Math.min(enemy.shield, damage);
-  enemy.shield -= soak; damage -= soak;
+  // (the shield takes extra from the agent's trick, if you stayed free)
+  const soak = Math.min(enemy.shield, damage * this.shieldBreak);
+  enemy.shield -= soak; damage -= soak / this.shieldBreak;
   if (enemy.shield <= 0) { enemy.shield = 0; this.shieldBreak(enemy); }
   if (damage <= 0) return;
 }

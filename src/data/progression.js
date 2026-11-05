@@ -4,9 +4,11 @@
 //   s1-1..   Story 1 · SALV    (storyline 2)
 //   s2-1..   Story 2 · Borga   (storyline 3)
 //   s3-1..   Story 3 · Helix   (storyline 4)
+//   s4-1..   Story 4 · Ortega  (storyline 5)  — branches on save.choices.ortega
+//   s5-1..   Story 5 · Turbine (storyline 6)
 // A feature unlocks once its level has been cleared. `label` is what the
 // victory screen announces.
-const STORYLINE_PREFIX = { 1: 'p', 2: 's1-', 3: 's2-', 4: 's3-' };
+const STORYLINE_PREFIX = { 1: 'p', 2: 's1-', 3: 's2-', 4: 's3-', 5: 's4-', 6: 's5-' };
 
 const UNLOCKS = {
   worker2:    { at: 'p1',   label: 'Uncle Bet joins the factory as your second worker.' },
@@ -25,7 +27,7 @@ const UNLOCKS = {
 };
 
 // Storylines open once any of these levels is cleared
-const STORYLINE_GATES = { 1: [], 2: ['p7'], 3: ['s1-3'], 4: ['s1-6'] };
+const STORYLINE_GATES = { 1: [], 2: ['p7'], 3: ['s1-3'], 4: ['s1-6'], 5: ['s3-4'], 6: ['s4-6'] };
 
 const Progress = {
   key(storylineId, levelId) { return (STORYLINE_PREFIX[storylineId] || 'x') + levelId; },
@@ -112,4 +114,22 @@ const Stars = {
   },
   // Hard mode for defences: tougher, faster raiders and a weaker base
   HARD: { hp: 1.5, speed: 1.1, baseHp: 0.7, turrets: 1.3, bolts: 3, materials: 1.5 }
+};
+
+// ── Story choices ────────────────────────────────────────────────────────────
+// A story beat can ask the player to choose (see Story.js). The answer is
+// kept in save.choices; levels can carry `variants: { <answer>: {...} }`
+// that replace their waves, name and description for that answer.
+const Choices = {
+  get(save, key) { return (save && save.choices && save.choices[key]) || null; },
+  set(key, value) { SaveManager.update(s => { if (!s.choices) s.choices = {}; s.choices[key] = value; }); },
+  // The level as this save plays it
+  apply(level, save) {
+    if (!level || !level.variants) return level;
+    const pick = Object.keys(level.variants).find(k => Object.values(save && save.choices || {}).includes(k));
+    return pick ? Object.assign({}, level, level.variants[pick]) : level;
+  },
+  // Ortega deal perks: siding with the IOA brings an escort (a tougher base in
+  // Stories 4–5); staying free, the rogue agent shows how to break Helix shields
+  ortega(save) { return Choices.get(save, 'ortega'); }
 };

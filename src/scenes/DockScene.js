@@ -18,6 +18,10 @@ class DockScene extends Phaser.Scene {
       chips: [{ kind: 'towers', value: this.stockTotal() }]
     });
 
+    // The Ortega choice must be made before Story 4 can go on
+    if (Progress.done(this.saveData, 's4-3') && !Choices.ortega(this.saveData))
+      this.time.delayedCall(300, () => Story.play(this, 'ortega.pick', () => this.scene.restart(), { replay: true }));
+
     this.contentContainer = null;
     this.currentView      = 'campaigns';
     this.scrollY          = 0;
@@ -174,7 +178,7 @@ class DockScene extends Phaser.Scene {
     const nodes = storyline.levels.map((level, i) => {
       const isDone = Progress.done(this.saveData, Progress.key(storyline.id, level.id));
       const lock = Progress.levelLock(this.saveData, storyline.id, level);
-      return { level, isDone, lock, x: i % 2 ? width - 92 : 92, y: y0 + i * gap };
+      return { level: Choices.apply(level, this.saveData), isDone, lock, x: i % 2 ? width - 92 : 92, y: y0 + i * gap };
     });
     const next = nodes.find(n => !n.lock && !n.isDone);
 

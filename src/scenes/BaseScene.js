@@ -88,7 +88,7 @@ nextPlayable() {
     for (const l of st.levels) {
       const key = Progress.key(st.id, l.id);
       if (Progress.done(this.saveData, key)) continue;
-      if (!Progress.levelLock(this.saveData, st.id, l)) return { storylineId: st.id, level: l, key };
+      if (!Progress.levelLock(this.saveData, st.id, l)) return { storylineId: st.id, level: Choices.apply(l, this.saveData), key };
     }
   }
   return null;

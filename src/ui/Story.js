@@ -4,6 +4,11 @@
 // jump to the end. Each beat plays once per save (save.storySeen).
 //
 //   Story.play(scene, 'p1.after', () => { ...carry on... });
+//
+// A line can carry a condition, [speaker, text, { if: { ortega: 'ioa' } }],
+// and is only shown when the save's story choices match. A choice line,
+// ['choice', { key, prompt, options: [{ value, label, sub }] }], asks the
+// player to pick; the answer is stored with Choices.set(key, value).
 
 const Story = {
   seen(key) {
@@ -16,6 +21,14 @@ const Story = {
   },
 
   has(key) { return !!STORY_BEATS[key] && !Story.seen(key); },
+
+  // Does a line's { if } condition match the save's choices?
+  shows(line) {
+    const cond = line[2] && line[2].if;
+    if (!cond) return true;
+    const save = SaveManager.load();
+    return Object.entries(cond).every(([k, v]) => Choices.get(save, k) === v);
+  },
 
   play(scene, key, onDone, opts) {
     const lines = STORY_BEATS[key];
@@ -46,6 +59,7 @@ const Story = {
 
     const finish = () => {
       if (finished) return;
+      clearChoice();
       finished = true;
       scene._storyOpen = false;
       scene._inputBlockedUntil = scene.time.now + 250;
@@ -53,10 +67,43 @@ const Story = {
       items.forEach(e => e && e.destroy && e.destroy());
       done();
     };
-    const skip = UI.button(scene, width - 16 - 40, py - panelH / 2 - 24, 72, 34, { label: 'SKIP', variant: 'ghost', size: 12, depth: D + 4, ignoreBlock: true, onTap: finish });
+    // SKIP jumps to the end — or to a choice still to be made
+    const skip = UI.button(scene, width - 16 - 40, py - panelH / 2 - 24, 72, 34, { label: 'SKIP', variant: 'ghost', size: 12, depth: D + 4, ignoreBlock: true, onTap: () => {
+      if (choiceItems.length) return;
+      const c = lines.findIndex((l, k) => k > i && l[0] === 'choice');
+      if (c >= 0) { i = c; show(); } else finish();
+    } });
     items.push(skip);
 
+    // Choice buttons, shown in place of "tap to continue"
+    let choiceItems = [];
+    const clearChoice = () => { choiceItems.forEach(e => e.destroy()); choiceItems = []; };
+    const showChoice = (c) => {
+      const top = py - panelH / 2;
+      portrait.clear(); initial.setText(''); roleT.setText(''); counter.setText('');
+      UI.drawPanel(panel, width / 2, py, width - 32, panelH, { fill: 0x111720, stroke: UI.C.amber, strokeAlpha: 0.8, radius: 18 });
+      nameT.setPosition(36, top + 26).setText(c.prompt).setColor(UI.T.amber);
+      bodyT.setText('');
+      hint.setVisible(false);
+      c.options.forEach((o, k) => {
+        const by = top + 74 + k * 70;
+        const b = UI.button(scene, width / 2, by, width - 72, 60, { label: o.label, sub: o.sub, variant: k === 0 ? 'primary' : 'secondary', size: 14,
+          depth: D + 4, ignoreBlock: true, onTap: () => {
+            Choices.set(c.key, o.value); clearChoice(); hint.setVisible(true);
+            advance();
+          } });
+        choiceItems.push(b);
+      });
+    };
+    // Next line that should show (skipping ones whose condition doesn't match)
+    const advance = () => {
+      i++;
+      while (i < lines.length && !Story.shows(lines[i])) i++;
+      if (i >= lines.length) finish(); else show();
+    };
+
     const show = () => {
+      if (lines[i][0] === 'choice') { showChoice(lines[i][1]); return; }
       const [who, text] = lines[i];
       const ch = CHARACTERS[who] || CHARACTERS.narrator;
       const narr = who === 'narrator';
@@ -80,8 +127,8 @@ const Story = {
       bodyT.setText(text).setAlpha(0);
       scene.tweens.add({ targets: bodyT, alpha: 1, duration: 200 });
     };
-    dim.on('pointerup', () => { if (finished) return; Sfx.play('tick'); i++; if (i >= lines.length) finish(); else show(); });
-    show();
+    dim.on('pointerup', () => { if (finished || choiceItems.length) return; Sfx.play('tick'); advance(); });
+    i = -1; advance();
     return { finish };
   }
 };

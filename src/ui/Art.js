@@ -24,7 +24,11 @@ const Art = {
     3: { name: 'dusk',  deck: 0x302c3c, deckAlt: 0x332f40, seam: 0x1f1c28, patch: [0x6a4f8f, 0x8a5a3b, 0x3f6c86],
          water: 0x2a2f5a, waterDeep: 0x1b1f40, glint: 0xb7a8f0, edge: 0x100f1c },
     4: { name: 'night', deck: 0x222a36, deckAlt: 0x252e3a, seam: 0x151b23, patch: [0x2f5f7a, 0x5d4a6e, 0x3a5a4a],
-         water: 0x0f2a44, waterDeep: 0x091a2c, glint: 0x7fe3ff, edge: 0x060d16 }
+         water: 0x0f2a44, waterDeep: 0x091a2c, glint: 0x7fe3ff, edge: 0x060d16 },
+    5: { name: 'steel', deck: 0x2e343c, deckAlt: 0x323942, seam: 0x1c2128, patch: [0x34506e, 0x6b7280, 0x8a6a42],
+         water: 0x2a4256, waterDeep: 0x1a2c3c, glint: 0xb7d4ea, edge: 0x0e1820 },
+    6: { name: 'storm', deck: 0x262a2e, deckAlt: 0x2a2e33, seam: 0x16191c, patch: [0x5a3a3a, 0x3a4a5a, 0x5a5a3a],
+         water: 0x1c3a3a, waterDeep: 0x102424, glint: 0x9fd8c8, edge: 0x081212 }
   },
 
   theme(storylineId) { return Art.THEMES[storylineId] || Art.THEMES[1]; },
@@ -120,6 +124,11 @@ const Art = {
       salvRam:        { prow: 'ram',   beam: 0.55, hull: 0x1f5f52, deck: 0x163f37, cabin: true, crew: 2, hats: [0x2f7d6a, 0xe8e1c8, 0x52c47f] },
       umbajiFlagship: { prow: 'point', beam: 0.46, hull: 0x1b8a64, deck: 0x6b5232, cabin: true, mast: true, flag: 0x52c47f, guns: true, cargo: true, crew: 4, sail: 0xe8e1c8, hats: [0x2f7d6a, 0xe8e1c8, 0x52c47f] },
       helixDrone:     { helix: true, shape: 'dart',  hull: 0xd8e4ea, glow: 0x7fe3ff },
+      helixLancer:    { helix: true, shape: 'arrow', hull: 0x9fe8ff, glow: 0xffffff },
+      helixMothership:{ helix: true, shape: 'hex',   hull: 0x2fb6d6, glow: 0xe8fbff },
+      ioaCutter:      { prow: 'point', beam: 0.4,  hull: 0x5a7a9a, deck: 0x3a5068, stripe: 0xf4f6f8, crew: 2, hats: [0xf4f6f8, 0x2f5f8a, 0x1a2a3a] },
+      ioaGunboat:     { prow: 'point', beam: 0.48, hull: 0x34506e, deck: 0x22344a, cabin: true, guns: true, crew: 3, hats: [0xf4f6f8, 0x2f5f8a, 0x1a2a3a] },
+      ortegaFlagship: { prow: 'point', beam: 0.46, hull: 0x24405e, deck: 0x1a2a3a, cabin: true, guns: true, mast: true, flag: 0xf4f6f8, cargo: true, crew: 4, hats: [0xf4f6f8, 0x2f5f8a, 0x1a2a3a] },
       helixTrooper:   { helix: true, shape: 'pod',   hull: 0x9fb4c2, glow: 0x7fe3ff },
       helixWarden:    { helix: true, shape: 'hex',   hull: 0x5fd0e6, glow: 0xe8fbff },
       helixSpearhead: { helix: true, shape: 'arrow', hull: 0x2fb6d6, glow: 0xe8fbff }

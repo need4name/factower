@@ -25,7 +25,9 @@
 // ordinary raiders add to the scrap trickle (one Plastic Scrap per 15
 // sunk, see CombatScene.saveProgress).
 const _NCF_DROPS   = { frontCommander: { plasticScrap: 1, salvagedMetal: 1 } };
-const _HELIX_DROPS = { helixSpearhead: { plasticScrap: 2, salvagedMetal: 2 } };
+const _HELIX_DROPS = { helixSpearhead: { plasticScrap: 2, salvagedMetal: 2 }, helixLancer: { plasticScrap: 2, salvagedMetal: 2 },
+                       helixMothership: { plasticScrap: 4, salvagedMetal: 4 } };
+const _IOA_DROPS   = { ortegaFlagship: { plasticScrap: 3, salvagedMetal: 3 } };
 const _SALV_DROPS  = { umbajiFlagship: { plasticScrap: 2, salvagedMetal: 2 } };
 
 // Compact helpers: _W(_g('saltChild', 8, 1500), ...) is a wave; _P([x, oy], ...) a path
@@ -299,6 +301,137 @@ const LEVEL_DATA = {
                    _W(_g('helixWarden', 2, 6000), _g('helixTrooper', 8, 1400), _g('helixDrone', 18, 500)),
                    _W(_g('helixSpearhead', 1, 0), _g('helixWarden', 2, 7000), _g('helixTrooper', 10, 1200), _g('helixDrone', 20, 450)) ],
           materialRewards: { killDrops: _HELIX_DROPS, completionBonus: { plasticScrap: 1, salvagedMetal: 2 } } }
+      ]
+    },
+
+    // ── STORY 4 — THE ORTEGA DEAL ─────────────────────────────────────────────
+    // Branches after The Offer (s4-3) on save.choices.ortega: 'ioa' or 'free'.
+    {
+      id: 5, name: 'STORY 4', short: 'Story 4', title: 'The Ortega Deal',
+      description: 'The IOA comes in person. Its commander wants your turbine.',
+      faction: 'IOA Navy · Helix',
+      levels: [
+        { id: 1, name: 'OFFICE OF ORTEGA', requires: ['s2-7'],
+          description: 'Ortega wants to see you hold against Helix before he talks.',
+          difficulty: 19, recommendedTowers: 10, hpScale: 1.45, baseHp: 18,
+          path: _P([40, 0], [40, 120], [200, 120], [200, 40], [350, 40], [350, 260], [120, 260], [120, 380], [300, 380], [300, 418]),
+          waves: [ _W(_g('scrapRunner', 10, 900), _g('helixDrone', 12, 850)),
+                   _W(_g('helixTrooper', 8, 1500), _g('helixDrone', 14, 600)),
+                   _W(_g('helixWarden', 2, 6000), _g('helixTrooper', 8, 1300), _g('bilgeRat', 20, 160)),
+                   _W(_g('helixWarden', 3, 5000), _g('helixTrooper', 10, 1100), _g('helixDrone', 20, 450)) ],
+          materialRewards: { killDrops: _HELIX_DROPS, completionBonus: { plasticScrap: 3, salvagedMetal: 3 } } },
+
+        { id: 2, name: 'PROOF', type: 'raid',
+          description: 'A Helix relay two reefs west. Wreck it and Ortega will talk.',
+          difficulty: 19, recommendedTowers: 11,
+          path: _P([350, 0], [350, 90], [60, 90], [60, 200], [300, 200], [300, 310], [100, 310], [100, 418]),
+          turrets: [ { x: 200, oy: 40, kind: 'salvo' }, { x: 210, oy: 145, kind: 'gun' }, { x: 15, oy: 150, kind: 'heavy' },
+                     { x: 370, oy: 250, kind: 'salvo' }, { x: 180, oy: 255, kind: 'gun' }, { x: 200, oy: 360, kind: 'heavy' }, { x: 20, oy: 360, kind: 'salvo' } ],
+          turretScale: 1.3, core: { hp: 750 },
+          loot: { plasticScrap: 4, salvagedMetal: 5 } },
+
+        { id: 3, name: 'THE OFFER',
+          description: 'Ortega\u2019s cutters test your defences. Then he makes his offer.',
+          difficulty: 20, recommendedTowers: 10, hpScale: 1.35, baseHp: 18,
+          path: _P([195, 0], [195, 80], [40, 80], [40, 220], [350, 220], [350, 330], [195, 330], [195, 418]),
+          waves: [ _W(_g('ioaCutter', 12, 950)),
+                   _W(_g('ioaCutter', 14, 750), _g('ioaGunboat', 3, 4000)),
+                   _W(_g('ioaGunboat', 5, 3000), _g('ioaCutter', 18, 550)),
+                   _W(_g('ioaGunboat', 6, 2600), _g('ioaCutter', 22, 450)) ],
+          materialRewards: { killDrops: _IOA_DROPS, completionBonus: { plasticScrap: 3, salvagedMetal: 3 } } },
+
+        { id: 4, name: 'COUNTERSTRIKE',
+          description: 'Helix knows you\u2019ve chosen a side.',
+          difficulty: 21, recommendedTowers: 11, hpScale: 1.6, baseHp: 18,
+          path: _P([60, 0], [60, 140], [330, 140], [330, 40], [195, 40], [195, 280], [60, 280], [60, 380], [330, 380], [330, 418]),
+          waves: [ _W(_g('helixDrone', 22, 500), _g('helixTrooper', 6, 1600)),
+                   _W(_g('helixWarden', 3, 5000), _g('helixTrooper', 10, 1200)),
+                   _W(_g('helixTrooper', 12, 1000), _g('helixDrone', 24, 400), _g('helixWarden', 2, 7000)),
+                   _W(_g('helixWarden', 4, 4000), _g('helixTrooper', 14, 900), _g('helixDrone', 26, 380)) ],
+          materialRewards: { killDrops: _HELIX_DROPS, completionBonus: { plasticScrap: 3, salvagedMetal: 3 } },
+          variants: {
+            free: { name: 'ORTEGA\u2019S ANSWER', description: 'You turned the IOA down. Ortega doesn\u2019t take no well.',
+                    waves: [ _W(_g('ioaCutter', 20, 550)),
+                             _W(_g('ioaGunboat', 5, 2800), _g('ioaCutter', 16, 600)),
+                             _W(_g('ioaGunboat', 7, 2200), _g('ioaCutter', 22, 450)),
+                             _W(_g('ioaGunboat', 9, 1800), _g('ioaCutter', 28, 380)) ],
+                    materialRewards: { killDrops: _IOA_DROPS, completionBonus: { plasticScrap: 3, salvagedMetal: 3 } } } } },
+
+        { id: 5, name: 'RELAY STATION', type: 'raid',
+          description: 'The relay that feeds the Advance Force. Burn it for the IOA.',
+          difficulty: 21, recommendedTowers: 12,
+          path: _P([40, 0], [40, 100], [350, 100], [350, 210], [40, 210], [40, 320], [350, 320], [350, 418]),
+          turrets: [ { x: 200, oy: 50, kind: 'heavy' }, { x: 200, oy: 155, kind: 'salvo' }, { x: 375, oy: 160, kind: 'gun' },
+                     { x: 15, oy: 265, kind: 'gun' }, { x: 200, oy: 265, kind: 'heavy' }, { x: 200, oy: 370, kind: 'salvo' }, { x: 375, oy: 260, kind: 'salvo' } ],
+          turretScale: 1.35, core: { hp: 800 },
+          loot: { plasticScrap: 5, salvagedMetal: 5 },
+          variants: { free: { name: 'NAVY DEPOT', description: 'Ortega\u2019s fuel depot. Hit it and his fleet can\u2019t reach you.' } } },
+
+        { id: 6, name: 'THE LANCER', boss: true,
+          description: 'Helix sends its strike craft at the IOA\u2019s new ally.',
+          difficulty: 22, recommendedTowers: 12, hpScale: 1.5, baseHp: 20,
+          path: _P([350, 0], [350, 300], [195, 300], [195, 80], [40, 80], [40, 418]),
+          waves: [ _W(_g('helixDrone', 24, 450), _g('helixTrooper', 8, 1200)),
+                   _W(_g('helixWarden', 3, 4500), _g('helixTrooper', 12, 1000)),
+                   _W(_g('helixTrooper', 14, 900), _g('helixDrone', 26, 380)),
+                   _W(_g('helixLancer', 1, 0), _g('helixWarden', 3, 6000), _g('helixTrooper', 10, 1300)) ],
+          materialRewards: { killDrops: _HELIX_DROPS, completionBonus: { plasticScrap: 4, salvagedMetal: 4 } },
+          variants: {
+            free: { name: 'THE SOVEREIGN', description: 'Ortega comes himself, in his flagship.',
+                    waves: [ _W(_g('ioaCutter', 24, 450), _g('ioaGunboat', 4, 3000)),
+                             _W(_g('ioaGunboat', 7, 2200), _g('ioaCutter', 20, 500)),
+                             _W(_g('ioaGunboat', 9, 1800), _g('ioaCutter', 26, 400)),
+                             _W(_g('ortegaFlagship', 1, 0), _g('ioaGunboat', 4, 5000), _g('ioaCutter', 12, 1200)) ],
+                    materialRewards: { killDrops: _IOA_DROPS, completionBonus: { plasticScrap: 4, salvagedMetal: 4 } } } } }
+      ]
+    },
+
+    // ── STORY 5 — THE TURBINE WAR ─────────────────────────────────────────────
+    {
+      id: 6, name: 'STORY 5', short: 'Story 5', title: 'The Turbine War',
+      description: 'Helix comes for the turbine with everything it has.',
+      faction: 'Helix',
+      levels: [
+        { id: 1, name: 'BLACK WATER',
+          description: 'The whole sea is fleeing east. Helix is right behind it.',
+          difficulty: 23, recommendedTowers: 11, hpScale: 1.6, baseHp: 20,
+          path: _P([195, 0], [195, 60], [350, 60], [350, 180], [40, 180], [40, 300], [350, 300], [350, 380], [195, 380], [195, 418]),
+          waves: [ _W(_g('saltChild', 20, 400), _g('salvSkiff', 14, 600), _g('helixDrone', 12, 700)),
+                   _W(_g('helixTrooper', 12, 1000), _g('scrapRunner', 16, 500)),
+                   _W(_g('helixWarden', 4, 4000), _g('helixTrooper', 12, 1000), _g('helixDrone', 20, 450)),
+                   _W(_g('helixLancer', 1, 0), _g('helixTrooper', 14, 900), _g('helixDrone', 24, 400)) ],
+          materialRewards: { killDrops: _HELIX_DROPS, completionBonus: { plasticScrap: 4, salvagedMetal: 4 } } },
+
+        { id: 2, name: 'CUT THE CABLE', type: 'raid',
+          description: 'The Mothership draws power from a cable barge. Cut it.',
+          difficulty: 23, recommendedTowers: 12,
+          path: _P([60, 0], [60, 130], [330, 130], [330, 40], [195, 40], [195, 260], [330, 260], [330, 418]),
+          turrets: [ { x: 195, oy: 90, kind: 'salvo' }, { x: 15, oy: 200, kind: 'heavy' }, { x: 260, oy: 200, kind: 'gun' },
+                     { x: 130, oy: 300, kind: 'heavy' }, { x: 375, oy: 330, kind: 'salvo' }, { x: 260, oy: 380, kind: 'gun' }, { x: 120, oy: 40, kind: 'gun' } ],
+          turretScale: 1.5, core: { hp: 850 },
+          loot: { plasticScrap: 5, salvagedMetal: 6 } },
+
+        { id: 3, name: 'THE LONG NIGHT',
+          description: 'Six waves before dawn. Keep the lights on.',
+          difficulty: 24, recommendedTowers: 12, hpScale: 1.5, baseHp: 20,
+          path: _P([40, 0], [40, 340], [150, 340], [150, 80], [250, 80], [250, 340], [350, 340], [350, 418]),
+          waves: [ _W(_g('helixDrone', 26, 400)),
+                   _W(_g('helixTrooper', 14, 900)),
+                   _W(_g('helixWarden', 4, 3500), _g('helixDrone', 24, 400)),
+                   _W(_g('helixTrooper', 16, 800), _g('helixWarden', 3, 5000)),
+                   _W(_g('helixLancer', 1, 0), _g('helixDrone', 30, 350)),
+                   _W(_g('helixLancer', 2, 9000), _g('helixWarden', 4, 4000), _g('helixTrooper', 16, 800)) ],
+          materialRewards: { killDrops: _HELIX_DROPS, completionBonus: { plasticScrap: 4, salvagedMetal: 4 } } },
+
+        { id: 4, name: 'THE TURBINE WAR', boss: true,
+          description: 'The Mothership. Everything you have built, right here.',
+          difficulty: 26, recommendedTowers: 12, hpScale: 1.4, baseHp: 22,
+          path: _P([350, 0], [350, 110], [40, 110], [40, 230], [350, 230], [350, 340], [40, 340], [40, 418]),
+          waves: [ _W(_g('helixDrone', 30, 350), _g('helixTrooper', 10, 1100)),
+                   _W(_g('helixWarden', 5, 3200), _g('helixTrooper', 14, 900)),
+                   _W(_g('helixLancer', 2, 8000), _g('helixTrooper', 16, 800), _g('helixDrone', 26, 380)),
+                   _W(_g('helixMothership', 1, 0), _g('helixWarden', 4, 6000), _g('helixTrooper', 12, 1300)) ],
+          materialRewards: { killDrops: _HELIX_DROPS, completionBonus: { plasticScrap: 8, salvagedMetal: 8 } } }
       ]
     }
   ]

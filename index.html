@@ -80,7 +80,9 @@ canvas { display: block; }
 <script src="src/ui/Coach.js"></script>
 <script src="src/ui/Story.js"></script>
 <script src="src/ui/Art.js"></script>
+<script src="src/ui/SaveBackup.js"></script>
 <script src="src/systems/SaveManager.js"></script>
+<script src="src/systems/Settings.js"></script>
 <script src="src/systems/Sfx.js"></script>
 <script src="src/systems/Music.js"></script>
 <script src="src/systems/Factory.js"></script>
@@ -129,6 +131,10 @@ const fontsReady = document.fonts
       '400 16px Inter', '500 16px Inter', '600 16px Inter', '700 16px Inter'
     ].map(f => document.fonts.load(f)))
   : Promise.resolve();
+// Offline play (sw.js). It always fetches the newest version when online.
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
 Promise.race([fontsReady, new Promise(r => setTimeout(r, 3000))])
   .catch(() => {})
   .then(() => { window.__factowerGame = new Phaser.Game(config); });

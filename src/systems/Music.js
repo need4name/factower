@@ -5,7 +5,7 @@
 //
 //   Music.set('calm' | 'battle' | null)
 //
-// Plays through Sfx's output, so the speaker button mutes it too.
+// Plays through Sfx's music output (its own volume, see Settings).
 
 const Music = {
   mood: null, song: null, timer: null,
@@ -51,7 +51,7 @@ const Music = {
     const echo = ctx.createDelay(1), fb = ctx.createGain(), wet = ctx.createGain();
     echo.delayTime.value = 60 / def.bpm * 0.75; fb.gain.value = 0.32; wet.gain.value = 0.5;
     echo.connect(fb); fb.connect(echo); echo.connect(wet); wet.connect(bus);
-    bus.connect(Sfx.out);
+    bus.connect(Sfx.musicOut || Sfx.out);
     return { def, bus, echo, next: 0, i: 0 };
   },
 

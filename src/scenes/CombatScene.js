@@ -411,6 +411,7 @@ if (Math.abs(mult - 1) > 0.04) {
 }
 
 Sfx.play('place');
+Settings.buzz(12);
 const hitZone    = this.add.circle(x, y, 20, 0xffffff, 0).setDepth(10).setInteractive();
 const art        = Art.tower(this, x, y, type);
 const towerCircle = art.base.setDepth(4);
@@ -636,6 +637,7 @@ if (!m || !this.canTakePath(tower, i) || !this.canAffordMod(m)) return;
 
 this.parts -= m.cost;
 Sfx.play('upgrade');
+Settings.buzz([15, 30, 15]);
 if (m.rare) this.rare[m.rare]--;
 this.partsText.setText('' + this.parts);
 tower.mods[i]++;
@@ -804,15 +806,16 @@ if (!this.textures.exists(key)) {
   ctx.fillStyle = rad; ctx.fillRect(0, 0, 128, 192);
   tex.refresh();
 }
-this.add.image(L + W / 2, T + H / 2, key).setDisplaySize(W, H).setDepth(9);
+this.ambFx = [this.add.image(L + W / 2, T + H / 2, key).setDisplaySize(W, H).setDepth(9)];
 // Lamps glow when the light is low
 if (map.id >= 3) map.lamps.forEach(p => {
   const glow = this.add.image(p.x, p.y, 'glow').setTint(0xffc46a).setBlendMode('ADD').setScale(0.9).setAlpha(0.55).setDepth(9.1);
+  this.ambFx.push(glow);
   this.tweens.add({ targets: glow, alpha: 0.4, duration: 900 + Math.random() * 600, yoyo: true, repeat: -1 });
 });
 // Fog bank where the raiders come in
 const s0 = this.pathPoints[0];
-this.add.particles(s0.x, s0.y + 10, 'glow', { lifespan: 3200, speedX: { min: -6, max: 6 }, speedY: { min: 2, max: 8 }, scale: { start: 1.4, end: 2.4 },
+this.fogFx = this.add.particles(s0.x, s0.y + 10, 'glow', { lifespan: 3200, speedX: { min: -6, max: 6 }, speedY: { min: 2, max: 8 }, scale: { start: 1.4, end: 2.4 },
   alpha: { start: 0.24, end: 0 }, tint: 0xdfe6ee, frequency: 420, emitZone: { type: 'random', source: new Phaser.Geom.Circle(0, 0, 26) } }).setDepth(8.8);
 // Your base: a palisade gate across the channel where it leaves the map
 const e1 = this.pathPoints[this.pathPoints.length - 1], e0 = this.pathPoints[this.pathPoints.length - 2];
@@ -826,6 +829,8 @@ for (let i = 0; i < this.pathPoints.length - 1; i++) {
 }
 this._pathLen = tot;
 this.flotsam = []; this._nextFlot = 1500; this._nextGull = 4000;
+this.ambFx.push(this.fogFx);
+if (Settings.get('reducedFx')) this.applyReducedFx(true);
 }
 
 pointOnPath(d) {
@@ -836,7 +841,7 @@ return { x: sg.a.x + (sg.b.x - sg.a.x) * t, y: sg.a.y + (sg.b.y - sg.a.y) * t, a
 
 // Gulls overhead and rubbish drifting down the channels (ticked from update)
 ambienceTick(dt) {
-if (!this._segs) return;
+if (!this._segs || Settings.get('reducedFx')) return;
 this._nextFlot -= dt; this._nextGull -= dt;
 if (this._nextFlot <= 0 && this.flotsam.length < 5) {
   this._nextFlot = 3500 + Math.random() * 4500;
@@ -878,9 +883,9 @@ const g = this.add.graphics().setDepth(12);
 g.fillStyle(UI.C.bg, 0.94); g.fillRect(0, 0, width, H);
 g.fillStyle(UI.C.line, 1);  g.fillRect(0, H - 1, width, 1);
 
-// Back → abort confirm
-const back = UI.button(this, 36, 40, 44, 44, { variant: 'secondary', radius: 22, depth: 13, onTap: () => this.showAbortConfirm() });
-back.add(UI.icon(this, -1, 0, 'back', 14, 0xeef2f7));
+// Pause → settings, Field Manual, resume or abandon
+const back = UI.button(this, 36, 40, 44, 44, { variant: 'secondary', radius: 22, depth: 13, onTap: () => this.showPauseMenu() });
+back.add(UI.icon(this, 0, 0, 'pause', 14, 0xeef2f7));
 
 UI.text(this, 70, 30, this.levelData ? this.titleCase(this.levelData.name) : 'Level', 'heading', { size: 17, origin: [0, 0.5], depth: 13 });
 this.waveIndicator = UI.text(this, 70, 52, 'WAVE 0 / ' + this.levelData.waves.length, 'label', { size: 11, origin: [0, 0.5], depth: 13 });
@@ -983,10 +988,39 @@ refreshTowerButtons() {
 titleCase(str) { return UI.titleCase(str); }
 
 toggleSpeed() {
-  this.speed = this.speed === 2 ? 1 : 2;
+  this.speed = this.speed >= 3 ? 1 : this.speed + 1;   // 1× → 2× → 3×
   this.applyTimeScale();
   this.speedBtn.setLabel(this.speed + '×');
-  this.speedBtn.setVariant(this.speed === 2 ? 'primary' : 'secondary');
+  this.speedBtn.setVariant(this.speed > 1 ? 'primary' : 'secondary');
+}
+
+// The pause menu: device settings, the Field Manual, resume or abandon
+showPauseMenu() {
+  if (this.gameOver || this._modalOpen) return;
+  this._modalOpen = true;
+  this.setPaused(true);
+  const resume = () => { this._modalOpen = false; this.setPaused(false); };
+  UI.settingsMenu(this, {
+    title: 'PAUSED', depth: 400,
+    onChange: (k, v) => { if (k === 'reducedFx') this.applyReducedFx(v); },
+    buttons: [
+      { label: 'RESUME', variant: 'primary', colour: UI.C.green, onTap: resume },
+      { label: 'FIELD MANUAL', onTap: () => {
+        // Read the manual over the paused battle, then come straight back
+        this.scene.pause();
+        this.scene.launch('ManualScene', { overlay: 'CombatScene' });
+        this.events.once('resume', () => { Music.set('battle'); this._modalOpen = false; this.showPauseMenu(); });
+      } },
+      { label: 'ABANDON MISSION', variant: 'danger', onTap: () => { this._modalOpen = false; this.showAbortConfirm(); } }
+    ]
+  });
+}
+
+// Reduced effects: hide the light, lamp glows and fog, and stop gulls and
+// flotsam (Settings → Reduced effects; can change mid-battle)
+applyReducedFx(on) {
+  (this.ambFx || []).forEach(o => { o.setVisible(!on); if (o.emitting !== undefined) o.emitting = !on; });
+  if (on) { (this.flotsam || []).forEach(f => f.img.destroy()); this.flotsam = []; }
 }
 
 // Game speed and pause both act on Phaser's clock + tweens, plus our own
@@ -1633,6 +1667,7 @@ enemy.alive = false;
 this.activeEnemies = this.activeEnemies.filter(e => e !== enemy);
 this.enemiesEscaped++;
 Sfx.play('leak');
+Settings.buzz(enemy.data.isBoss ? [80, 40, 120] : 60);
 if (enemy.sprite && enemy.sprite.aura) { enemy.sprite.aura.destroy(); enemy.sprite.aura = null; }
 if (enemy.ring) { enemy.ring.destroy(); enemy.ring = null; }
 if (enemy.hpBg)   { enemy.hpBg.destroy();   enemy.hpBg   = null; }
@@ -1836,6 +1871,7 @@ UI.toast(this, lines[(wavesDone - 1) % lines.length], 'warn', { y: this.PLAY_TOP
 triggerGameOver(victory) {
 this.gameOver   = true;
 Sfx.play(victory ? 'win' : 'lose');
+Settings.buzz(victory ? [40, 60, 40, 60, 120] : 300);
 Music.set(null);
 this.waveActive = false;
 this.hidePreview();

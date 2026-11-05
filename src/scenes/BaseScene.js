@@ -219,13 +219,21 @@ drawIsland(zones, top, bottom, nextKey) {
   });
 
   // Sound on / off, in the corner of the sea
-  UI.soundToggle(this, L + W - 24, top + 24, 9);
+  // Settings and the Field Manual, in the corner of the sea
+  UI.roundButton(this, L + W - 24, top + 24, 'gear', () => this.showSettings(), 9);
   UI.roundButton(this, L + W - 66, top + 24, 'book', () => UI.go(this, 'ManualScene'), 9);
 
   // Smoke from the factory chimney
   const chim = { x: X(0.26) + 17, y: Y(0.15) - 21 };
   this.add.particles(chim.x, chim.y, 'fx_dot', { lifespan: 2200, speedY: { min: -16, max: -10 }, speedX: { min: 2, max: 8 },
     scale: { start: 0.5, end: 1.8 }, alpha: { start: 0.35, end: 0 }, tint: 0x8a96a6, frequency: 380 }).setDepth(4);
+}
+
+showSettings() {
+  UI.settingsMenu(this, {
+    buttons: [{ label: 'SAVE BACKUP', onTap: () => SaveBackup.show(this, SaveManager.activeSlot()) },
+              { label: 'CLOSE', variant: 'primary' }]
+  });
 }
 
 // A building, its name plate and its tap area

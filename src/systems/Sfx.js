@@ -4,29 +4,31 @@
 // created (or resumed) on the first pointer event.
 //
 //   Sfx.play('shot')       play a named effect (quietly ignored if muted)
-//   Sfx.toggleMute()       flip mute; remembered on this device
+//   Sfx.applyVolumes()     re-read the sound / music settings (Settings.js)
 //
 // Busy effects (shots, hits) are rate-limited so ten towers firing at once
 // don't turn into noise.
 
 const Sfx = {
-  ctx: null, out: null, noiseBuf: null,
+  ctx: null, out: null, musicOut: null, noiseBuf: null,
   muted: false, _last: {},
   VOLUME: 0.5,
 
   init() {
-    try { Sfx.muted = localStorage.getItem('factower_muted') === '1'; } catch (e) { /* storage blocked */ }
+    Sfx.muted = !Settings.get('sound');
     const unlock = () => {
       if (!Sfx.ctx) {
         const AC = window.AudioContext || window.webkitAudioContext;
         if (!AC) return;
         Sfx.ctx = new AC();
+        // Effects and music have their own volume, so each can be switched off
         Sfx.out = Sfx.ctx.createGain();
-        Sfx.out.gain.value = Sfx.muted ? 0 : Sfx.VOLUME;
+        Sfx.musicOut = Sfx.ctx.createGain();
         // Gentle limiter so overlapping effects never clip
         const comp = Sfx.ctx.createDynamicsCompressor();
         comp.threshold.value = -14; comp.ratio.value = 6;
-        Sfx.out.connect(comp); comp.connect(Sfx.ctx.destination);
+        Sfx.out.connect(comp); Sfx.musicOut.connect(comp); comp.connect(Sfx.ctx.destination);
+        Sfx.applyVolumes();
         const n = Sfx.ctx.sampleRate;
         Sfx.noiseBuf = Sfx.ctx.createBuffer(1, n, n);
         const d = Sfx.noiseBuf.getChannelData(0);
@@ -37,12 +39,19 @@ const Sfx = {
     ['pointerdown', 'touchstart', 'keydown'].forEach(ev => window.addEventListener(ev, unlock, { passive: true }));
   },
 
+  applyVolumes() {
+    Sfx.muted = !Settings.get('sound');
+    if (!Sfx.ctx) return;
+    Sfx.out.gain.setTargetAtTime(Sfx.muted ? 0 : Sfx.VOLUME, Sfx.ctx.currentTime, 0.02);
+    Sfx.musicOut.gain.setTargetAtTime(Settings.get('music') ? Sfx.VOLUME : 0, Sfx.ctx.currentTime, 0.05);
+  },
+
+  // Sound and music together (the old speaker button)
   toggleMute() {
-    Sfx.muted = !Sfx.muted;
-    try { localStorage.setItem('factower_muted', Sfx.muted ? '1' : '0'); } catch (e) { /* storage blocked */ }
-    if (Sfx.out) Sfx.out.gain.setTargetAtTime(Sfx.muted ? 0 : Sfx.VOLUME, Sfx.ctx.currentTime, 0.02);
-    if (!Sfx.muted) Sfx.play('tap');
-    return Sfx.muted;
+    const on = !(Settings.get('sound') || Settings.get('music'));
+    Settings.set('sound', on); Settings.set('music', on);
+    if (on) Sfx.play('tap');
+    return !on;
   },
 
   // Minimum gap (ms) between plays of busy effects

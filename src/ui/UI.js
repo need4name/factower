@@ -458,6 +458,49 @@ const UI = {
     return g;
   },
 
+  // Settings panel over a dimmer: a switch per device setting (Settings.js)
+  // plus buttons. opts: title, buttons [{ label, variant, colour, onTap }],
+  // onChange(key, value), onClose. Returns { close }.
+  settingsMenu(scene, opts) {
+    const o = opts || {}, { width, height } = scene.scale, D = o.depth || 300, items = [];
+    const keys = Object.keys(Settings.DEFAULTS), btns = o.buttons || [];
+    const rowH = 58, btnH = 48, gap = 10, pw = width - 32;
+    const ph = 64 + keys.length * rowH + 8 + btns.length * (btnH + gap) + 10;
+    const top = height / 2 - ph / 2;
+    let closed = false;
+    const close = () => { if (closed) return; closed = true; items.forEach(e => e && e.destroy && e.destroy()); if (o.onClose) o.onClose(); };
+    items.push(scene.add.rectangle(width / 2, height / 2, width, height, 0x05070a, 0.72).setInteractive().setDepth(D));
+    items.push(UI.panel(scene, width / 2, height / 2, pw, ph, { fill: UI.C.surface, stroke: UI.C.line, radius: 18, depth: D + 1 }));
+    items.push(UI.text(scene, 34, top + 32, o.title || 'SETTINGS', 'title', { size: 21, origin: [0, 0.5], depth: D + 2 }));
+    keys.forEach((k, i) => {
+      const y = top + 64 + i * rowH + rowH / 2, [label, sub] = Settings.LABELS[k];
+      items.push(UI.text(scene, 34, y - 9, label, 'heading', { size: 15, origin: [0, 0.5], depth: D + 2 }));
+      items.push(UI.text(scene, 34, y + 11, sub, 'small', { size: 11, origin: [0, 0.5], depth: D + 2, color: UI.T.mute, wrap: pw - 110 }));
+      const sw = scene.add.graphics().setDepth(D + 2), sx = width - 16 - 18 - 23;
+      const draw = () => {
+        const on = Settings.get(k);
+        sw.clear(); sw.fillStyle(on ? UI.C.green : 0x2a3442, 1); sw.fillRoundedRect(sx - 23, y - 13, 46, 26, 13);
+        sw.fillStyle(0xeef2f7, 1); sw.fillCircle(on ? sx + 10 : sx - 10, y, 10);
+      };
+      draw();
+      const z = scene.add.zone(width / 2, y, pw, rowH - 4).setInteractive().setDepth(D + 3);
+      z.on('pointerup', () => {
+        Settings.set(k, !Settings.get(k)); draw();
+        if (k === 'vibration' && Settings.get(k)) Settings.buzz(30);
+        Sfx.play('tap');
+        if (o.onChange) o.onChange(k, Settings.get(k));
+      });
+      items.push(sw, z);
+      if (i < keys.length - 1) items.push(scene.add.rectangle(width / 2, y + rowH / 2, pw - 36, 1, UI.C.lineSoft).setDepth(D + 2));
+    });
+    btns.forEach((b, i) => {
+      const y = top + 64 + keys.length * rowH + 8 + i * (btnH + gap) + btnH / 2;
+      items.push(UI.button(scene, width / 2, y, pw - 36, btnH, { label: b.label, variant: b.variant || 'secondary', colour: b.colour, size: 14,
+        depth: D + 2, ignoreBlock: true, onTap: () => { if (!b.keepOpen) close(); if (b.onTap) b.onTap(); } }));
+    });
+    return { close };
+  },
+
   // A small round icon button (used over maps, where full buttons are too big)
   roundButton(scene, x, y, icon, onTap, depth) {
     const c = scene.add.container(x, y).setDepth(depth || 20);

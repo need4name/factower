@@ -15,7 +15,12 @@ class SaveScene extends Phaser.Scene {
     const top = 150;
     for (let i = 0; i < 3; i++) this.createSlot(i, top + cardH / 2 + i * (cardH + gap), cardH);
 
-    UI.text(this, width / 2, height - 34, 'Progress saves automatically on this device.', 'small', { origin: 0.5, color: UI.T.faint });
+    // Bring a save back from a code (made with SAVE BACKUP on the island)
+    UI.button(this, width / 2, height - 76, 220, 42, { label: 'RESTORE A SAVE CODE', variant: 'ghost', size: 12.5, onTap: () => {
+      const free = [0, 1, 2].find(i => !SaveManager.exists(i));
+      SaveBackup.importInto(this, free === undefined ? 0 : free, () => this.time.delayedCall(400, () => this.scene.restart()));
+    } });
+    UI.text(this, width / 2, height - 34, 'Progress saves on this device. Back it up from \u2699 on your island.', 'small', { origin: 0.5, color: UI.T.faint });
   }
 
   createSlot(index, y, cardH) {

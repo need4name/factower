@@ -6,6 +6,9 @@
 class ManualScene extends Phaser.Scene {
   constructor() { super({ key: 'ManualScene' }); }
 
+  // data.overlay: the scene key to return to (opened from a paused battle)
+  init(data) { this.overlay = (data && data.overlay) || null; }
+
   create() {
     this.saveData = SaveManager.load() || {};
     this.scrollY = 0; this.scrollMin = 0;
@@ -20,10 +23,17 @@ class ManualScene extends Phaser.Scene {
     this.content = this.add.container(0, 0).setDepth(5).setMask(clip.createGeometryMask());
     this.hdr = UI.header(this, {
       title: 'FIELD MANUAL', sub: 'HOW THINGS WORK ON THE RAFT', accent: UI.C.amber,
-      onBack: () => this.view === 'topic' ? this.showIndex() : UI.go(this, 'BaseScene')
+      onBack: () => this.view === 'topic' ? this.showIndex() : this.leave()
     });
     this.enableScroll();
     this.showIndex();
+  }
+
+  leave() {
+    if (!this.overlay) return UI.go(this, 'BaseScene');
+    const back = this.overlay;
+    this.scene.stop();
+    this.scene.resume(back);
   }
 
   // ── Topics ──────────────────────────────────────────────────────────────

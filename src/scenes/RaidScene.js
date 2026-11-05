@@ -215,11 +215,16 @@ class RaidScene extends Phaser.Scene {
     if (this.over) { UI.go(this, 'DockScene'); return; }
     if (!this.started) { UI.go(this, 'DockScene'); return; }
     this.paused = true;
-    UI.modal(this, {
-      title: 'Call off the raid?', icon: 'back', accent: UI.C.red,
-      body: 'Carts still on the road come home. Towers already wrecked stay lost.',
-      buttons: [{ label: 'KEEP GOING', variant: 'secondary', onTap: () => { this.paused = false; } },
-                { label: 'RETREAT', variant: 'danger', onTap: () => this.finish(false, true) }]
+    // Pause menu: settings, keep going, or call the raid off
+    UI.settingsMenu(this, {
+      title: 'PAUSED', depth: 400,
+      buttons: [{ label: 'KEEP GOING', variant: 'primary', colour: UI.C.green, onTap: () => { this.paused = false; } },
+                { label: 'RETREAT', variant: 'danger', onTap: () => UI.modal(this, {
+                  title: 'Call off the raid?', icon: 'back', accent: UI.C.red,
+                  body: 'Barges still on the water come home. Towers already wrecked stay lost.',
+                  buttons: [{ label: 'KEEP GOING', variant: 'secondary', onTap: () => { this.paused = false; } },
+                            { label: 'RETREAT', variant: 'danger', onTap: () => this.finish(false, true) }]
+                }) }]
     });
   }
 
@@ -343,6 +348,7 @@ class RaidScene extends Phaser.Scene {
     u.alive = false;
     this.lost[u.type]++;
     Sfx.play('boom');
+    Settings.buzz(70);
     [u.barrel, u.hpBg, u.hpFill].forEach(o => o && o.destroy());
     this.tweens.add({ targets: u.sprite, scale: 1.8, alpha: 0, duration: 220, onComplete: () => u.sprite.destroy() });
     UI.toast(this, this.titleCase(u.d.name) + ' wrecked', 'bad', { y: this.PLAY_TOP + 30, duration: 1000 });
@@ -413,6 +419,7 @@ class RaidScene extends Phaser.Scene {
     if (this.over) return;
     this.over = true;
     Sfx.play(won ? 'win' : 'lose');
+    Settings.buzz(won ? [40, 60, 40, 60, 120] : 300);
     Music.set(null);
     if (this._uiToast && this._uiToast.scene) this._uiToast.destroy();
     this.paused = false;

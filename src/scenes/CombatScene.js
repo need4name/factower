@@ -22,7 +22,7 @@ this.saveData = SaveManager.load();
 // Hard mode: tougher raiders and a weaker base (raiders are also faster, see spawnEnemy)
 if (this.hard && this.levelData) {
   const H = Stars.HARD;
-  this.levelData = Object.assign({}, this.levelData, { hpScale: (this.levelData.hpScale || 1) * H.hp, baseHp: Math.max(4, Math.round((this.levelData.baseHp || 10) * H.baseHp)) });
+  this.levelData = Object.assign({}, this.levelData, { hpScale: (this.levelData.hpScale || 1) * Stars.hardHp(this.storylineId), baseHp: Math.max(4, Math.round((this.levelData.baseHp || 10) * H.baseHp)) });
 }
 
 // ── Automation foundation (Milestone 0) ─────────────────────────────
@@ -47,7 +47,7 @@ this.fatalSaves        = skillTreeEffects.getFatalSaveCharges();
 // staying free, the rogue agent's trick makes every tower hit shields harder
 const deal = Choices.ortega(this.saveData);
 if (deal === 'ioa' && this.storylineId >= 5) { this.baseHp = this.baseHpMax = Math.round(this.baseHp * 1.3); this.parts += 10; }
-this.shieldBreak = deal === 'free' ? 1.4 : 1;
+this.shieldMult = deal === 'free' ? 1.4 : 1;
 this.currentWave       = 0;
 this.waveActive        = false;
 this.gameOver          = false;
@@ -1425,8 +1425,8 @@ if (enemy.markedUntil > this.simNow) damage *= this.sk.mark.multiplier;
 // Shields soak the hit before armour; beams and burns slip past them
 if (enemy.shield > 0 && !o.trueDamage && !o.beam) {
   // (the shield takes extra from the agent's trick, if you stayed free)
-  const soak = Math.min(enemy.shield, damage * this.shieldBreak);
-  enemy.shield -= soak; damage -= soak / this.shieldBreak;
+  const soak = Math.min(enemy.shield, damage * this.shieldMult);
+  enemy.shield -= soak; damage -= soak / this.shieldMult;
   if (enemy.shield <= 0) { enemy.shield = 0; this.shieldBreak(enemy); }
   if (damage <= 0) return;
 }

@@ -113,7 +113,11 @@ const Stars = {
     return { newStars, hardFirst };
   },
   // Hard mode for defences: tougher, faster raiders and a weaker base
-  HARD: { hp: 1.5, speed: 1.1, baseHp: 0.7, turrets: 1.3, bolts: 3, materials: 1.5 }
+  HARD: { hp: 1.5, speed: 1.1, baseHp: 0.7, turrets: 1.3, bolts: 3, materials: 1.5 },
+  // Raider toughness on hard, by storyline: later stories expect an upgraded
+  // Uplink, so hard mode leans harder on them (sim-tuned)
+  HARD_HP: { 1: 1.5, 2: 1.85, 3: 1.85, 4: 1.5, 5: 1.6, 6: 1.6 },
+  hardHp(storylineId) { return Stars.HARD_HP[storylineId] || Stars.HARD.hp; }
 };
 
 // ── Story choices ────────────────────────────────────────────────────────────

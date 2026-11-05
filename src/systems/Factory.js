@@ -32,7 +32,7 @@ const MACHINE_TYPES = {
     colourHex:  '#e8a020',
     inputItems: ['plasticScrap'],
     outputItem: 'refinedPlastic',
-    duration:   8000
+    duration:   5000
   },
   assembly_gunner: {
     key:          'assembly_gunner',
@@ -776,7 +776,10 @@ class Factory {
     };
     // A worker running a bench fetches its material when nobody brings it
     const sup = this.operatorSupply(w, j);
-    if (sup) { const go = tryAct(sup.station, [sup.action]); if (go) return go; }
+    if (sup) {
+      const go = tryAct(sup.station, [sup.action]); if (go) return go;
+      if (sup.wait) return moveOrWait(sup.station);
+    }
     // A finished tower always goes to the Depository, on the route or not
     if (w.inventory[0] === 'towerComponent' && !j.stops.some(s => s.action === 'deliver')) {
       return tryAct('depository', ['deliver']) || moveOrWait('depository');
@@ -815,28 +818,65 @@ class Factory {
     if (j.stops.length !== 2 || j.stops[0].action !== 'assemble' || j.stops[1].action !== 'deliver') return null;
     const [r, c] = j.stops[0].station.split(',').map(Number);
     const bench = this.getMachineAt(r, c);
-    if (!bench || !this.isAssemblyType(bench.type) || bench.heldMaterial || bench.autoOutput) return null;
+    if (!bench || !this.isAssemblyType(bench.type)) return null;
     const pri = MACHINE_TYPES[bench.type].primaryInput, held = w.inventory[0];
-    if (held === pri) return { station: j.stops[0].station, action: 'deposit' };
     const smelters = [];
     for (let y = 0; y < this.ROWS; y++) for (let x = 0; x < this.COLS; x++) {
       const m = this.getMachineAt(y, x);
       if (m && m.type === 'smelter') smelters.push({ key: y + ',' + x, m });
     }
-    if (held === 'plasticScrap' && pri === 'refinedPlastic') {
-      const free = smelters.find(s => !s.m.heldMaterial && !s.m.autoOutput);
-      return free ? { station: free.key, action: 'deposit' } : null;
+    const freeSmelter = smelters.find(s => !s.m.heldMaterial && !s.m.autoOutput);
+    // Holding scrap the bench can't use: into a free smelter if the bench
+    // wants refined plastic, otherwise back to the store — never stuck with it
+    if (held === 'plasticScrap' && pri !== 'plasticScrap') {
+      if (pri === 'refinedPlastic' && freeSmelter) return { station: freeSmelter.key, action: 'deposit' };
+      return { station: 'store_scrap', action: 'return_scrap' };
     }
+    if (bench.heldMaterial || bench.autoOutput) return null;
+    if (held === pri) return { station: j.stops[0].station, action: 'deposit' };
     if (held) return null;
+    // Someone else's route already brings this bench its material: leave it to them
+    const helped = this.getUnlockedWorkers().some(o => o.id !== w.id && o.job && o.job.stops.some(s => s.station === j.stops[0].station));
+    if (helped) return null;
     if (pri === 'plasticScrap') return this.getMaterialCount('plasticScrap') > 0 ? { station: 'store_scrap', action: 'collect_scrap' } : null;
     if (pri === 'salvagedMetal') return this.getMaterialCount('salvagedMetal') > 0 ? { station: 'store_metal', action: 'collect_metal' } : null;
     if (pri === 'refinedPlastic') {
       const ready = smelters.find(s => s.m.autoOutput === 'refinedPlastic');
       if (ready) return { station: ready.key, action: 'collect_refined' };
-      const free = smelters.find(s => !s.m.heldMaterial && !s.m.autoOutput);
-      if (free && this.getMaterialCount('plasticScrap') > 0) return { station: 'store_scrap', action: 'collect_scrap' };
+      // Only fetch scrap when a smelter is free and no one else is loading it
+      const loading = this.getUnlockedWorkers().some(o => o.id !== w.id && o.inventory[0] === 'plasticScrap');
+      if (freeSmelter && !loading && this.getMaterialCount('plasticScrap') > 0) return { station: 'store_scrap', action: 'collect_scrap' };
     }
     return null;
+  }
+
+  // Why an empty bench isn't building, in a word or two for the label under
+  // it ('' when its material is on the way or it's busy).
+  benchIdleReason(r, c) {
+    const m = this.getMachineAt(r, c);
+    if (!m || !this.isAssemblyType(m.type) || m.heldMaterial || m.autoOutput) return '';
+    const key = r + ',' + c, pri = MACHINE_TYPES[m.type].primaryInput;
+    const workers = this.getUnlockedWorkers();
+    if (this.machineInput(m) && this.getBenchJam(r, c)) return '';
+    const fedByBelt = [[r - 1, c], [r + 1, c], [r, c - 1], [r, c + 1]].some(([y, x]) => {
+      const t = this.getConveyorTarget(y, x); return !!t && t.row === r && t.col === c;
+    });
+    const served = fedByBelt || workers.some(w => w.job && w.job.stops.some(s => s.station === key) || w.at === key);
+    if (!served) return 'NO WORKER';
+    if (workers.some(w => w.inventory[0] === pri)) return '';
+    let smelters = 0, refinedReady = false, smelting = false;
+    for (let y = 0; y < this.ROWS; y++) for (let x = 0; x < this.COLS; x++) {
+      const s = this.getMachineAt(y, x);
+      if (s && s.type === 'smelter') { smelters++; if (s.autoOutput === 'refinedPlastic') refinedReady = true; if (s.heldMaterial) smelting = true; }
+    }
+    if (pri === 'refinedPlastic') {
+      if (!smelters) return 'NEEDS SMELTER';
+      if (refinedReady || smelting || workers.some(w => w.inventory[0] === 'plasticScrap')) return '';
+      return this.getMaterialCount('plasticScrap') > 0 ? '' : 'NO SCRAP';
+    }
+    if (pri === 'plasticScrap') return this.getMaterialCount('plasticScrap') > 0 ? '' : 'NO SCRAP';
+    if (pri === 'salvagedMetal') return this.getMaterialCount('salvagedMetal') > 0 ? '' : 'NO METAL';
+    return '';
   }
 
   // ── Lost & Found ───────────────────────────────────────────────────────────

@@ -826,8 +826,10 @@ tryAssignWorker(workerId, stationKey) {
       const refined = m && MACHINE_TYPES[m.type] && MACHINE_TYPES[m.type].primaryInput === 'refinedPlastic';
       const hasSmelter = this.factory.grid.some(row => row.some(x => x && x.type === 'smelter'));
       this.showMessage(!refined ? L + ' now runs this bench — they’ll fetch what it needs and build'
+                     : hasSmelter && this.factory.getMaterialCount('plasticScrap') === 0 && !this.factory.grid.some(row => row.some(x => x && x.type === 'smelter' && (x.heldMaterial || x.autoOutput)))
+                       ? L + ' runs this bench, but you’re out of Plastic Scrap — win battles or trade at the Market for more'
                      : hasSmelter ? L + ' runs this bench — they’ll load the Smelter and fetch the refined plastic'
-                     : L + ' runs this bench, but it needs refined plastic: build a Smelter', refined && !hasSmelter ? 'warn' : 'good');
+                     : L + ' runs this bench, but it needs refined plastic: build a Smelter', refined && (!hasSmelter || this.factory.getMaterialCount('plasticScrap') === 0) ? 'warn' : 'good');
     }
     else if (change === 'full') this.showMessage(L + ' can only remember ' + this.factory.routeLength + ' stops — this starts a new route', 'info');
   }
@@ -1416,9 +1418,10 @@ update(time, delta) {
       const auto = this.factory.hasOutputBelt(r, c);
       const smelter = machine.type === 'smelter';
       const ready = machine.autoOutput && smelter && !auto;     // refined plastic waiting to be collected
+      const idle = !jam && !machine.autoOutput && !machine.heldMaterial && !smelter ? this.factory.benchIdleReason(r, c) : '';
       const text = jam ? 'WRONG ITEM' : ready ? 'READY' : machine.autoOutput ? 'OUTPUT FULL'
-                 : machine.heldMaterial ? (smelter ? 'SMELTING' : auto ? 'AUTO' : 'LOADED') : '';
-      if (statusTxt.text !== text) statusTxt.setText(text).setColor(jam || (machine.autoOutput && !ready) ? UI.T.red : ready ? UI.T.amber : UI.T.green);
+                 : machine.heldMaterial ? (smelter ? 'SMELTING' : auto ? 'AUTO' : 'LOADED') : idle;
+      if (statusTxt.text !== text) statusTxt.setText(text).setColor(jam || idle || (machine.autoOutput && !ready) ? (idle ? UI.T.amber : UI.T.red) : ready ? UI.T.amber : UI.T.green);
     }
   }
 

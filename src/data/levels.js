@@ -332,7 +332,7 @@ const LEVEL_DATA = {
 
         { id: 3, name: 'THE OFFER',
           description: 'Ortega\u2019s cutters test your defences. Then he makes his offer.',
-          difficulty: 20, recommendedTowers: 10, hpScale: 1.35, baseHp: 18,
+          difficulty: 20, recommendedTowers: 10, hpScale: 1.65, baseHp: 18,
           path: _P([195, 0], [195, 80], [40, 80], [40, 220], [350, 220], [350, 330], [195, 330], [195, 418]),
           waves: [ _W(_g('ioaCutter', 8, 1300), _g('saltChild', 10, 700)),
                    _W(_g('ioaCutter', 14, 750), _g('ioaGunboat', 3, 4000)),
@@ -342,7 +342,7 @@ const LEVEL_DATA = {
 
         { id: 4, name: 'COUNTERSTRIKE',
           description: 'Helix knows you\u2019ve chosen a side.',
-          difficulty: 21, recommendedTowers: 11, hpScale: 1.6, baseHp: 18,
+          difficulty: 21, recommendedTowers: 11, hpScale: 1.95, baseHp: 18,
           path: _P([60, 0], [60, 140], [330, 140], [330, 40], [195, 40], [195, 280], [60, 280], [60, 380], [330, 380], [330, 418]),
           waves: [ _W(_g('helixDrone', 12, 800), _g('saltChild', 10, 600)),
                    _W(_g('helixWarden', 3, 5000), _g('helixTrooper', 10, 1200)),
@@ -369,7 +369,7 @@ const LEVEL_DATA = {
 
         { id: 6, name: 'THE LANCER', boss: true,
           description: 'Helix sends its strike craft at the IOA\u2019s new ally.',
-          difficulty: 22, recommendedTowers: 12, hpScale: 1.5, baseHp: 20,
+          difficulty: 22, recommendedTowers: 12, hpScale: 1.9, baseHp: 20,
           path: _P([350, 0], [350, 300], [195, 300], [195, 80], [40, 80], [40, 418]),
           waves: [ _W(_g('helixDrone', 14, 750), _g('helixTrooper', 4, 2000)),
                    _W(_g('helixWarden', 3, 4500), _g('helixTrooper', 12, 1000)),
@@ -413,7 +413,7 @@ const LEVEL_DATA = {
 
         { id: 3, name: 'THE LONG NIGHT',
           description: 'Six waves before dawn. Keep the lights on.',
-          difficulty: 24, recommendedTowers: 12, hpScale: 1.5, baseHp: 20,
+          difficulty: 24, recommendedTowers: 12, hpScale: 1.95, baseHp: 20,
           path: _P([40, 0], [40, 340], [150, 340], [150, 80], [250, 80], [250, 340], [350, 340], [350, 418]),
           waves: [ _W(_g('helixDrone', 14, 700)),
                    _W(_g('helixTrooper', 14, 900)),
@@ -425,7 +425,7 @@ const LEVEL_DATA = {
 
         { id: 4, name: 'THE TURBINE WAR', boss: true,
           description: 'The Mothership. Everything you have built, right here.',
-          difficulty: 26, recommendedTowers: 12, hpScale: 1.4, baseHp: 22,
+          difficulty: 26, recommendedTowers: 12, hpScale: 1.85, baseHp: 22,
           path: _P([350, 0], [350, 110], [40, 110], [40, 230], [350, 230], [350, 340], [40, 340], [40, 418]),
           waves: [ _W(_g('helixDrone', 14, 700), _g('helixTrooper', 6, 1600)),
                    _W(_g('helixWarden', 5, 3200), _g('helixTrooper', 14, 900)),

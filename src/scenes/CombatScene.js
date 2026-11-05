@@ -80,6 +80,7 @@ this.abilityPreview    = null;
 this._startSig         = null;
 this.abilityTapped     = false;
 this.abilityLast       = {};        // ability key → simNow it was last used
+this.hero              = null;      // Borga, once placed this battle
 this._upTut           = null;   // one-time 'how to upgrade' lesson (see updateUpgradeTutorial)
 this.coach             = null;
 this.simNow            = 0;      // tower fire-rate clock (scaled by speed, stops when paused)
@@ -271,6 +272,7 @@ return this.ubzs.some(z => x >= z.x && x <= z.x + z.w && y >= z.y && y <= z.y + 
 }
 
 isOccupied(x, y) {
+if (this.hero && Math.sqrt((this.hero.x - x) ** 2 + (this.hero.y - y) ** 2) < 32) return true;
 return this.placedTowers.some(t => Math.sqrt((t.x - x) ** 2 + (t.y - y) ** 2) < 32);
 }
 
@@ -1091,6 +1093,7 @@ this.refreshTowerButtons();
 getSpeedModifier(enemy) {
 let modifier = 1.0;
 if (enemy.netUntil && enemy.netUntil > this.simNow) modifier = 0.15;
+if (enemy.stunUntil && enemy.stunUntil > this.simNow) return 0.02;
 if (enemy.reelUntil && enemy.reelUntil > this.simNow) modifier = Math.min(modifier, enemy.reelAmt || 0.4);
 this.placedTowers.forEach(tower => {
 if (tower.type !== 'barricade') return;
@@ -1112,7 +1115,7 @@ tower.lastTick = now;
 if (!tower.beamGfx) tower.beamGfx = this.add.graphics().setDepth(6);
 const g = tower.beamGfx;
 g.clear();
-const inRange = this.activeEnemies.filter(e => e.alive && e.sprite && e.sprite.active &&
+const inRange = this.activeEnemies.filter(e => this.canTarget(e) &&
   Phaser.Math.Distance.Between(tower.x, tower.y, e.sprite.x, e.sprite.y) <= d.range);
 if (!inRange.length) { tower._beaming = false; return; }
 if (!tower._beaming) { tower._beaming = true; Sfx.play('zap'); }
@@ -1126,6 +1129,14 @@ targets.forEach(e => {
   e.siphonedUntil = now + 300;
   this.dealDamage(e, (d.dps || 12) * this.sk.dmg * dt / 1000, 'siphon', { pierce: 2, beam: true });
 });
+}
+
+// Can towers aim at this raider right now? (not cloaked, not under water)
+canTarget(e) {
+if (!e.alive || !e.sprite || !e.sprite.active) return false;
+if (e.submergedUntil > this.simNow) return false;
+if (e.data.cloak && !(e.revealedUntil > this.simNow)) return false;
+return true;
 }
 
 // Target priority, set per tower from its panel
@@ -1151,10 +1162,8 @@ if (tower.type === 'cannon') return this.cannonSpray(tower);
 const rate = tower.data.fireRate / this.sk.fire;   // Drill
 if (this.simNow - tower.lastFired < rate) return;
 
-const inRange = this.activeEnemies.filter(e => {
-  if (!e.alive || !e.sprite || !e.sprite.active) return false;
-  return Phaser.Math.Distance.Between(tower.x, tower.y, e.sprite.x, e.sprite.y) <= tower.data.range;
-});
+const inRange = this.activeEnemies.filter(e => this.canTarget(e) &&
+  Phaser.Math.Distance.Between(tower.x, tower.y, e.sprite.x, e.sprite.y) <= tower.data.range);
 if (inRange.length === 0) return;
 
 const target = this.pickTarget(tower, inRange);
@@ -1198,7 +1207,7 @@ if (!this.projectiles.length) return;
 this.projectiles = this.projectiles.filter(p => {
   if (!p.bullet.active) return false;
   if (!p.target.alive || !p.target.sprite || !p.target.sprite.active) {
-    const near = this.activeEnemies.filter(e => e.alive && e.sprite && e.sprite.active)
+    const near = this.activeEnemies.filter(e => this.canTarget(e))
       .map(e => ({ e, d: Phaser.Math.Distance.Between(p.bullet.x, p.bullet.y, e.sprite.x, e.sprite.y) }))
       .filter(o => o.d < 90).sort((a, b) => a.d - b.d)[0];
     if (!near) { this.fizzle(p.bullet); if (p.rope) p.rope.destroy(); return false; }
@@ -1248,6 +1257,8 @@ if (tower.type === 'bomber') {
     return Phaser.Math.Distance.Between(tx, ty, e.sprite.x, e.sprite.y) <= splashR;
   }).forEach(e => {
     if (d.napalm) { e.burnDps = Math.max(e.burnDps, d.napalm); e.burnUntil = this.simNow + 3000; }
+    if (e.data.cloak) e.revealedUntil = this.simNow + 2000;
+    if (e.submergedUntil > this.simNow) return;   // blasts pass over a diver
     this.dealDamage(e, dmgFor(e), 'bomber', hitOpts);
   });
   const flash = this.add.circle(tx, ty, splashR, d.napalm ? 0xe5534b : 0xe8a020, 0.28).setDepth(6);
@@ -1281,7 +1292,7 @@ cannonSpray(tower) {
 const d = tower.data;
 const rate = d.fireRate / this.sk.fire;
 if (this.simNow - tower.lastFired < rate) return;
-const inRange = this.activeEnemies.filter(e => e.alive && e.sprite && e.sprite.active &&
+const inRange = this.activeEnemies.filter(e => this.canTarget(e) &&
   Phaser.Math.Distance.Between(tower.x, tower.y, e.sprite.x, e.sprite.y) <= d.range);
 if (!inRange.length) return;
 tower.lastFired = this.simNow;
@@ -1499,6 +1510,7 @@ if (sp) {
 dealDamage(enemy, damage, sourceType, opts) {
 if (!enemy.alive) return;
 const o = opts || {};
+if (enemy.submergedUntil > this.simNow) return;
 enemy.lastHitAt = this.simNow;
 // Mark Target: the first raider a tower hits each wave takes extra damage
 if (this.sk.mark && !this._markUsed && TOWER_DATA[sourceType]) this.markEnemy(enemy);
@@ -1523,6 +1535,7 @@ enemy.sprite.setTintFill(0xffffff);
 enemy.flashUntil = this.simNow + 50;
 }
 if (enemy.hp <= 0) this.killEnemy(enemy, sourceType);
+else if (enemy.data.dive && !enemy.dived && enemy.hp < enemy.maxHp * enemy.data.dive.below) this.dive(enemy);
 }
 
 // Wreck effect: a ring of foam and a few bits of debris
@@ -1564,11 +1577,27 @@ const pop = this.add.circle(enemy.sprite.x, enemy.sprite.y, enemy.data.size + 5,
 this.tweens.add({ targets: pop, scale: 1.8, alpha: 0, duration: 260, onComplete: () => pop.destroy() });
 }
 
+// A diver goes under: untouchable for a moment, bubbles where it was
+dive(enemy) {
+enemy.dived = true;
+enemy.submergedUntil = this.simNow + enemy.data.dive.ms;
+this.splash(enemy.sprite.x, enemy.sprite.y, enemy.data.size, 0x7fd8ff, 1);
+}
+
 killEnemy(enemy, sourceType) {
 if (!enemy.alive) return;
 enemy.alive = false;
 this.activeEnemies = this.activeEnemies.filter(e => e !== enemy);
+// Flotillas break up into their skiffs
+if (enemy.data.split && enemy.sprite && !this.gameOver) {
+  const sp = enemy.data.split;
+  for (let i = 0; i < sp.count; i++) {
+    this.waveEnemyTotal++;
+    this.spawnEnemy(sp.type, { x: enemy.sprite.x + (i - (sp.count - 1) / 2) * 12, y: enemy.sprite.y + (i % 2 ? 6 : -6), idx: enemy.moveTargetIdx || 1 });
+  }
+}
 this.dropSalvage(enemy);
+this.heroXp(enemy);
 this.killStats[enemy.type] = (this.killStats[enemy.type] || 0) + 1;
 if (sourceType && this.towerStats[sourceType] && this.towerStats[sourceType].kills !== undefined) {
 this.towerStats[sourceType].kills++;
@@ -1795,8 +1824,97 @@ return {
   flare: { name: 'FLARE', icon: 'star', colour: UI.C.amber, radius: 70, cooldown: 25000,
            hint: 'Tap the road to drop a flare barrage' },
   net:   { name: 'NET',   icon: 'shield', colour: 0x8fb3c9, radius: 80, cooldown: 20000,
-           hint: 'Tap the road to throw a cargo net' }
+           hint: 'Tap the road to throw a cargo net' },
+  ...(this.heroUnlocked() ? { borga: { name: this.hero ? 'POUND' : 'BORGA', icon: 'star', colour: 0x9d7ff0, radius: this.hero ? this.heroStats().pound : this.heroStats().range, cooldown: 22000,
+           hint: 'Tap open ground beside the road to place Borga' } } : {})
 };
+}
+
+// ── Borga, the hero ───────────────────────────────────────────────────
+// Free and one per battle. Punches the nearest raider in reach and levels
+// up (to 5) as raiders sink near her. Once she's placed, her button is a
+// Ground Pound: everything around her is stunned and battered.
+heroUnlocked() { return !this.tutorial && (Progress.has(this.saveData, 'borga') || (isTestSave(this.saveData) && BUILD.allUpgrades)); }
+heroStats() {
+  const lv = this.hero ? this.hero.level : 1;
+  return { dmg: 26 + (lv - 1) * 10, range: 72 + (lv - 1) * 6, rate: Math.max(550, 950 - (lv - 1) * 90), pound: 90 + (lv - 1) * 8, poundDmg: 40 + (lv - 1) * 15, stun: 1800 + (lv - 1) * 250 };
+}
+
+placeHero(x, y) {
+if (!this.canPlaceAt(x, y)) { UI.toast(this, 'Borga needs open ground beside the road', 'warn', { y: this.PLAY_TOP + 22 }); return false; }
+const c = this.add.container(x, y).setDepth(9);
+const g = this.add.graphics();
+g.fillStyle(0x000000, 0.35); g.fillCircle(1.5, 2.5, 15);
+g.fillStyle(0x3a2d5c, 1); g.fillCircle(0, 0, 15);
+g.lineStyle(2.5, 0x9d7ff0, 1); g.strokeCircle(0, 0, 15);
+g.fillStyle(0xb7bec8, 1); g.fillCircle(-6, -4, 4); g.fillCircle(6, -4, 4);          // cyber shoulders
+g.fillStyle(0x9d7ff0, 1); g.fillCircle(0, 3, 7);
+g.fillStyle(0x7fe3ff, 1); g.fillRect(-4, 0, 8, 2.5);                                  // visor
+const fist = this.add.circle(12, 6, 4.5, 0xdfe6ee).setStrokeStyle(1.5, 0x3a2d5c);
+const lvl = UI.text(this, 0, 22, 'Lv 1', 'tag', { size: 9, origin: 0.5, color: '#c9b6ff' });
+c.add([g, fist, lvl]);
+c.setScale(0.2); this.tweens.add({ targets: c, scale: 1, duration: 260, ease: 'Back.easeOut' });
+this.hero = { x, y, c, fist, lvl, level: 1, xp: 0, last: 0 };
+Sfx.play('place'); Settings.buzz(20);
+this.refreshHeroButton();
+return true;
+}
+
+refreshHeroButton() {
+const b = this.abilityBtns && this.abilityBtns.borga;
+if (!b) return;
+b.a = this.abilityDefs().borga; b.sig = null;
+if (b.lbl) b.lbl.setText(b.a.name);
+}
+
+updateHero() {
+const h = this.hero;
+if (!h || !this.waveActive) return;
+const st = this.heroStats();
+if (this.simNow - h.last < st.rate) return;
+const near = this.activeEnemies.filter(e => this.canTarget(e) && Phaser.Math.Distance.Between(h.x, h.y, e.sprite.x, e.sprite.y) <= st.range);
+if (!near.length) return;
+h.last = this.simNow;
+const t = near.reduce((a, b) => Phaser.Math.Distance.Between(h.x, h.y, a.sprite.x, a.sprite.y) <= Phaser.Math.Distance.Between(h.x, h.y, b.sprite.x, b.sprite.y) ? a : b);
+const ang = Phaser.Math.Angle.Between(h.x, h.y, t.sprite.x, t.sprite.y);
+h.c.list[0].setRotation(0);
+this.tweens.add({ targets: h.fist, x: Math.cos(ang) * 22, y: Math.sin(ang) * 22, duration: 70, yoyo: true,
+  onComplete: () => h.fist.setPosition(12, 6) });
+Sfx.play('hit');
+this.dealDamage(t, Math.round(st.dmg * this.sk.dmg), 'borga', { pierce: 4, shieldX: 1.5 });
+}
+
+heroXp(enemy) {
+const h = this.hero;
+if (!h || h.level >= 5 || !enemy.sprite) return;
+if (Phaser.Math.Distance.Between(h.x, h.y, enemy.sprite.x, enemy.sprite.y) > 140) return;
+h.xp += enemy.data.isBoss ? 8 : enemy.data.rareDrop ? 3 : 1;
+while (h.level < 5 && h.xp >= [0, 6, 16, 30, 50][h.level]) {
+  h.level++;
+  h.lvl.setText('Lv ' + h.level);
+  Sfx.play('upgrade');
+  const ring = this.add.circle(h.x, h.y, 18, 0x9d7ff0, 0).setStrokeStyle(3, 0xc9b6ff, 1).setDepth(9);
+  this.tweens.add({ targets: ring, scale: 2.4, alpha: 0, duration: 500, onComplete: () => ring.destroy() });
+  UI.toast(this, 'Borga reached level ' + h.level + (h.level === 5 ? ' — max!' : ''), 'success', { y: this.PLAY_TOP + 22, duration: 1600 });
+  this.refreshHeroButton();
+}
+}
+
+groundPound() {
+const h = this.hero, st = this.heroStats();
+this.abilityLast.borga = this.simNow;
+Sfx.play('boom'); Settings.buzz([30, 20, 60]);
+this.cameras.main.shake(140, 0.005);
+const ring = this.add.circle(h.x, h.y, st.pound, 0x9d7ff0, 0.25).setStrokeStyle(3, 0xc9b6ff, 0.9).setDepth(6).setScale(0.3);
+this.tweens.add({ targets: ring, scale: 1, alpha: 0, duration: 420, onComplete: () => ring.destroy() });
+this.tweens.add({ targets: h.c, scale: 1.25, duration: 90, yoyo: true });
+this.activeEnemies.slice().forEach(e => {
+  if (!e.alive || !e.sprite || Phaser.Math.Distance.Between(h.x, h.y, e.sprite.x, e.sprite.y) > st.pound) return;
+  e.stunUntil = this.simNow + (e.data.isBoss ? st.stun * 0.4 : st.stun);
+  this.dealDamage(e, Math.round(st.poundDmg * this.sk.dmg), 'borga', { pierce: 6 });
+  if (e.alive) this.moveToWaypoint(e, e.moveTargetIdx);
+});
+this._abSig = null;
 }
 
 drawAbilityButtons() {
@@ -1817,12 +1935,13 @@ Object.entries(this.abilityDefs()).forEach(([key, a], i) => {
   zone.on('pointerdown', () => {
     this.abilityTapped = true;
     if (this.gameOver || this.abilityCooldownLeft(key) > 0) return;
+    if (key === 'borga' && this.hero) { this.groundPound(); return; }
     this.selectedTowerType = null; this.refreshTowerButtons(); this.hidePreview(); this.dismissUpgradePanel();
     this.selectedAbility = this.selectedAbility === key ? null : key;
     if (this.selectedAbility) UI.toast(this, a.hint, 'info', { y: this.PLAY_TOP + 22, duration: 1600 });
     this._abSig = null;
   });
-  this.abilityBtns[key] = { c, ring, ic, cd, a };
+  this.abilityBtns[key] = { c, ring, ic, cd, a, lbl };
 });
 }
 
@@ -1854,6 +1973,10 @@ Object.entries(this.abilityBtns).forEach(([key, b]) => {
 
 castAbility(key, x, y) {
 const a = this.abilityDefs()[key];
+if (key === 'borga') {
+  if (this.placeHero(x, y)) { this.selectedAbility = null; if (this.abilityPreview) { this.abilityPreview.destroy(); this.abilityPreview = null; } }
+  return;
+}
 this.selectedAbility = null;
 this.abilityLast[key] = this.simNow;
 if (this.abilityPreview) { this.abilityPreview.destroy(); this.abilityPreview = null; }
@@ -1870,7 +1993,7 @@ if (key === 'flare') {
     this.cameras.main.shake(120, 0.004);
     this.activeEnemies.slice().forEach(e => {
       if (!e.alive || !e.sprite) return;
-      if (Phaser.Math.Distance.Between(x, y, e.sprite.x, e.sprite.y) <= a.radius) this.dealDamage(e, 45, 'flare', { pierce: 3 });
+      if (Phaser.Math.Distance.Between(x, y, e.sprite.x, e.sprite.y) <= a.radius) { if (e.data.cloak) e.revealedUntil = this.simNow + 4000; this.dealDamage(e, 45, 'flare', { pierce: 3 }); }
     });
   });
 } else {
@@ -2219,6 +2342,7 @@ if (!this.paused && !this.gameOver) {
   this._tickDt = delta * (this.speed || 1);
   this.updateProjectiles(this._tickDt);
   this.updateBattleTicks();
+  this.updateHero();
   // Wakes behind every boat (Helix craft hover, so theirs is fainter)
   this._wakeAcc += this._tickDt;
   if (this._wakeAcc >= 110) {
@@ -2252,6 +2376,19 @@ this._slowTick = ((this._slowTick || 0) + 1);
 this.activeEnemies.forEach(enemy => {
   if (!enemy.alive || !enemy.sprite || !enemy.sprite.active) return;
   const x = enemy.sprite.x, y = enemy.sprite.y;
+  if (enemy.data.cloak) {
+    // Revealed when it sails close to any tower
+    const rr = enemy.data.cloak.reveal;
+    if (this.placedTowers.some(t => Math.abs(t.x - x) < rr && Math.abs(t.y - y) < rr && Phaser.Math.Distance.Between(t.x, t.y, x, y) <= rr)) enemy.revealedUntil = this.simNow + 600;
+    const seen = enemy.revealedUntil > this.simNow;
+    enemy.sprite.setAlpha(seen ? 1 : 0.28 + 0.08 * Math.sin(this.simNow * 0.01 + enemy.phase));
+    if (enemy.hpBg) { enemy.hpBg.setVisible(seen); enemy.hpFill.setVisible(seen); }
+  }
+  if (enemy.data.dive) {
+    const under = enemy.submergedUntil > this.simNow;
+    enemy.sprite.setAlpha(under ? 0.22 : 1);
+    if (enemy.hpBg) { enemy.hpBg.setVisible(!under); enemy.hpFill.setVisible(!under); }
+  }
   // Bob on the swell; end a hit flash
   enemy.sprite.scaleY = enemy.baseScale * (1 + 0.04 * Math.sin(this.simNow * 0.006 + enemy.phase));
   if (enemy.flashUntil && this.simNow > enemy.flashUntil) { enemy.flashUntil = 0; enemy.sprite.clearTint(); }

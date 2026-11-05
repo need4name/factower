@@ -110,6 +110,28 @@ const ENEMY_DATA = {
     spawn: { type: 'helixDrone', count: 3, every: 7000, enragedEvery: 4000 },
     card: { title: 'The Mothership', trait: 'FINAL BOSS', body: 'Helix\u2019s command ship: 5200 hull, 6 armour, a huge shield that recharges, a shield for every craft around it, and drones launched as it sails. Everything you have.' }
   },
+  // ── New tricks ───────────────────────────────────────────────────────
+  // cloak: towers can't target it until it's close to one (or hit by a blast)
+  helixGhost: {
+    key: 'helixGhost', name: 'HELIX GHOST',
+    hp: 120, speed: 120, partsReward: 7, baseDamage: 3,
+    colour: 0xbfefff, size: 11, traits: ['cloaked', 'fast'], cloak: { reveal: 62 },
+    card: { title: 'Helix Ghost', trait: 'CLOAKED', body: 'Invisible to your towers until it sails close to one. Bomber blasts and Flares catch it anyway; once seen, everything can shoot it for a moment.' }
+  },
+  // split: sinks into smaller boats
+  salvFlotilla: {
+    key: 'salvFlotilla', name: 'SALV FLOTILLA',
+    hp: 260, speed: 60, partsReward: 8, baseDamage: 4, armour: 1,
+    colour: 0x2f7d6a, size: 17, traits: ['splitter'], split: { type: 'salvSkiff', count: 3 },
+    card: { title: 'SALV Flotilla', trait: 'SPLITS', body: 'Three skiffs lashed into one raft. Sink it and the skiffs cut loose and race on. Bombers catch the whole bundle.' }
+  },
+  // dive: goes under once when badly hurt, can't be hit for a moment
+  frontDiver: {
+    key: 'frontDiver', name: 'FRONT DIVER',
+    hp: 300, speed: 75, partsReward: 9, baseDamage: 4, armour: 2,
+    colour: 0x8a2a2a, size: 13, traits: ['diver', 'armoured'], dive: { below: 0.5, ms: 2500 },
+    card: { title: 'Front Diver', trait: 'DIVES', body: 'A scrap submarine. Hurt it badly and it dives, out of reach for a couple of seconds, then surfaces further on. Barricades still catch it underwater.' }
+  },
   // ── IOA Navy ─────────────────────────────────────────────────────────
   ioaCutter: {
     key: 'ioaCutter', name: 'IOA CUTTER',

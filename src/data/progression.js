@@ -24,6 +24,7 @@ const UNLOCKS = {
   harpoon:    { at: 's3-2', label: 'The Harpoon — a whaling gun from the Front\u2019s stores. Long reach, armour-piercing, reels raiders in.' },
   cannon:     { at: 's4-2', label: 'The Water Cannon — Helix tech from the relay. Shoves raiders back up the road and washes shields away.' },
   siphon:     { at: 's1-6', label: 'The Siphon — Borga\u2019s beam tower. Raiders it drains drop double salvage, straight into your Parts.' },
+  borga:      { at: 's3-1', label: 'Borga fights with you — place her in battle from the round BORGA button. She levels up as raiders sink around her.' },
   worker3:    { at: 's2-2', label: 'Borga joins the factory as your third worker.' },
   belts:      { at: 's1-3', label: 'Conveyor belts — SALV tech that moves items without workers.' }
 };

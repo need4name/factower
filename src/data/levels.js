@@ -316,7 +316,7 @@ const LEVEL_DATA = {
           difficulty: 19, recommendedTowers: 10, hpScale: 1.45, baseHp: 18,
           path: _P([40, 0], [40, 120], [200, 120], [200, 40], [350, 40], [350, 260], [120, 260], [120, 380], [300, 380], [300, 418]),
           waves: [ _W(_g('saltChild', 12, 700), _g('scrapRunner', 6, 1200)),
-                   _W(_g('helixTrooper', 8, 1500), _g('helixDrone', 14, 600)),
+                   _W(_g('helixTrooper', 8, 1500), _g('helixDrone', 10, 850)),
                    _W(_g('helixWarden', 2, 6000), _g('helixTrooper', 8, 1300), _g('bilgeRat', 20, 160)),
                    _W(_g('helixWarden', 3, 5000), _g('helixTrooper', 10, 1100), _g('helixDrone', 20, 450)) ],
           materialRewards: { killDrops: _HELIX_DROPS, completionBonus: { plasticScrap: 3, salvagedMetal: 3 } } },

@@ -23,6 +23,7 @@ class RaidScene extends Phaser.Scene {
     this.storylineId = (data && data.storylineId) || 1;
     this.levelId     = (data && data.levelId) || 4;
     this.levelData   = (data && data.levelData) || Progress.level(Progress.key(this.storylineId, this.levelId));
+    this.hard        = !!(data && data.hard);   // hard mode: tougher turrets (Stars.HARD)
   }
 
   create() {
@@ -106,7 +107,7 @@ class RaidScene extends Phaser.Scene {
 
   addTurret(x, y, kind) {
     // Later raids have tougher defences: turretScale multiplies hp and damage
-    const base = RAID_TURRETS[kind] || RAID_TURRETS.gun, sc = this.levelData.turretScale || 1;
+    const base = RAID_TURRETS[kind] || RAID_TURRETS.gun, sc = (this.levelData.turretScale || 1) * (this.hard ? Stars.HARD.turrets : 1);
     const k = Object.assign({}, base, { hp: Math.round(base.hp * sc), dmg: Math.round(base.dmg * sc), range: Math.round(base.range * this.rk.turretRange) });   // Low Profile
     const size = kind === 'heavy' ? 30 : 24;
     const body = this.add.image(x, y, kind === 'heavy' ? 'tur_base_heavy' : 'tur_base').setScale(1 / Art.RES).setDepth(4);
@@ -203,6 +204,7 @@ class RaidScene extends Phaser.Scene {
     if (this.over || this.parts < RAID_REPAIR.cost || this.simNow - this.lastRepair < RAID_REPAIR.cooldown) return;
     this.parts -= RAID_REPAIR.cost;
     this.lastRepair = this.simNow;
+    this.repairsUsed = (this.repairsUsed || 0) + 1;
     this.units.filter(u => u.alive).forEach(u => {
       u.hp = Math.min(u.maxHp, u.hp + u.maxHp * (this.rk.repair || RAID_REPAIR.heal));   // Skilled Hands
       const ring = this.add.circle(u.sprite.x, u.sprite.y, 18, UI.C.green, 0.35).setDepth(7);
@@ -445,6 +447,17 @@ class RaidScene extends Phaser.Scene {
       save.materials.plasticScrap  = (save.materials.plasticScrap  || 0) + (loot.plasticScrap  || 0);
       save.materials.salvagedMetal = (save.materials.salvagedMetal || 0) + (loot.salvagedMetal || 0);
       bolts = (firstClear ? 2 + this.levelId + skillTreeEffects.getBoltBonus() : 1) + this.rk.bolts;   // Refined Eye, Word on the Water
+      // Stars: win · lose no barges · no REPAIR; a bolt per new star, and the
+      // first hard win pays extra bolts and half as much loot again
+      const lostN = Object.values(this.lost).reduce((a, b) => a + b, 0);
+      this.starChecks = [['Wrecked the core', true], ['Lost no barges', lostN === 0], ['Won without using REPAIR', !this.repairsUsed]];
+      const r = Stars.record(save, key, this.starChecks.filter(c => c[1]).length, this.hard);
+      this.starResult = r;
+      bolts += r.newStars + (r.hardFirst ? Stars.HARD.bolts : 0);
+      if (r.hardFirst) Object.keys(loot).forEach(m => {
+        const more = Math.ceil(loot[m] * Stars.HARD.materials) - loot[m];
+        loot[m] += more; save.materials[m] = (save.materials[m] || 0) + more;
+      });
       save.bolts = (save.bolts || 0) + bolts;
       save.merchantFatigue = { chrome: 0, ricochet: 0, doubleDown: 0 };
     });
@@ -467,6 +480,13 @@ class RaidScene extends Phaser.Scene {
       body.setY(y + 36); y += h + 10;
     };
     const lostList = Object.entries(this.lost).filter(([, n]) => n).map(([t, n]) => n + ' ' + this.titleCase(TOWER_DATA[t].name) + (n === 1 ? '' : 's'));
+    if (won && this.starChecks) {
+      const lines = this.starChecks.map(([label, ok]) => (ok ? '\u2605  ' : '\u2606  ') + label);
+      const r = this.starResult || {};
+      if (r.newStars) lines.push('+' + r.newStars + ' bolt' + (r.newStars === 1 ? '' : 's') + ' for new stars');
+      if (r.hardFirst) lines.push('Hard mode beaten: +' + Stars.HARD.bolts + ' bolts and extra loot');
+      card(this.hard ? 'STARS  \u00b7  HARD MODE' : 'STARS', lines.join('\n'), this.hard ? UI.C.red : UI.C.amber);
+    }
     card('CONVOY', lostList.length ? 'Lost: ' + lostList.join(', ') + '.\nEverything else came home.' : 'Every cart came home.', UI.C.blue);
     if (won) {
       card('LOOT', '+' + (loot.plasticScrap || 0) + ' Plastic Scrap\n+' + (loot.salvagedMetal || 0) + ' Salvaged Metal\n+' + bolts + ' Bolt' + (bolts === 1 ? '' : 's') + ' for the Uplink', UI.C.green);

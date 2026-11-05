@@ -8,6 +8,7 @@ this.storylineId = data.storylineId || 1;
 this.levelId     = data.levelId     || 1;
 this.levelData   = data.levelData;
 this.isEndless   = data.isEndless   || false;
+this.hard        = !!data.hard;          // hard mode (Stars.HARD)
 }
 
 create() {
@@ -18,6 +19,11 @@ this.H = this.scale.height;
 const height = this.H;
 
 this.saveData = SaveManager.load();
+// Hard mode: tougher raiders and a weaker base (raiders are also faster, see spawnEnemy)
+if (this.hard && this.levelData) {
+  const H = Stars.HARD;
+  this.levelData = Object.assign({}, this.levelData, { hpScale: (this.levelData.hpScale || 1) * H.hp, baseHp: Math.max(4, Math.round((this.levelData.baseHp || 10) * H.baseHp)) });
+}
 
 // ── Automation foundation (Milestone 0) ─────────────────────────────
 // Mark the factory as inactive while the player is in combat. The flag
@@ -887,7 +893,8 @@ g.fillStyle(UI.C.line, 1);  g.fillRect(0, H - 1, width, 1);
 const back = UI.button(this, 36, 40, 44, 44, { variant: 'secondary', radius: 22, depth: 13, onTap: () => this.showPauseMenu() });
 back.add(UI.icon(this, 0, 0, 'pause', 14, 0xeef2f7));
 
-UI.text(this, 70, 30, this.levelData ? this.titleCase(this.levelData.name) : 'Level', 'heading', { size: 17, origin: [0, 0.5], depth: 13 });
+const titleT = UI.text(this, 70, 30, this.levelData ? this.titleCase(this.levelData.name) : 'Level', 'heading', { size: 17, origin: [0, 0.5], depth: 13 });
+if (this.hard) UI.text(this, 70 + titleT.width + 8, 30, 'HARD', 'tag', { size: 10, origin: [0, 0.5], depth: 13, color: UI.T.red });
 this.waveIndicator = UI.text(this, 70, 52, 'WAVE 0 / ' + this.levelData.waves.length, 'label', { size: 11, origin: [0, 0.5], depth: 13 });
 
 // Parts chip (spend on upgrades mid-battle)
@@ -1620,6 +1627,7 @@ const shield = data.shield ? Math.round(data.shield.hp * k) : 0, hp = Math.round
 const enemy = { type, data: { ...data }, sprite, hp, maxHp: hp, baseScale: sprite.scaleX, phase: Math.random() * 6.3, alive: true, pathProgress: 0, hpBg, hpFill,
   lastHeal: this.simNow, burnDps: 0, burnUntil: 0, shield, maxShield: shield, lastHitAt: 0, lastSpawn: this.simNow };
 if (shield) this.addShieldRing(enemy);
+if (this.hard) enemy.data.speed *= Stars.HARD.speed;
 this.activeEnemies.push(enemy);
 this.moveToWaypoint(enemy, from ? from.idx : 1);
 
@@ -1881,6 +1889,13 @@ this.towerTimerEvents.forEach(e => e.remove(false));
 this.towerTimerEvents = [];
 this.speed = 1; this.applyTimeScale();
 
+// Stars: win · no raider reaches the base · win with fewer towers than recommended
+this.starChecks = null;
+if (victory && !this.isEndless) {
+  const placed = Object.values(this.towersUsed).reduce((a, b) => a + b, 0), rec = this.levelData.recommendedTowers || 4;
+  this.starChecks = [['Held the raft', true], ['No raider reached the base', this.enemiesEscaped === 0],
+                     ['Won with ' + (rec - 1) + ' towers or fewer (used ' + placed + ')', placed <= rec - 1]];
+}
 if (victory) this.saveProgress();
 
 const width = this.scale.width, height = this.H;
@@ -1912,6 +1927,16 @@ const card = (title, lines, colour) => {
   body.setY(y + 36);
   y += h + 10;
 };
+
+// Stars (and hard mode)
+if (this.starChecks) {
+  const lines = this.starChecks.map(([label, ok]) => (ok ? '\u2605  ' : '\u2606  ') + label);
+  const r = this.starResult || {};
+  if (r.newStars) lines.push('+' + r.newStars + ' bolt' + (r.newStars === 1 ? '' : 's') + ' for new stars');
+  if (r.hardFirst) lines.push('Hard mode beaten: +' + Stars.HARD.bolts + ' bolts and extra materials');
+  else if (this.hard) lines.push('Hard mode');
+  card(this.hard ? 'STARS  \u00b7  HARD MODE' : 'STARS', lines.join('\n'), this.hard ? UI.C.red : UI.C.amber);
+}
 
 // Tower performance
 const perf = TOWER_ORDER.filter(t => this.towersUsed[t]).map(t => {
@@ -2056,6 +2081,7 @@ if (!this.isEndless && typeof LEVEL_DATA !== 'undefined') {
     // Bulk reward; replays pay half (full with Salvage Ops)
     if (completionBonus) {
       const k = this.firstClear || skillTreeEffects.isReplayFull() ? 1 : 0.5;
+      this._bonusK = k;
       this.materialEarned.plasticScrap  += Math.ceil((completionBonus.plasticScrap  || 0) * k);
       this.materialEarned.salvagedMetal += Math.ceil((completionBonus.salvagedMetal || 0) * k);
     }
@@ -2068,6 +2094,21 @@ const mm = skillTreeEffects.getMaterialDropMult();
 this.materialEarned.plasticScrap  = Math.round(this.materialEarned.plasticScrap * mm) + skillTreeEffects.getVictoryScrap();
 this.materialEarned.salvagedMetal = Math.round(this.materialEarned.salvagedMetal * mm);
 if (!save.materials) save.materials = { plasticScrap: 0, refinedPlastic: 0, salvagedMetal: 0 };
+// Stars and hard mode: a bolt per new star; the first hard win pays extra
+// bolts and lifts the completion bonus to 1.5× its full size
+this.starResult = null;
+if (this.starChecks) {
+  const r = Stars.record(save, Progress.key(this.storylineId, this.levelId), this.starChecks.filter(c => c[1]).length, this.hard);
+  const extra = r.newStars + (r.hardFirst ? Stars.HARD.bolts : 0);
+  this.boltsEarned += extra; save.bolts = (save.bolts || 0) + extra;
+  const cb = this.levelData.materialRewards && this.levelData.materialRewards.completionBonus;
+  if (r.hardFirst && cb) {
+    const lift = Stars.HARD.materials - (this._bonusK || 1);
+    this.materialEarned.plasticScrap  += Math.ceil((cb.plasticScrap  || 0) * lift);
+    this.materialEarned.salvagedMetal += Math.ceil((cb.salvagedMetal || 0) * lift);
+  }
+  this.starResult = r;
+}
 save.materials.plasticScrap  = (save.materials.plasticScrap  || 0) + this.materialEarned.plasticScrap;
 save.materials.salvagedMetal = (save.materials.salvagedMetal || 0) + this.materialEarned.salvagedMetal;
 // ─────────────────────────────────────────────────────────────────────────

@@ -85,7 +85,8 @@ class DockScene extends Phaser.Scene {
         tag: st.short.toUpperCase() + '  \u00b7  ' + st.levels.length + ' LEVELS', title: st.title, colour: colours[st.id] || UI.C.amber,
         body: open ? st.description + '  Enemy: ' + st.faction + '.' : 'Opens after ' + Progress.levelName(gate) + '.',
         progress: doneN / st.levels.length,
-        progressLabel: open ? doneN + ' / ' + st.levels.length + ' cleared' + (built.length < st.levels.length ? '  \u00b7  ' + (st.levels.length - built.length) + ' coming soon' : '') : null,
+        progressLabel: open ? doneN + ' / ' + st.levels.length + ' cleared  \u00b7  \u2605 ' + Stars.total(this.saveData, st.id).got + ' / ' + Stars.total(this.saveData, st.id).max
+          + (built.length < st.levels.length ? '  \u00b7  ' + (st.levels.length - built.length) + ' coming soon' : '') : null,
         unlocked: open, onTap: () => this.showLevelList(st)
       }) + 12;
     });
@@ -214,6 +215,12 @@ class DockScene extends Phaser.Scene {
     else if (raid)     items.push(UI.icon(this, x, y, 'anchor', 18, UI.C.red));
     else if (level.boss) items.push(UI.icon(this, x, y, 'star', 18, UI.C.red));
     else               items.push(UI.text(this, x, y, String(level.id), 'number', { size: 20, origin: 0.5, color: UI.T.amber }));
+    // Stars under the island, and a red crown for a hard-mode win
+    if (isDone) {
+      const key = Progress.key(storyline.id, level.id), n = Stars.get(this.saveData, key);
+      for (let k = 0; k < 3; k++) items.push(UI.icon(this, x - 13 + k * 13, y + 36, 'star', 10, k < n ? UI.C.amber : 0x3a4452));
+      if (Stars.hard(this.saveData, key)) items.push(UI.icon(this, x + 21, y - 21, 'star', 12, UI.C.red));
+    }
     if (isNext) {
       const ring = this.add.circle(x, y, 30, UI.C.amber, 0).setStrokeStyle(3, UI.C.amber, 0.9);
       this.tweens.add({ targets: ring, scale: 1.35, alpha: 0, duration: 1200, repeat: -1 });
@@ -260,9 +267,16 @@ class DockScene extends Phaser.Scene {
 
     let body = 'Incoming:\n' + enemyLines + '\n\nYour towers: ' + towers;
     if (rec) body += '\n\nRecommended: ' + rec + ' towers' + (total < rec ? ' \u2014 you have ' + total + '.' : '.');
+    const key = Progress.key(storyline.id, level.id), done = Progress.done(this.saveData, key);
+    body += '\n\n' + this.starLine(key) + '\n(win \u00b7 no leaks \u00b7 ' + Math.max(1, (rec || 4) - 1) + ' towers or fewer)';
+    if (done) body += Stars.hard(this.saveData, key) ? '\n\nHard mode beaten.'
+                    : '\n\nHard mode: tougher, faster raiders and a weaker base. First hard win pays +' + Stars.HARD.bolts + ' bolts.';
 
     const buttons = total > 0
-      ? [{ label: 'CANCEL', variant: 'secondary' }, { label: 'LAUNCH', variant: 'primary', colour: UI.C.red, onTap: () => this.launch(level, false, storyline) }]
+      ? (done ? [{ label: 'LAUNCH', variant: 'primary', colour: UI.C.red, onTap: () => this.launch(level, false, storyline) },
+                 { label: 'HARD MODE', variant: 'secondary', colour: UI.C.red, onTap: () => this.launch(level, false, storyline, true) },
+                 { label: 'CANCEL', variant: 'secondary' }]
+              : [{ label: 'CANCEL', variant: 'secondary' }, { label: 'LAUNCH', variant: 'primary', colour: UI.C.red, onTap: () => this.launch(level, false, storyline) }])
       : [{ label: 'CANCEL', variant: 'secondary' }, { label: 'BUILD TOWERS', variant: 'primary', colour: UI.C.blue, onTap: () => UI.go(this, 'FactoryScene') }];
     if (total === 0) body += '\n\nYou have no towers. Build some in the Factory first.';
 
@@ -283,16 +297,27 @@ class DockScene extends Phaser.Scene {
     const loot = level.loot ? '+' + (level.loot.plasticScrap || 0) + ' scrap, +' + (level.loot.salvagedMetal || 0) + ' metal' : '';
     const body = 'An attack. Your towers ride out on carts along the road \u2014 they fire as they go. Wreck the core at the end.\n\n' +
       'Defences: ' + Object.entries(kinds).map(([k, n]) => n + ' ' + (RAID_TURRETS[k] || {}).name + (n === 1 ? '' : 's')).join(', ') + '\n' +
-      'Loot: ' + loot + '\nYour towers: ' + towers + '\n\nTowers that get wrecked are lost. The rest come home.';
+      'Loot: ' + loot + '\nYour towers: ' + towers + '\n\nTowers that get wrecked are lost. The rest come home.\n\n' +
+      this.starLine(Progress.key(storyline.id, level.id)) + '\n(win \u00b7 lose no barges \u00b7 no REPAIR)';
+    const rdone = Progress.done(this.saveData, Progress.key(storyline.id, level.id));
     UI.modal(this, {
       title: 'Raid \u2014 ' + this.titleCase(level.name), body, icon: 'anchor', accent: UI.C.red,
-      buttons: total > 0 ? [{ label: 'CANCEL', variant: 'secondary' }, { label: 'RAID', variant: 'primary', colour: UI.C.red, onTap: () => this.launch(level, false, storyline) }]
+      buttons: total > 0 ? (rdone ? [{ label: 'RAID', variant: 'primary', colour: UI.C.red, onTap: () => this.launch(level, false, storyline) },
+                                     { label: 'HARD MODE', variant: 'secondary', colour: UI.C.red, onTap: () => this.launch(level, false, storyline, true) },
+                                     { label: 'CANCEL', variant: 'secondary' }]
+                                   : [{ label: 'CANCEL', variant: 'secondary' }, { label: 'RAID', variant: 'primary', colour: UI.C.red, onTap: () => this.launch(level, false, storyline) }])
                          : [{ label: 'CANCEL', variant: 'secondary' }, { label: 'BUILD TOWERS', variant: 'primary', colour: UI.C.blue, onTap: () => UI.go(this, 'FactoryScene') }],
       dismissOnBackdrop: true
     });
   }
 
-  launch(level, endless, storyline) {
+  // "★★☆" for a mission (plus a crown mark when beaten on hard)
+  starLine(key) {
+    const n = Stars.get(this.saveData, key);
+    return 'Stars: ' + '\u2605'.repeat(n) + '\u2606'.repeat(3 - n);
+  }
+
+  launch(level, endless, storyline, hard) {
     if (endless) {
       const pool = this.endlessPool();
       if (!pool.length) return;
@@ -306,7 +331,7 @@ class DockScene extends Phaser.Scene {
     }
     const sid = (storyline && storyline.id) || 1;
     const scene = level.type === 'raid' ? 'RaidScene' : 'CombatScene';
-    const go = () => UI.go(this, scene, { storylineId: sid, levelId: level.id, levelData: level });
+    const go = () => UI.go(this, scene, { storylineId: sid, levelId: level.id, levelData: level, hard: !!hard });
     // The story scene leading into this level (once)
     const bkey = Progress.key(sid, level.id) + '.before';
     if (Story.has(bkey)) Story.play(this, bkey, go); else go();

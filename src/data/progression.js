@@ -87,3 +87,29 @@ const Progress = {
     return '';
   }
 };
+
+// ── Stars and hard mode ──────────────────────────────────────────────────────
+// Every mission has three stars (see CombatScene / RaidScene for what earns
+// them), stored as save.stars[key] = 0..3. Hard mode opens once a mission is
+// cleared; save.hardCleared[key] marks a hard win.
+const Stars = {
+  get(save, key) { return (save && save.stars && save.stars[key]) || 0; },
+  hard(save, key) { return !!(save && save.hardCleared && save.hardCleared[key]); },
+  // { got, max } across a storyline's built levels
+  total(save, storylineId) {
+    const st = Progress.storyline(storylineId);
+    const levels = st ? st.levels.filter(l => !l.soon) : [];
+    return { got: levels.reduce((n, l) => n + Stars.get(save, Progress.key(storylineId, l.id)), 0), max: levels.length * 3 };
+  },
+  // Record a result. Returns { newStars, hardFirst } — what earns a reward
+  record(save, key, count, hard) {
+    if (!save.stars) save.stars = {};
+    const prev = save.stars[key] || 0, newStars = Math.max(0, count - prev);
+    if (count > prev) save.stars[key] = count;
+    let hardFirst = false;
+    if (hard) { if (!save.hardCleared) save.hardCleared = {}; hardFirst = !save.hardCleared[key]; save.hardCleared[key] = true; }
+    return { newStars, hardFirst };
+  },
+  // Hard mode for defences: tougher, faster raiders and a weaker base
+  HARD: { hp: 1.5, speed: 1.1, baseHp: 0.7, turrets: 1.3, bolts: 3, materials: 1.5 }
+};

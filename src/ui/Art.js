@@ -359,6 +359,19 @@ const Art = {
       else if (type === 'gunner2') { barrel(19, 3.5, -2.6); barrel(19, 3.5, 2.6); ring(9.5); g.fillStyle(dark, 1); g.fillRect(cx - 6 * R, cy - 1.5 * R, 9 * R, 3 * R); }
       else if (type === 'bomber') { ring(10); g.fillStyle(0x2a2a2a, 1); g.fillRoundedRect(cx - 2 * R, cy - 5 * R, 14 * R, 10 * R, 3 * R); g.fillStyle(0x0b0f14, 1); g.fillCircle(cx + 9 * R, cy, 3.5 * R); }
       else if (type === 'siphon') { ring(8.5); g.lineStyle(2 * R, 0xd9c9ff, 1); g.strokeCircle(cx, cy, 5 * R); g.fillStyle(0xd9c9ff, 1); g.fillTriangle(cx + 6 * R, cy - 3 * R, cx + 16 * R, cy, cx + 6 * R, cy + 3 * R); g.fillStyle(0xffffff, 1); g.fillCircle(cx, cy, 2 * R); }
+      else if (type === 'harpoon') {
+        // Whaling gun: a long rail with the bolt loaded, a drum of rope behind
+        g.fillStyle(0x5a6472, 1); g.fillRect(cx - 2 * R, cy - 2.5 * R, 20 * R, 5 * R);
+        g.fillStyle(0xdfe6ee, 1); g.fillRect(cx + 2 * R, cy - 1 * R, 15 * R, 2 * R);
+        g.fillTriangle(cx + 17 * R, cy - 3.5 * R, cx + 22 * R, cy, cx + 17 * R, cy + 3.5 * R);
+        ring(8); g.fillStyle(0xc9b48a, 1); g.fillCircle(cx - 3 * R, cy, 4 * R); g.lineStyle(1 * R, 0x8a7448, 1); g.strokeCircle(cx - 3 * R, cy, 2.5 * R);
+      }
+      else if (type === 'cannon') {
+        // Pump drum with a flared nozzle
+        g.fillStyle(0x8a96a6, 1); g.fillRect(cx, cy - 3 * R, 12 * R, 6 * R);
+        g.fillStyle(0xd9a441, 1); g.fillTriangle(cx + 11 * R, cy - 3 * R, cx + 18 * R, cy - 6 * R, cx + 18 * R, cy + 6 * R); g.fillTriangle(cx + 11 * R, cy - 3 * R, cx + 11 * R, cy + 3 * R, cx + 18 * R, cy + 6 * R);
+        ring(9.5); g.fillStyle(0xbfefff, 1); g.fillCircle(cx, cy, 4 * R); g.fillStyle(0x1a6a88, 1); g.fillCircle(cx, cy, 1.8 * R);
+      }
       else if (type === 'barricade') {
         // Spiked boom: a star of spikes around a hub
         g.fillStyle(0xdfe6ee, 1);
@@ -711,6 +724,26 @@ const Art = {
       if (c >= 1) { g.lineStyle(2, 0x8a8f96, 1); g.lineBetween(-4, -9, -12, -15); g.fillStyle(0x2a2a2a, 1); g.fillCircle(-12, -15, 2); }   // hand pump
       if (c >= 2) box(-6, 8, 10, 7, 0x4a3f5a, 0x9d7ff0);                                  // bilge pump
       if (c >= 3) { g.fillStyle(0x9d7ff0, 0.35); g.fillCircle(0, 0, 13); g.fillStyle(0xffffff, 1); g.fillCircle(0, 0, 3); }   // engine core glow
+    } else if (type === 'harpoon') {
+      if (a >= 1) { g.fillStyle(0xc9b48a, 1); g.fillCircle(-3, 0, 6); g.lineStyle(1, 0x8a7448, 1); g.strokeCircle(-3, 0, 4); }   // bigger rope drum
+      if (a >= 2) { g.lineStyle(1.4, 0x9aa3ad, 1); g.strokeCircle(-3, 0, 7.5); }                                     // steel cable
+      if (a >= 3) { box(-16, -7, 8, 14, 0x3a4452, 0xd9a441); g.fillStyle(brass, 1); g.fillCircle(-12, 0, 2.5); }      // deep-sea winch
+      if (b >= 1) { g.fillStyle(0xe5534b, 1); g.fillTriangle(17, -3.5, 14, -6, 15, -2); g.fillTriangle(17, 3.5, 14, 6, 15, 2); }   // barbs
+      if (b >= 2) { g.fillStyle(0x7fe3ff, 1); g.fillTriangle(20, -2, 24, 0, 20, 2); }                                 // shield-ripper tip
+      if (b >= 3) { g.fillStyle(0xe8a020, 1); g.fillCircle(19, 0, 3); g.fillStyle(0xe5534b, 1); g.fillCircle(19, 0, 1.5); }   // explosive tip
+      if (c >= 1) { g.fillStyle(0x5a6068, 1); g.fillRect(-1, 6, 8, 3); }                                              // ratchet
+      if (c >= 2) { g.lineStyle(1.6, 0xb7bec8, 1); g.strokeCircle(4, 8, 3); }                                         // gear
+      if (c >= 3) { g.fillStyle(0x5a6472, 1); g.fillRect(-2, -9, 20, 4); g.fillStyle(0xdfe6ee, 1); g.fillRect(2, -8, 15, 2); }   // twin launcher
+    } else if (type === 'cannon') {
+      const hoseLoop = (r, col) => { g.lineStyle(2.4, col, 1); g.beginPath(); g.arc(-8, 0, r, Math.PI * 0.4, Math.PI * 1.6); g.strokePath(); };
+      if (a >= 1) hoseLoop(7, 0xc43a3a);                                                   // pump hose
+      if (a >= 2) box(-18, -6, 7, 12, 0xc43a3a, 0x6e2222);                                 // fire pump
+      if (a >= 3) { g.fillStyle(brass, 1); g.fillRect(17, -5, 4, 10); }                    // firehose nozzle ring
+      const fan = n => { g.fillStyle(0xbfefff, 0.9); for (let i = 0; i < n; i++) { const t = (i - (n - 1) / 2) * 0.5; g.fillCircle(Math.cos(t) * 20, Math.sin(t) * 20, 1.8); } };
+      if (b >= 1) fan(b === 1 ? 2 : b === 2 ? 3 : 5);                                     // spray jets
+      if (c >= 1) box(2, 7, 8, 5, 0xdfe6ee);                                              // brine tank
+      if (c >= 2) { g.fillStyle(0x8a7448, 1); [4, 7].forEach(x => g.fillCircle(x, 9.5, 1)); }   // grit
+      if (c >= 3) { g.fillStyle(0xe5534b, 0.4); g.fillCircle(0, 0, 12); g.fillStyle(0xffffff, 0.8); [-3, 0, 3].forEach(x => g.fillCircle(x, -13, 1.4)); }   // boiling: heat + steam
     }
   },
 

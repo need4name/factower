@@ -21,6 +21,8 @@ const UNLOCKS = {
   market:     { at: 'p5',   label: 'The Market — Chrome has set up shop on your raft.' },
   uplink:     { at: 'p7',   label: 'The Uplink — trade bolts for permanent upgrades.' },
   gunner2:    { at: 's1-3', label: 'Gunner Mk II — SALV tech. Build it from metal at a new bench.' },
+  harpoon:    { at: 's3-2', label: 'The Harpoon — a whaling gun from the Front\u2019s stores. Long reach, armour-piercing, reels raiders in.' },
+  cannon:     { at: 's4-2', label: 'The Water Cannon — Helix tech from the relay. Shoves raiders back up the road and washes shields away.' },
   siphon:     { at: 's1-6', label: 'The Siphon — Borga\u2019s beam tower. Raiders it drains drop double salvage, straight into your Parts.' },
   worker3:    { at: 's2-2', label: 'Borga joins the factory as your third worker.' },
   belts:      { at: 's1-3', label: 'Conveyor belts — SALV tech that moves items without workers.' }
@@ -116,7 +118,7 @@ const Stars = {
   HARD: { hp: 1.5, speed: 1.1, baseHp: 0.7, turrets: 1.3, bolts: 3, materials: 1.5 },
   // Raider toughness on hard, by storyline: later stories expect an upgraded
   // Uplink, so hard mode leans harder on them (sim-tuned)
-  HARD_HP: { 1: 1.5, 2: 1.85, 3: 1.85, 4: 1.5, 5: 1.6, 6: 1.6 },
+  HARD_HP: { 1: 1.5, 2: 1.85, 3: 1.85, 4: 1.85, 5: 1.8, 6: 1.8 },
   hardHp(storylineId) { return Stars.HARD_HP[storylineId] || Stars.HARD.hp; }
 };
 

@@ -89,6 +89,28 @@ const MACHINE_TYPES = {
     duration:     5000,
     depositDuration: 1000
   },
+  assembly_harpoon: {
+    key:          'assembly_harpoon',
+    name:         'ASSEMBLY \xb7 HARPOON',
+    shortName:    'ASM\xb7HAR',
+    colour:       0x7fa8b8,
+    colourHex:    '#7fa8b8',
+    produces:     'harpoon',
+    primaryInput: 'salvagedMetal',
+    duration:     6000,
+    depositDuration: 1000
+  },
+  assembly_cannon: {
+    key:          'assembly_cannon',
+    name:         'ASSEMBLY \xb7 WATER CANNON',
+    shortName:    'ASM\xb7CAN',
+    colour:       0x3fc1e8,
+    colourHex:    '#3fc1e8',
+    produces:     'cannon',
+    primaryInput: 'refinedPlastic',
+    duration:     6000,
+    depositDuration: 1000
+  },
   conveyor: {
     key:        'conveyor',
     name:       'CONVEYOR',

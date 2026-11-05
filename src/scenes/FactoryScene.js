@@ -48,6 +48,8 @@ create() {
     assembly_barricade: { plasticScrap: 1, salvagedMetal: 2 },
     assembly_gunner2:   { plasticScrap: 2, salvagedMetal: 3 },
     assembly_siphon:    { plasticScrap: 3, salvagedMetal: 3 },
+    assembly_harpoon:   { plasticScrap: 2, salvagedMetal: 4 },
+    assembly_cannon:    { plasticScrap: 4, salvagedMetal: 3 },
     conveyor:           { plasticScrap: 1 }
   };
 
@@ -193,7 +195,7 @@ checkNewTowerTutorials() {
   if (!this.saveData.flags.towerTutorialsSeen) this.saveData.flags.towerTutorialsSeen = {};
   const seen = this.saveData.flags.towerTutorialsSeen;
   // One card per visit; the next one shows on the following visit
-  const next = ['barricade', 'bomber', 'gunner2', 'siphon'].find(t => this.unlockedAssemblyTypes.includes('assembly_' + t) && !seen[t]);
+  const next = ['barricade', 'bomber', 'gunner2', 'siphon', 'harpoon', 'cannon'].find(t => this.unlockedAssemblyTypes.includes('assembly_' + t) && !seen[t]);
   if (next) this.time.delayedCall(350, () => this.showTowerUnlockBanner(next));
 }
 
@@ -206,6 +208,10 @@ showTowerUnlockBanner(towerType) {
       body: 'SALV tech: heavier rounds and longer reach. Mk II benches take 1 Salvaged Metal per tower.' },
     siphon: { colour: UI.C.purple, title: 'Siphon unlocked',
       body: 'Borga\u2019s beam drains raiders, and anything that dies in it drops double salvage straight into your Parts. Siphon benches take Refined Plastic from a Smelter.' },
+    harpoon: { colour: 0x7fa8b8, title: 'Harpoon unlocked',
+      body: 'A whaling gun: long reach, one heavy armour-piercing bolt, and the rope reels the raider in for a moment. Harpoon benches take 1 Salvaged Metal per tower.' },
+    cannon: { colour: 0x3fc1e8, title: 'Water Cannon unlocked',
+      body: 'Helix tech: sprays raiders back up the road and washes shields off fast. Weak damage, so pair it with hitters. Cannon benches take Refined Plastic from a Smelter.' },
     bomber: { colour: UI.C.amber, title: 'Bomber unlocked',
       body: 'Bombers hit everything in a blast. They need Refined Plastic: build a Smelter, smelt Plastic Scrap, then load the refined plastic into a Bomber bench.' }
   }[towerType];
@@ -220,7 +226,7 @@ showTowerUnlockBanner(towerType) {
         if (!latest.flags.towerTutorialsSeen) latest.flags.towerTutorialsSeen = {};
         latest.flags.towerTutorialsSeen[towerType] = true;
       });
-      const more = ['barricade', 'bomber', 'gunner2', 'siphon'].find(t => this.unlockedAssemblyTypes.includes('assembly_' + t) && !this.saveData.flags.towerTutorialsSeen[t]);
+      const more = ['barricade', 'bomber', 'gunner2', 'siphon', 'harpoon', 'cannon'].find(t => this.unlockedAssemblyTypes.includes('assembly_' + t) && !this.saveData.flags.towerTutorialsSeen[t]);
       if (more) this.time.delayedCall(250, () => this.showTowerUnlockBanner(more));
     } }]
   });
@@ -234,6 +240,8 @@ getUnlockedAssemblyTypes() {
   if (Progress.has(this.saveData, 'barricade')) types.push('assembly_barricade');
   if (Progress.has(this.saveData, 'gunner2'))   types.push('assembly_gunner2');
   if (Progress.has(this.saveData, 'siphon'))    types.push('assembly_siphon');
+  if (Progress.has(this.saveData, 'harpoon'))   types.push('assembly_harpoon');
+  if (Progress.has(this.saveData, 'cannon'))    types.push('assembly_cannon');
   return types;
 }
 
@@ -501,9 +509,12 @@ showAssemblyTypeMenu(targetRow, targetCol) {
     { key: 'assembly_bomber',    name: 'Bomber',    colour: UI.C.amber, needs: '1 Refined Plastic per tower (smelter)' },
     { key: 'assembly_barricade', name: 'Barricade', colour: UI.C.red,   needs: '1 Salvaged Metal per tower' },
     { key: 'assembly_gunner2',   name: 'Gunner Mk II', colour: 0x2fb6d6, needs: '1 Salvaged Metal per tower' },
-    { key: 'assembly_siphon',    name: 'Siphon',    colour: UI.C.purple, needs: '1 Refined Plastic per tower (smelter)' }
+    { key: 'assembly_siphon',    name: 'Siphon',    colour: UI.C.purple, needs: '1 Refined Plastic per tower (smelter)' },
+    { key: 'assembly_harpoon',   name: 'Harpoon',   colour: 0x7fa8b8, needs: '1 Salvaged Metal per tower' },
+    { key: 'assembly_cannon',    name: 'Water Cannon', colour: 0x3fc1e8, needs: '1 Refined Plastic per tower (smelter)' }
   ].filter(t => this.unlockedAssemblyTypes.includes(t.key) || ['assembly_gunner', 'assembly_bomber', 'assembly_barricade'].includes(t.key));
-  const rowH = 84, sheetH = 70 + types.length * (rowH + 10) + 70;
+  const many = types.length > 5, rowH = many ? 66 : 84, gap = many ? 6 : 10, k = rowH / 84;
+  const sheetH = 70 + types.length * (rowH + gap) + 70;
   const top = height - sheetH - 12;
   items.push(UI.panel(this, width / 2, top + sheetH / 2, width - 24, sheetH, { fill: UI.C.surface, stroke: UI.C.line, radius: 18, depth: D + 1 }));
   items.push(UI.text(this, 12 + 22, top + 22, 'Which tower will this bench build?', 'heading', { size: 17, depth: D + 2 }));
@@ -521,16 +532,16 @@ showAssemblyTypeMenu(targetRow, targetCol) {
     const cost     = this.MACHINE_BUILD_COSTS[t.key];
     const afford   = this.canAffordBuild(cost);
     const ok       = unlocked && afford;
-    const cy = top + 70 + i * (rowH + 10) + rowH / 2;
+    const cy = top + 70 + i * (rowH + gap) + rowH / 2;
     const w = width - 56, lx = 28 + 18;
     const p = UI.panel(this, width / 2, cy, w, rowH, {
       fill: ok ? UI.C.surface2 : 0x10151c, stroke: ok ? t.colour : UI.C.lineSoft, strokeAlpha: ok ? 0.7 : 1,
       accent: unlocked ? t.colour : undefined, radius: 14, depth: D + 2
     });
     items.push(p,
-      UI.text(this, lx, cy - 22, t.name, 'heading', { size: 18, origin: [0, 0.5], depth: D + 3, color: unlocked ? UI.T.text : UI.T.faint }),
-      UI.text(this, lx, cy + 2, unlocked ? t.needs : 'Unlocks after ' + Progress.levelName(UNLOCKS[t.key.replace('assembly_', '')].at), 'small', { size: 12, origin: [0, 0.5], depth: D + 3, color: unlocked ? UI.T.mute : UI.T.faint }),
-      UI.text(this, lx, cy + 24, unlocked ? 'Build: ' + this.formatCost(cost) + (afford ? '' : '  — not enough') : '', 'label',
+      UI.text(this, lx, cy - 22 * k, t.name, 'heading', { size: many ? 16 : 18, origin: [0, 0.5], depth: D + 3, color: unlocked ? UI.T.text : UI.T.faint }),
+      UI.text(this, lx, cy + 2 * k, unlocked ? t.needs : 'Unlocks after ' + Progress.levelName(UNLOCKS[t.key.replace('assembly_', '')].at), 'small', { size: 12, origin: [0, 0.5], depth: D + 3, color: unlocked ? UI.T.mute : UI.T.faint }),
+      UI.text(this, lx, cy + 22 * k, unlocked ? 'Build: ' + this.formatCost(cost) + (afford ? '' : '  — not enough') : '', 'label',
         { size: 11, origin: [0, 0.5], depth: D + 3, color: afford ? UI.hex(t.colour) : UI.T.red }));
     if (!unlocked) items.push(UI.icon(this, width / 2 + w / 2 - 26, cy, 'lock', 15, 0x465163).setDepth(D + 3));
     if (t.key === 'assembly_gunner') this._asmGunnerRect = { x: width / 2, y: cy, w, h: rowH };
@@ -841,7 +852,7 @@ drawMachines() {
 }
 
 machineLabel(type) {
-  return { smelter: 'SMELTER', conveyor: 'BELT', assembly_gunner: 'GUNNER', assembly_bomber: 'BOMBER', assembly_barricade: 'BARRICADE', assembly_gunner2: 'MK II', assembly_siphon: 'SIPHON' }[type] || type.toUpperCase();
+  return { smelter: 'SMELTER', conveyor: 'BELT', assembly_gunner: 'GUNNER', assembly_bomber: 'BOMBER', assembly_barricade: 'BARRICADE', assembly_gunner2: 'MK II', assembly_siphon: 'SIPHON', assembly_harpoon: 'HARPOON', assembly_cannon: 'CANNON' }[type] || type.toUpperCase();
 }
 
 drawMachineAt(row, col, type) {

@@ -55,7 +55,7 @@ const Sfx = {
   },
 
   // Minimum gap (ms) between plays of busy effects
-  GAP: { shot: 70, shot2: 80, bomb: 120, boom: 90, hit: 50, sink: 90, coin: 60, tick: 40, zap: 140 },
+  GAP: { spray: 110, harpoon: 120, shot: 70, shot2: 80, bomb: 120, boom: 90, hit: 50, sink: 90, coin: 60, tick: 40, zap: 140 },
 
   play(name) {
     if (Sfx.muted || !Sfx.ctx || Sfx.ctx.state !== 'running') return;
@@ -106,6 +106,8 @@ const Sfx = {
     boom:   (c, t, o) => { Sfx.noise(c, t, o, { f0: 1400, f1: 120, dur: 0.45, vol: 0.32 }); Sfx.tone(c, t, o, { f0: 90, f1: 40, dur: 0.35, vol: 0.3 }); },
     hit:    (c, t, o) => Sfx.tone(c, t, o, { type: 'square', f0: 1800, f1: 1200, dur: 0.035, vol: 0.03 }),
     clank:  (c, t, o) => Sfx.tone(c, t, o, { type: 'triangle', f0: 2400, f1: 1900, dur: 0.08, vol: 0.06 }),
+    harpoon:(c, t, o) => { Sfx.noise(c, t, o, { type: 'bandpass', f0: 900, f1: 300, q: 1.5, dur: 0.18, vol: 0.18 }); Sfx.tone(c, t, o, { type: 'triangle', f0: 520, f1: 260, dur: 0.22, vol: 0.06 }); },
+    spray:  (c, t, o) => Sfx.noise(c, t, o, { type: 'highpass', f0: 3000, f1: 1500, dur: 0.16, vol: 0.06 }),
     zap:    (c, t, o) => Sfx.tone(c, t, o, { type: 'sawtooth', f0: 300, f1: 900, dur: 0.12, vol: 0.05 }),
     shield: (c, t, o) => { Sfx.tone(c, t, o, { type: 'triangle', f0: 2200, f1: 500, dur: 0.25, vol: 0.12 }); Sfx.noise(c, t, o, { type: 'highpass', f0: 4000, dur: 0.2, vol: 0.08 }); },
     sink:   (c, t, o) => Sfx.noise(c, t, o, { type: 'bandpass', f0: 1600, f1: 300, q: 1.5, dur: 0.4, vol: 0.22 }),

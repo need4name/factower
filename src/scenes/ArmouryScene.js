@@ -3,6 +3,8 @@ const TOWER_SELL_VALUE = {
   gunner:    1,
   gunner2:   3,
   siphon:    3,
+  harpoon:   4,
+  cannon:    4,
   bomber:    2,
   barricade: 2
 };
@@ -19,7 +21,9 @@ const TOWER_ROLE = {
   bomber:    'Slow, heavy shells that hit everything in a blast.',
   barricade: 'Deals no damage — slows every raider in its field.',
   gunner2:   'Tier 2 Gunner. Heavier rounds and longer reach.',
-  siphon:    'Drains raiders with a beam. Kills drop double salvage, auto-collected.'
+  siphon:    'Drains raiders with a beam. Kills drop double salvage, auto-collected.',
+  harpoon:   'Long-range bolt that pierces armour and reels raiders in.',
+  cannon:    'Sprays raiders back up the road. Strips shields fast.'
 };
 
 class ArmouryScene extends Phaser.Scene {
@@ -94,6 +98,7 @@ class ArmouryScene extends Phaser.Scene {
       // Stat row
       const stats = type === 'barricade' ? [['SLOW', Math.round((1 - d.slowAmount) * 100) + '%'], ['RANGE', d.range]]
         : type === 'siphon' ? [['DRAIN', d.dps + '/s'], ['RANGE', d.range], ['BEAMS', d.beams]]
+        : type === 'cannon' ? [['PUSH', d.push], ['RANGE', d.range], ['SHIELD', '\u00d7' + d.shieldX]]
         : [['DAMAGE', d.damage], ['RANGE', d.range], ['RATE', (1000 / d.fireRate).toFixed(1) + '/s']];
       if (unlocked || !compact) stats.forEach(([k, v], i) => {
         const sx = lx + i * 66;

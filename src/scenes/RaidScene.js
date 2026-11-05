@@ -12,7 +12,7 @@ const RAID_TURRETS = {
   salvo: { name: 'SALV salvo', hp: 210, dmg: 10, range: 135, rate: 500,  colour: 0x52c47f, parts: 9 },
   heavy: { name: 'Cannon',   hp: 300, dmg: 38, range: 110, rate: 1800, colour: 0xb03a33, parts: 12, rare: 'plate' }
 };
-const RAID_UNIT_HP   = { gunner: 110, gunner2: 150, bomber: 90, barricade: 260, siphon: 120 };
+const RAID_UNIT_HP   = { gunner: 110, gunner2: 150, bomber: 90, barricade: 260, siphon: 120, harpoon: 130, cannon: 150 };
 const RAID_DEPLOY_MS = 1000;
 const RAID_REPAIR    = { cost: 10, heal: 0.5, cooldown: 6000 };
 
@@ -280,8 +280,11 @@ class RaidScene extends Phaser.Scene {
         const ally = this.units.filter(o => o.alive && o !== u && o.hp < o.maxHp).sort((a, b) => Math.abs(a.s - u.s) - Math.abs(b.s - u.s))[0];
         if (ally) ally.hp = Math.min(ally.maxHp, ally.hp + dmg * 0.6);
       }
-      Sfx.play(u.type === 'bomber' ? 'bomb' : u.type === 'siphon' ? 'zap' : u.type === 'gunner2' ? 'shot2' : 'shot');
-      this.fire(p.x, p.y, target, u.type === 'bomber' ? 340 : 700, dmg, u.type === 'bomber' ? (u.d.splashRadius || 80) : 0, u.type === 'bomber' ? u.d.colour : u.type === 'siphon' ? 0xc9b6ff : 0xfff2c4, 'unit');
+      // Water cannon carts swamp a turret: it can't fire for a moment
+      if (u.type === 'cannon' && target !== this.core) target.last = Math.max(target.last, this.simNow) + 500;
+      Sfx.play(u.type === 'bomber' ? 'bomb' : u.type === 'siphon' ? 'zap' : u.type === 'harpoon' ? 'harpoon' : u.type === 'cannon' ? 'spray' : u.type === 'gunner2' ? 'shot2' : 'shot');
+      this.fire(p.x, p.y, target, u.type === 'bomber' ? 340 : 700, dmg, u.type === 'bomber' ? (u.d.splashRadius || 80) : 0,
+        u.type === 'bomber' ? u.d.colour : u.type === 'siphon' ? 0xc9b6ff : u.type === 'cannon' ? 0xbfefff : 0xfff2c4, 'unit');
     });
 
     // Turrets shoot the nearest cart in range — barricades first

@@ -174,7 +174,7 @@ this.drawAbilityButtons();
 this.setupPlacementInput();
 
 // ── Checks ───────────────────────────────────────────────────────────
-const total = this.loadout.gunner + this.loadout.bomber + this.loadout.barricade;
+const total = Object.values(this.loadout).reduce((a, n) => a + (n || 0), 0);
 const tutorialDone = this.saveData && this.saveData.tutorials && this.saveData.tutorials.combat1;
 if (total === 0) {
   this._modalOpen = true;
@@ -668,6 +668,11 @@ if (m.napalm)      d.napalm      = m.napalm;
 if (m.armourBonus) d.armourBonus = m.armourBonus;
 if (m.dps)         d.dps         = m.dps;
 if (m.beams)       d.beams       = m.beams;
+if (m.push)        d.push        = m.push;
+if (m.spray)       d.spray       = m.spray;
+if (m.shieldX)     d.shieldX     = m.shieldX;
+if (m.reelMs)      d.reelMs      = m.reelMs;
+if (m.knock)       d.knock       = m.knock;
 
 if (m.burnDps) {
   d.burnDps = m.burnDps;
@@ -1086,6 +1091,7 @@ this.refreshTowerButtons();
 getSpeedModifier(enemy) {
 let modifier = 1.0;
 if (enemy.netUntil && enemy.netUntil > this.simNow) modifier = 0.15;
+if (enemy.reelUntil && enemy.reelUntil > this.simNow) modifier = Math.min(modifier, enemy.reelAmt || 0.4);
 this.placedTowers.forEach(tower => {
 if (tower.type !== 'barricade') return;
 if (Phaser.Math.Distance.Between(tower.x, tower.y, enemy.sprite.x, enemy.sprite.y) <= tower.data.range) {
@@ -1141,6 +1147,7 @@ towerShoot(tower) {
 if (!this.waveActive || this.gameOver) { if (tower.beamGfx) tower.beamGfx.clear(); return; }
 if (tower.type === 'barricade') return;
 if (tower.type === 'siphon') return this.siphonTick(tower);
+if (tower.type === 'cannon') return this.cannonSpray(tower);
 const rate = tower.data.fireRate / this.sk.fire;   // Drill
 if (this.simNow - tower.lastFired < rate) return;
 
@@ -1151,7 +1158,7 @@ const inRange = this.activeEnemies.filter(e => {
 if (inRange.length === 0) return;
 
 const target = this.pickTarget(tower, inRange);
-Sfx.play(tower.type === 'bomber' ? 'bomb' : tower.type === 'gunner2' ? 'shot2' : 'shot');
+Sfx.play(tower.type === 'bomber' ? 'bomb' : tower.type === 'harpoon' ? 'harpoon' : tower.type === 'gunner2' ? 'shot2' : 'shot');
 // Keep the cadence on slow frames: step lastFired by the fire rate rather
 // than snapping it to now, and fire again this frame if still behind.
 // After an idle spell it restarts from now.
@@ -1172,13 +1179,17 @@ if (tower.barrel) {
 // behind a moving target. If it dies mid-flight the shot picks the
 // nearest other raider, or fizzles.
 const mx = tower.x + Math.cos(ang) * 16, my = tower.y + Math.sin(ang) * 16;
-const bullet = this.add.circle(mx, my, tower.type === 'bomber' ? 6 : 3.5, tower.type === 'bomber' ? tower.data.colour : 0xfff2c4).setDepth(7);
-this.projectiles.push({ bullet, target, tower, speed: tower.type === 'bomber' ? 340 : 700 });
+const harpoon = tower.type === 'harpoon';
+const shot = () => harpoon ? this.add.rectangle(mx, my, 14, 3, 0xdfe6ee).setDepth(7)
+  : this.add.circle(mx, my, tower.type === 'bomber' ? 6 : 3.5, tower.type === 'bomber' ? tower.data.colour : 0xfff2c4).setDepth(7);
+const speed = tower.type === 'bomber' ? 340 : harpoon ? 620 : 700;
+const bullet = shot();
+this.projectiles.push({ bullet, target, tower, speed, line: harpoon });
 if (tower.data.doubleShot) {
   // Double barrel: a second round at the next raider in range (or the same one)
   const second = inRange.find(e => e !== target) || target;
-  const b2 = this.add.circle(mx, my, 3.5, 0xfff2c4).setDepth(7);
-  this.time.delayedCall(70, () => this.projectiles.push({ bullet: b2, target: second, tower, speed: 700 }));
+  const b2 = shot();
+  this.time.delayedCall(70, () => this.projectiles.push({ bullet: b2, target: second, tower, speed, line: harpoon }));
 }
 }
 
@@ -1190,7 +1201,7 @@ this.projectiles = this.projectiles.filter(p => {
     const near = this.activeEnemies.filter(e => e.alive && e.sprite && e.sprite.active)
       .map(e => ({ e, d: Phaser.Math.Distance.Between(p.bullet.x, p.bullet.y, e.sprite.x, e.sprite.y) }))
       .filter(o => o.d < 90).sort((a, b) => a.d - b.d)[0];
-    if (!near) { this.fizzle(p.bullet); return false; }
+    if (!near) { this.fizzle(p.bullet); if (p.rope) p.rope.destroy(); return false; }
     p.target = near.e;
   }
   const tx = p.target.sprite.x, ty = p.target.sprite.y;
@@ -1198,11 +1209,17 @@ this.projectiles = this.projectiles.filter(p => {
   const step = p.speed * dt / 1000;
   if (d <= step + (p.target.data.size || 8) * 0.5) {
     p.bullet.destroy();
+    if (p.rope) { const r = p.rope; this.tweens.add({ targets: r, alpha: 0, duration: 260, onComplete: () => r.destroy() }); }
     this.projectileHit(p.tower, p.target);
     return false;
   }
   p.bullet.x += (tx - p.bullet.x) / d * step;
   p.bullet.y += (ty - p.bullet.y) / d * step;
+  if (p.line) {
+    p.bullet.setRotation(Math.atan2(ty - p.bullet.y, tx - p.bullet.x));
+    if (!p.rope) p.rope = this.add.graphics().setDepth(6);
+    p.rope.clear(); p.rope.lineStyle(1, 0xc9b48a, 0.8); p.rope.lineBetween(p.tower.x, p.tower.y, p.bullet.x, p.bullet.y);
+  }
   return true;
 });
 }
@@ -1215,7 +1232,7 @@ projectileHit(tower, target) {
 if (!target.alive) return;
 const d = tower.data;
 const tx = target.sprite.x, ty = target.sprite.y;
-const hitOpts = { pierce: d.pierce || 0 };
+const hitOpts = { pierce: d.pierce || 0, shieldX: d.shieldX || 1 };
 // Uplink: all towers (Overclocked), Gunners and Mk IIs (Sharp Eye); Hollow
 // Point gives Gunner rounds a chance to hit twice as hard
 const gun = tower.type === 'gunner' || tower.type === 'gunner2';
@@ -1247,7 +1264,71 @@ if (tower.type === 'bomber') {
     if (other) this.dealDamage(other.e, Math.round(dmgFor(other.e) * d.scatter), tower.type, hitOpts);
   }
   this.dealDamage(target, dmgFor(target), tower.type, hitOpts);
+  if (tower.type === 'harpoon' && target.alive) {
+    // Reeled in: slowed for a moment, and dragged back with the winch
+    target.reelUntil = this.simNow + (d.reelMs || 900); target.reelAmt = d.reel || 0.4;
+    if (d.knock) this.knockback(target, d.knock);
+    else if (target.moveTween) this.moveToWaypoint(target, target.moveTargetIdx);
+  }
 }
+}
+
+// ── Water cannon ──────────────────────────────────────────────────────
+// Sprays the leading raiders in range (up to `spray` of them): light damage
+// that strips shields fast, and a shove back along the road. Bosses barely
+// budge, and every raider resists a little more each time it's pushed.
+cannonSpray(tower) {
+const d = tower.data;
+const rate = d.fireRate / this.sk.fire;
+if (this.simNow - tower.lastFired < rate) return;
+const inRange = this.activeEnemies.filter(e => e.alive && e.sprite && e.sprite.active &&
+  Phaser.Math.Distance.Between(tower.x, tower.y, e.sprite.x, e.sprite.y) <= d.range);
+if (!inRange.length) return;
+tower.lastFired = this.simNow;
+const first = this.pickTarget(tower, inRange);
+const targets = [first].concat(inRange.filter(e => e !== first)
+  .sort((a, b) => Phaser.Math.Distance.Between(first.sprite.x, first.sprite.y, a.sprite.x, a.sprite.y) - Phaser.Math.Distance.Between(first.sprite.x, first.sprite.y, b.sprite.x, b.sprite.y))
+  .slice(0, (d.spray || 1) - 1));
+const ang = Phaser.Math.Angle.Between(tower.x, tower.y, first.sprite.x, first.sprite.y);
+if (tower.barrel) tower.barrel.setRotation(ang);
+Sfx.play('spray');
+const mult = this.sk.dmg;
+targets.forEach(e => {
+  const ex = e.sprite.x, ey = e.sprite.y;
+  if (!Settings.get('reducedFx')) {
+    // A burst of droplets along the stream
+    for (let i = 0; i < 3; i++) {
+      const t = 0.35 + i * 0.3, dx = tower.x + (ex - tower.x) * t + (Math.random() - 0.5) * 6, dy = tower.y + (ey - tower.y) * t + (Math.random() - 0.5) * 6;
+      const drop = this.add.circle(dx, dy, 2.4 - i * 0.4, 0xbfefff, 0.85).setDepth(7);
+      this.tweens.add({ targets: drop, x: ex, y: ey, alpha: 0, duration: 160 + i * 40, onComplete: () => drop.destroy() });
+    }
+  }
+  const sp = this.add.circle(ex, ey, 4, 0xbfefff, 0.7).setDepth(8);
+  this.tweens.add({ targets: sp, scale: 2.2, alpha: 0, duration: 200, onComplete: () => sp.destroy() });
+  this.dealDamage(e, Math.round(d.damage * mult), 'cannon', { pierce: d.pierce || 0, shieldX: d.shieldX || 1 });
+  if (e.alive) this.knockback(e, d.push || 12);
+});
+}
+
+// Push a raider back along the road by `dist` pixels
+knockback(e, dist) {
+if (!e.alive || !e.sprite || this.gameOver) return;
+dist *= (e.data.isBoss ? 0.2 : 1) / (1 + (e.pushes || 0) * 0.06);
+e.pushes = (e.pushes || 0) + 1;
+let idx = e.moveTargetIdx || 1;
+while (dist > 0.5 && idx > 1) {
+  const prev = this.pathPoints[idx - 1];
+  const gap = Phaser.Math.Distance.Between(e.sprite.x, e.sprite.y, prev.x, prev.y);
+  if (gap > dist) {
+    e.sprite.x += (prev.x - e.sprite.x) / gap * dist; e.sprite.y += (prev.y - e.sprite.y) / gap * dist;
+    dist = 0;
+  } else {
+    e.sprite.x = prev.x; e.sprite.y = prev.y; dist -= gap;
+    if (idx - 1 <= 1) break;   // never back past the first bend
+    idx--;
+  }
+}
+this.moveToWaypoint(e, idx);
 }
 
 // One card per new raider: what it does and what beats it
@@ -1425,8 +1506,9 @@ if (enemy.markedUntil > this.simNow) damage *= this.sk.mark.multiplier;
 // Shields soak the hit before armour; beams and burns slip past them
 if (enemy.shield > 0 && !o.trueDamage && !o.beam) {
   // (the shield takes extra from the agent's trick, if you stayed free)
-  const soak = Math.min(enemy.shield, damage * this.shieldMult);
-  enemy.shield -= soak; damage -= soak / this.shieldMult;
+  const sx = this.shieldMult * (o.shieldX || 1);
+  const soak = Math.min(enemy.shield, damage * sx);
+  enemy.shield -= soak; damage -= soak / sx;
   if (enemy.shield <= 0) { enemy.shield = 0; this.shieldBreak(enemy); }
   if (damage <= 0) return;
 }

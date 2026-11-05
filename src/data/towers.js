@@ -101,8 +101,50 @@ const TOWER_DATA = {
         { cost: 14, name: 'Bilge pump',       label: 'Drain \u2192 21 dmg/s',             dps: 21 },
         { cost: 24, name: 'Engine pump',      label: 'Drain \u2192 30 dmg/s',             dps: 30, rare: 'engine' } ] }
     ]
+  },
+  // Story 3 · The Radio. A whaling gun: slow, long reach, one heavy bolt that
+  // punches through armour and reels the raider in (slows it briefly).
+  // Extra fields: reel (speed while reeled), reelMs, shieldX (damage to
+  // shields multiplied), knock (pushes the raider back along the road)
+  harpoon: {
+    key: 'harpoon', name: 'HARPOON', colour: 0x7fa8b8,
+    tier: 2, damage: 60, range: 165, fireRate: 2400, pierce: 8, reel: 0.4, reelMs: 900, speed: 30,
+    mods: [
+      { name: 'LONG LINE', tiers: [
+        { cost: 10, name: 'More rope',        label: 'Range +25',                          rangeBonus: 25 },
+        { cost: 16, name: 'Steel cable',      label: 'Range +25, reels longer',            rangeBonus: 25, reelMs: 1400 },
+        { cost: 26, name: 'Deep-sea winch',   label: 'Range +35, drags raiders back',      rangeBonus: 35, knock: 45, rare: 'plate' } ] },
+      { name: 'BARBED HEAD', tiers: [
+        { cost: 10, name: 'Barbs',            label: 'Damage +20',                         damageBonus: 20 },
+        { cost: 18, name: 'Shield-ripper',    label: 'Double damage to shields',           shieldX: 2 },
+        { cost: 28, name: 'Explosive tip',    label: 'Damage +45',                         damageBonus: 45, rare: 'plate' } ] },
+      { name: 'QUICK WINCH', tiers: [
+        { cost: 10, name: 'Ratchet',          label: 'Fires faster (2.4s \u2192 1.9s)',   fireRate: 1900 },
+        { cost: 16, name: 'Geared winch',     label: 'Fires faster (\u2192 1.5s)',        fireRate: 1500 },
+        { cost: 26, name: 'Twin launcher',    label: 'Fires two bolts at once',            doubleShot: true, rare: 'engine' } ] }
+    ]
+  },
+  // Story 4 · Proof. Stripped from a Helix relay: a pump that blasts raiders
+  // back up the road. Weak damage, but it washes shields off fast.
+  cannon: {
+    key: 'cannon', name: 'WATER CANNON', short: 'Cannon', colour: 0x3fc1e8,
+    tier: 2, damage: 5, range: 85, fireRate: 450, push: 12, spray: 1, shieldX: 3, speed: 35,
+    mods: [
+      { name: 'HIGH PRESSURE', tiers: [
+        { cost: 10, name: 'Bigger pump',      label: 'Pushes harder',                      push: 18 },
+        { cost: 16, name: 'Fire pump',        label: 'Pushes much harder',                 push: 26 },
+        { cost: 26, name: 'Firehose',         label: 'Knocks raiders right back',          push: 38, rare: 'engine' } ] },
+      { name: 'WIDE SPRAY', tiers: [
+        { cost: 10, name: 'Fan nozzle',       label: 'Sprays 2 raiders at once',           spray: 2 },
+        { cost: 16, name: 'Twin nozzle',      label: 'Sprays 3 raiders',                   spray: 3 },
+        { cost: 26, name: 'Sprinkler head',   label: 'Sprays 5 raiders, range +20',        spray: 5, rangeBonus: 20, rare: 'plate' } ] },
+      { name: 'SALT WATER', tiers: [
+        { cost: 8,  name: 'Brine',            label: 'Damage +4',                          damageBonus: 4 },
+        { cost: 14, name: 'Grit',             label: 'Damage +5, ignores 4 armour',        damageBonus: 5, pierce: 4 },
+        { cost: 24, name: 'Boiling',          label: 'Shields melt 6\u00d7 faster',       shieldX: 6, rare: 'engine' } ] }
+    ]
   }
 };
 
 // Display / selection order everywhere towers are listed
-const TOWER_ORDER = ['gunner', 'gunner2', 'bomber', 'barricade', 'siphon'];
+const TOWER_ORDER = ['gunner', 'gunner2', 'bomber', 'barricade', 'siphon', 'harpoon', 'cannon'];

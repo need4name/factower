@@ -1511,7 +1511,7 @@ dealDamage(enemy, damage, sourceType, opts) {
 if (!enemy.alive) return;
 const o = opts || {};
 if (enemy.submergedUntil > this.simNow) return;
-enemy.lastHitAt = this.simNow;
+enemy.lastHitAt = this.simNow; enemy.lastHitBy = sourceType;
 // Mark Target: the first raider a tower hits each wave takes extra damage
 if (this.sk.mark && !this._markUsed && TOWER_DATA[sourceType]) this.markEnemy(enemy);
 if (enemy.markedUntil > this.simNow) damage *= this.sk.mark.multiplier;
@@ -1883,15 +1883,17 @@ h.c.list[0].setRotation(0);
 this.tweens.add({ targets: h.fist, x: Math.cos(ang) * 22, y: Math.sin(ang) * 22, duration: 70, yoyo: true,
   onComplete: () => h.fist.setPosition(12, 6) });
 Sfx.play('hit');
+h.dealt = (h.dealt || 0) + st.dmg;
 this.dealDamage(t, Math.round(st.dmg * this.sk.dmg), 'borga', { pierce: 4, shieldX: 1.5 });
 }
 
 heroXp(enemy) {
 const h = this.hero;
 if (!h || h.level >= 5 || !enemy.sprite) return;
-if (Phaser.Math.Distance.Between(h.x, h.y, enemy.sprite.x, enemy.sprite.y) > 140) return;
-h.xp += enemy.data.isBoss ? 8 : enemy.data.rareDrop ? 3 : 1;
-while (h.level < 5 && h.xp >= [0, 6, 16, 30, 50][h.level]) {
+if (Phaser.Math.Distance.Between(h.x, h.y, enemy.sprite.x, enemy.sprite.y) > 110) return;
+// Her own knockouts count double
+h.xp += (enemy.data.isBoss ? 8 : enemy.data.rareDrop ? 3 : 1) * (enemy.lastHitBy === 'borga' ? 2 : 1);
+while (h.level < 5 && h.xp >= [0, 12, 32, 64, 110][h.level]) {
   h.level++;
   h.lvl.setText('Lv ' + h.level);
   Sfx.play('upgrade');
@@ -2119,8 +2121,8 @@ this.add.rectangle(width / 2, height / 2, width, height, UI.C.bg, 1).setInteract
 UI.backdrop(this).setDepth(D);
 const accent = victory ? UI.C.green : UI.C.red;
 
-UI.text(this, width / 2, 74, victory ? 'VICTORY' : 'BASE LOST', 'hero', { size: 44, origin: 0.5, color: UI.hex(accent), depth: D + 1 });
-UI.text(this, width / 2, 112, victory ? 'The island holds.' : 'The raiders broke through.', 'body', { size: 14, origin: 0.5, depth: D + 1 });
+UI.text(this, width / 2, 74, victory ? 'VICTORY' : this.isEndless ? 'RUN OVER' : 'BASE LOST', 'hero', { size: 44, origin: 0.5, color: UI.hex(accent), depth: D + 1 });
+UI.text(this, width / 2, 112, victory ? 'The island holds.' : this.isEndless ? 'The tide finally got through.' : 'The raiders broke through.', 'body', { size: 14, origin: 0.5, depth: D + 1 });
 
 // Stat tiles
 const kills = Object.values(this.killStats).reduce((s, v) => s + v, 0);

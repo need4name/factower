@@ -330,7 +330,7 @@ class DockScene extends Phaser.Scene {
       const sid = LEVEL_DATA.storylines.find(st => st.levels.includes(base)).id;
       const run = Endless.build(this.saveData);
       const data = Object.assign({}, base, {
-        name: base.name + '  —  ENDLESS', baseHp: 15, hpScale: 1, tutorial: null, waves: run.waves, twists: run.twists
+        name: 'Endless Raids', baseHp: 15, hpScale: 1, tutorial: null, waves: run.waves, twists: run.twists
       });
       UI.go(this, 'CombatScene', { storylineId: sid, levelId: base.id, levelData: data, isEndless: true });
       return;

@@ -132,6 +132,7 @@ class ArmouryScene extends Phaser.Scene {
     const { height } = this.scale;
     const top = UI.HEADER_H, bottom = height - 80;
     this.listC = this.add.container(0, 0, this.cardItems);
+    this.listC.sort('depth');   // tower art sits above its card
     const m = this.make.graphics({}, false); m.fillStyle(0xffffff); m.fillRect(0, top, width, bottom - top);
     this.listC.setMask(m.createGeometryMask());
     this.listMin = Math.min(0, bottom - (y + 12));

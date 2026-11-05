@@ -50,7 +50,9 @@ class ArmouryScene extends Phaser.Scene {
     // the previous visit's (destroyed) objects before anything touches them.
     this.cardItems = [];
     this.dockBtn = null;
+    this.listC = null; this.listY = 0; this.listMin = 0;   // scrolling list
     this.drawTowerCards();
+    this.enableListScroll();
 
     const by = height - 46;
     UI.button(this, 16 + 76, by, 152, 52, { label: 'BUILD MORE', variant: 'secondary', icon: 'factory', onTap: () => UI.go(this, 'FactoryScene') });
@@ -62,7 +64,7 @@ class ArmouryScene extends Phaser.Scene {
   drawTowerCards() {
     const { width } = this.scale;
     const stockpile = this.saveData.stockpile || {};
-    this.cardItems.forEach(e => e.destroy());
+    if (this.listC) { this.listC.destroy(); this.listC = null; }
     this.cardItems = [];
 
     // Unlocked towers, plus a preview of the next one still to unlock
@@ -73,6 +75,7 @@ class ArmouryScene extends Phaser.Scene {
     const compact = shown.length > 3;
     const w = width - 32, h = compact ? 108 : 150;
     let y = UI.HEADER_H + (compact ? 12 : 20);
+    if (Contracts.open(this.saveData)) y = this.drawContracts(y);
     shown.forEach(type => {
       const d = TOWER_DATA[type];
       const count = stockpile[type] || 0;
@@ -124,6 +127,70 @@ class ArmouryScene extends Phaser.Scene {
       this.cardItems.push(UI.text(this, width / 2, y + 20, 'No towers yet — build them in the Factory.', 'body', { origin: 0.5, size: 13, color: UI.T.mute }));
     }
     if (this.dockBtn) this.dockBtn.setEnabled(total > 0);
+
+    // Everything above scrolls between the header and the bottom buttons
+    const { height } = this.scale;
+    const top = UI.HEADER_H, bottom = height - 80;
+    this.listC = this.add.container(0, 0, this.cardItems);
+    const m = this.make.graphics({}, false); m.fillStyle(0xffffff); m.fillRect(0, top, width, bottom - top);
+    this.listC.setMask(m.createGeometryMask());
+    this.listMin = Math.min(0, bottom - (y + 12));
+    this.listY = Phaser.Math.Clamp(this.listY || 0, this.listMin, 0);
+    this.listC.setY(this.listY);
+  }
+
+  enableListScroll() {
+    const top = UI.HEADER_H, bottom = this.scale.height - 80;
+    let start = null, base = 0;
+    this.input.on('pointerdown', p => { if (p.y > top && p.y < bottom) { start = p.y; base = this.listY; } });
+    this.input.on('pointermove', p => {
+      if (start === null || !p.isDown || !this.listC) return;
+      if (Math.abs(p.y - start) < 8) return;
+      this.listY = Phaser.Math.Clamp(base + p.y - start, this.listMin, 0);
+      this.listC.setY(this.listY);
+    });
+    this.input.on('pointerup', () => { start = null; });
+    this.input.on('wheel', (p, o, dx, dy) => { if (!this.listC) return; this.listY = Phaser.Math.Clamp(this.listY - dy, this.listMin, 0); this.listC.setY(this.listY); });
+  }
+
+  // ── Contracts: standing orders for towers, paid in bolts ──────────────
+  drawContracts(y) {
+    const { width } = this.scale;
+    const add = (o) => { this.cardItems.push(o); return o; };
+    const st = Contracts.state(this.saveData);
+    add(UI.text(this, 20, y + 8, 'CONTRACTS', 'tag', { size: 11, origin: [0, 0.5], color: UI.T.amber }));
+    add(UI.text(this, width - 20, y + 8, 'New orders arrive after each win', 'small', { size: 11, origin: [1, 0.5], color: UI.T.mute }));
+    y += 22;
+    st.items.forEach((o, i) => {
+      const h = 78, cy = y + h / 2;
+      add(UI.panel(this, width / 2, cy, width - 32, h, { fill: UI.C.surface, stroke: o ? UI.C.amber : UI.C.lineSoft, strokeAlpha: o ? 0.5 : 1, accent: o ? UI.C.amber : undefined, radius: 14 }));
+      if (!o) {
+        add(UI.text(this, width / 2, cy, 'Order filled \u2014 a new one comes in after your next win', 'small', { size: 12, origin: 0.5, color: UI.T.faint }));
+        y += h + 8; return;
+      }
+      const stock = this.saveData.stockpile || {};
+      const want = Object.entries(o.want).map(([t, c]) => c + ' ' + (TOWER_DATA[t].short || this.titleCase(TOWER_DATA[t].name)) + ((stock[t] || 0) < c ? ' (' + (stock[t] || 0) + ')' : '')).join('  \u00b7  ');
+      const pay = [o.bolts + ' bolt' + (o.bolts === 1 ? '' : 's'), o.plasticScrap ? o.plasticScrap + ' scrap' : '', o.salvagedMetal ? o.salvagedMetal + ' metal' : ''].filter(Boolean).join(' + ');
+      add(UI.text(this, 32, y + 16, o.client, 'heading', { size: 15, origin: [0, 0.5] }));
+      add(UI.text(this, 32, y + 39, 'Wants ' + want, 'small', { size: 12, origin: [0, 0.5], wrap: width - 170, color: UI.T.mute }));
+      add(UI.text(this, 32, y + 60, 'Pays ' + pay, 'label', { size: 11, origin: [0, 0.5], color: UI.T.amber }));
+      const ok = Contracts.canFill(this.saveData, i);
+      const b = add(UI.button(this, width - 16 - 56, cy, 92, 40, { label: 'DELIVER', variant: ok ? 'primary' : 'outline', colour: UI.C.amber, size: 13, disabled: !ok,
+        onTap: () => this.deliver(i) }));
+      b.setEnabled(ok);
+      y += h + 8;
+    });
+    add(UI.text(this, 20, y + 8, 'YOUR TOWERS', 'tag', { size: 11, origin: [0, 0.5], color: UI.T.green }));
+    return y + 24;
+  }
+
+  deliver(i) {
+    const { save, paid } = Contracts.fill(i);
+    if (!paid) return;
+    this.saveData = save;
+    Sfx.play('coin');
+    UI.toast(this, 'Delivered! +' + paid.bolts + ' bolt' + (paid.bolts === 1 ? '' : 's'), 'good');
+    this.drawTowerCards();
   }
 
   titleCase(str) { return UI.titleCase(str); }

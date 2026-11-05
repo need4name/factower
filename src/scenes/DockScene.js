@@ -97,7 +97,8 @@ class DockScene extends Phaser.Scene {
     const anyDone = this.endlessPool().length > 0;
     y = this.addCampaignCard(y, {
       tag: 'ENDLESS', title: 'Endless Raids', colour: UI.C.blue,
-      body: anyDone ? 'Waves keep coming on a map you have cleared. Power zones change every run. How long can you hold?'
+      body: anyDone ? 'Every raider you have met, wave after wave, with a twist every 5th and a boss every 10th. Every run pays out.'
+                      + (Endless.best(this.saveData) ? '  Best: wave ' + Endless.best(this.saveData) + '.' : '')
                     : 'Clear a defence level to unlock.',
       unlocked: anyDone, onTap: anyDone ? () => this.launch(null, true) : null
     }) + 12;
@@ -327,8 +328,9 @@ class DockScene extends Phaser.Scene {
       if (!pool.length) return;
       const base = pool[Math.floor(Math.random() * pool.length)];
       const sid = LEVEL_DATA.storylines.find(st => st.levels.includes(base)).id;
+      const run = Endless.build(this.saveData);
       const data = Object.assign({}, base, {
-        name: base.name + '  —  ENDLESS', baseHp: 10, tutorial: null, waves: this.buildEndlessWaves(6)
+        name: base.name + '  —  ENDLESS', baseHp: 15, hpScale: 1, tutorial: null, waves: run.waves, twists: run.twists
       });
       UI.go(this, 'CombatScene', { storylineId: sid, levelId: base.id, levelData: data, isEndless: true });
       return;
@@ -339,20 +341,5 @@ class DockScene extends Phaser.Scene {
     // The story scene leading into this level (once)
     const bkey = Progress.key(sid, level.id) + '.before';
     if (Story.has(bkey)) Story.play(this, bkey, go); else go();
-  }
-
-  buildEndlessWaves(startDiff) {
-    const waves = [];
-    for (let w = 0; w < 99; w++) {
-      const d = startDiff + w;
-      const b = Math.floor(6 + d * 1.8);
-      const e = [];
-      e.push({ type: 'saltChild',   count: Math.max(8, b),                                    interval: Math.max(650,  1600 - d * 40)  });
-      if (d >= 2) e.push({ type: 'scrapRunner',   count: Math.max(4, Math.floor(b * 0.6)),    interval: Math.max(800,  1900 - d * 45)  });
-      if (d >= 3) e.push({ type: 'driftwoodHulk', count: Math.min(1 + Math.floor((d-3)/3), 6), interval: Math.max(2500, 6000 - d * 150) });
-      if (d >= 14 && w % 5 === 4) e.push({ type: 'frontCommander', count: 1, interval: 0 });
-      waves.push({ preWaveDelay: w === 0 ? 3000 : 2000, enemies: e });
-    }
-    return waves;
   }
 }

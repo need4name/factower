@@ -435,6 +435,7 @@ class RaidScene extends Phaser.Scene {
       if (!save.stockpile) save.stockpile = {};
       Object.entries(this.lost).forEach(([t, n]) => { save.stockpile[t] = Math.max(0, (save.stockpile[t] || 0) - n); });
       if (!won) return;
+      Contracts.refill(save);   // new factory orders come in after a win
       if (!save.completedLevels) save.completedLevels = {};
       const sk = 'storyline' + this.storylineId;
       if (!save.completedLevels[sk]) save.completedLevels[sk] = [];

@@ -425,7 +425,7 @@ const LEVEL_DATA = {
 
         { id: 4, name: 'THE TURBINE WAR', boss: true,
           description: 'The Mothership. Everything you have built, right here.',
-          difficulty: 26, recommendedTowers: 12, hpScale: 1.85, baseHp: 22,
+          difficulty: 26, recommendedTowers: 12, hpScale: 1.55, baseHp: 22,
           path: _P([350, 0], [350, 110], [40, 110], [40, 230], [350, 230], [350, 340], [40, 340], [40, 418]),
           waves: [ _W(_g('helixDrone', 14, 700), _g('helixTrooper', 6, 1600)),
                    _W(_g('helixWarden', 5, 3200), _g('helixTrooper', 14, 900)),

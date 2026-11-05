@@ -1662,7 +1662,9 @@ this.waveText.setText('Raiders incoming…').setColor(UI.T.amber);
 
 const width = this.scale.width;
 const banner = UI.text(this, width / 2, this.H / 2 - 60, 'WAVE ' + (this.currentWave + 1), 'hero', { size: 48, origin: 0.5, color: UI.T.red, depth: 25 });
-const sub = UI.text(this, width / 2, this.H / 2 - 18, 'INCOMING', 'label', { size: 14, origin: 0.5, color: UI.T.red, depth: 25, ls: 6 });
+const twist = this.isEndless && this.levelData.twists && this.levelData.twists[this.currentWave];
+const bossWave = waveData.enemies.some(g => ENEMY_DATA[g.type] && ENEMY_DATA[g.type].isBoss);
+const sub = UI.text(this, width / 2, this.H / 2 - 18, twist ? Endless.TWISTS[twist].name : bossWave ? 'BOSS' : 'INCOMING', 'label', { size: 14, origin: 0.5, color: UI.T.red, depth: 25, ls: 6 });
 [banner, sub].forEach(t => t.setAlpha(0));
 this.tweens.add({ targets: [banner, sub], alpha: 1, duration: 220,
   onComplete: () => this.tweens.add({ targets: [banner, sub], alpha: 0, duration: 450, delay: 650, onComplete: () => { banner.destroy(); sub.destroy(); } }) });
@@ -1673,7 +1675,7 @@ this._awaitingSpawn = true;     // no calling early until this wave is under way
 this.time.delayedCall(500, () => {
   this._awaitingSpawn = false;
   if (this.gameOver) return;
-  this.waveText.setText('Wave ' + (this.currentWave + 1) + ' of ' + total + ' — hold the line').setColor(UI.T.dim);
+  this.waveText.setText(twist ? Endless.TWISTS[twist].line : this.isEndless ? 'Wave ' + (this.currentWave + 1) + (Endless.best(this.saveData) ? '  ·  best ' + Endless.best(this.saveData) : '') : 'Wave ' + (this.currentWave + 1) + ' of ' + total + ' — hold the line').setColor(twist ? UI.T.amber : UI.T.dim);
   Sfx.play('horn');
   this._markUsed = false;   // Mark Target: one mark per wave
   this.spawnWave(waveData);
@@ -1702,7 +1704,7 @@ waveData.enemies.forEach(group => {
       const spawnDelay  = totalDelay + burstOffset;
       this.time.delayedCall(spawnDelay, () => {
         this._pendingSpawns--;
-        if (!this.gameOver) this.spawnEnemy(group.type);
+        if (!this.gameOver) this.spawnEnemy(group.type, undefined, group.hp);
       });
     }
 
@@ -1723,7 +1725,7 @@ waveData.enemies.forEach(group => {
 }
 
 // from = { x, y, idx }: start mid-path (boats launched by a spawner boss)
-spawnEnemy(type, from) {
+spawnEnemy(type, from, hpMul) {
 const data   = ENEMY_DATA[type];
 const start  = from || this.pathPoints[0];
 const sprite = Art.boat(this, start.x, start.y, type).setDepth(7);
@@ -1740,7 +1742,7 @@ if (data.shieldAura) {
   sprite.aura = this.add.circle(start.x, start.y, data.shieldAura.radius, 0x7fe3ff, 0.05).setStrokeStyle(1, 0x7fe3ff, 0.35).setDepth(5);
 }
 // hpScale (per level) toughens hulls and shields without new waves
-const k = (this.levelData && this.levelData.hpScale) || 1;
+const k = ((this.levelData && this.levelData.hpScale) || 1) * (hpMul || 1);
 const shield = data.shield ? Math.round(data.shield.hp * k) : 0, hp = Math.round(data.hp * k);
 const enemy = { type, data: { ...data }, sprite, hp, maxHp: hp, baseScale: sprite.scaleX, phase: Math.random() * 6.3, alive: true, pathProgress: 0, hpBg, hpFill,
   lastHeal: this.simNow, burnDps: 0, burnUntil: 0, shield, maxShield: shield, lastHitAt: 0, lastSpawn: this.simNow };
@@ -2109,6 +2111,7 @@ if (victory && !this.isEndless) {
                      ['Won with ' + (rec - 1) + ' towers or fewer (used ' + placed + ')', placed <= rec - 1]];
 }
 if (victory) this.saveProgress();
+if (this.isEndless) this.endlessResult = this.saveEndless();
 
 const width = this.scale.width, height = this.H;
 const D = 40;
@@ -2179,7 +2182,15 @@ if (victory) {
   }
   if (this.merchantsRested) unlocks.push('Your merchants have rested — fresh payouts at the Market.');
   if (unlocks.length) card('UNLOCKED', unlocks.join('\n'), UI.C.amber);
-} else {
+}
+if (this.isEndless && this.endlessResult) {
+  const r = this.endlessResult, got = [];
+  if (r.bolts) got.push('+' + r.bolts + ' Bolt' + (r.bolts === 1 ? '' : 's'));
+  if (r.plasticScrap) got.push('+' + r.plasticScrap + ' Plastic Scrap');
+  if (r.salvagedMetal) got.push('+' + r.salvagedMetal + ' Salvaged Metal');
+  card(r.newBest ? 'ENDLESS  \u00b7  NEW BEST!' : 'ENDLESS', 'Waves cleared: ' + r.cleared + '   (best ' + r.best + ')\n'
+    + (got.length ? got.join('\n') : 'Clear 3 waves to start earning.') + (r.newBest && r.cleared ? '\n+2 bonus bolts for a new best' : ''), r.newBest ? UI.C.amber : UI.C.blue);
+} else if (!victory) {
   card('TRY THIS', 'Place towers beside bends where the road doubles back — the coverage meter shows good spots.\nYour towers go back to the Armoury when you lose, so you can retry straight away.', UI.C.amber);
 }
 
@@ -2238,6 +2249,24 @@ showAbortConfirm() {
       } }
     ]
   });
+}
+
+// Endless pays out whenever a run ends, more the further it got
+saveEndless() {
+const cleared = this.currentWave;
+const prev = Endless.best(SaveManager.load());
+const r = Endless.reward(cleared);
+const newBest = cleared > prev;
+if (newBest && cleared) r.bolts += 2;
+SaveManager.update(s => {
+  if (cleared >= 3) Contracts.refill(s);
+  s.endlessBest = Math.max(s.endlessBest || 0, cleared);
+  s.bolts = (s.bolts || 0) + r.bolts;
+  if (!s.materials) s.materials = {};
+  s.materials.plasticScrap = (s.materials.plasticScrap || 0) + r.plasticScrap;
+  s.materials.salvagedMetal = (s.materials.salvagedMetal || 0) + r.salvagedMetal;
+});
+return Object.assign(r, { cleared, best: Math.max(prev, cleared), newBest });
 }
 
 saveProgress() {
@@ -2331,6 +2360,7 @@ if (this.levelId === 1 && this.storylineId === 1 && !save.workers) save.workers 
 this.merchantsRested = Object.values(save.merchantFatigue || {}).some(v => v > 0);
 save.merchantFatigue = { chrome: 0, ricochet: 0, doubleDown: 0 };
 if (this.levelId === 8 && this.storylineId === 1) save.factionOneComplete = true;
+Contracts.refill(save);   // new factory orders come in after a win
 
 SaveManager.write(save);
 

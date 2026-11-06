@@ -9,7 +9,7 @@
 //
 // Browser tests use Playwright's Chromium; set CHROME to use another binary.
 // Screenshots land in tests/out/ (not committed).
-const http = require('http'), fs = require('fs'), path = require('path'), { spawnSync } = require('child_process');
+const http = require('http'), fs = require('fs'), path = require('path'), { spawn } = require('child_process');
 const ROOT = path.resolve(__dirname, '..'), OUT = path.join(__dirname, 'out');
 const TYPES = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2' };
 
@@ -30,19 +30,28 @@ server.listen(0, '127.0.0.1', () => {
   const BASE_URL = 'http://127.0.0.1:' + server.address().port;
   ['', 'tut', 'e2e'].forEach(d => fs.mkdirSync(path.join(OUT, d), { recursive: true }));
   const results = [];
-  const run = (label, file, cwd, env) => {
+  // Tests run one at a time, asynchronously, so this process keeps serving the game
+  const run = (label, file, cwd, env) => new Promise(resolve => {
     const t0 = Date.now();
-    const r = spawnSync(process.execPath, [file], { cwd, env: Object.assign({}, process.env, env), encoding: 'utf8', timeout: 600000 });
-    const ok = r.status === 0;
-    const secs = Math.round((Date.now() - t0) / 1000);
-    console.log((ok ? 'PASS ' : 'FAIL ') + label.padEnd(16) + secs + 's');
-    if (!ok) console.log(((r.stdout || '') + (r.stderr || '')).split('\n').filter(l => /FAIL|rror|assert/i.test(l)).slice(0, 8).map(l => '     ' + l).join('\n'));
-    results.push(ok);
-  };
-  runUnit.forEach(f => run('unit/' + f.replace('.js', ''), path.join(__dirname, 'unit', f), ROOT, {}));
-  runBrowser.forEach(f => run('browser/' + f.replace('.js', ''), path.join(__dirname, 'browser', f), __dirname, { BASE_URL, OUT }));
-  server.close();
-  const failed = results.filter(x => !x).length;
-  console.log('\n' + (results.length - failed) + ' passed, ' + failed + ' failed');
-  process.exit(failed ? 1 : 0);
+    const child = spawn(process.execPath, [file], { cwd, env: Object.assign({}, process.env, env) });
+    let out = '';
+    child.stdout.on('data', d => { out += d; }); child.stderr.on('data', d => { out += d; });
+    const kill = setTimeout(() => { out += '\nFAIL: timed out after 10 minutes'; child.kill(); }, 600000);
+    child.on('close', code => {
+      clearTimeout(kill);
+      const ok = code === 0;
+      console.log((ok ? 'PASS ' : 'FAIL ') + label.padEnd(16) + Math.round((Date.now() - t0) / 1000) + 's');
+      if (!ok) console.log(out.split('\n').filter(l => /FAIL|rror|assert/i.test(l)).slice(0, 8).map(l => '     ' + l).join('\n'));
+      results.push(ok);
+      resolve();
+    });
+  });
+  (async () => {
+    for (const f of runUnit) await run('unit/' + f.replace('.js', ''), path.join(__dirname, 'unit', f), ROOT, {});
+    for (const f of runBrowser) await run('browser/' + f.replace('.js', ''), path.join(__dirname, 'browser', f), __dirname, { BASE_URL, OUT });
+    server.close();
+    const failed = results.filter(x => !x).length;
+    console.log('\n' + (results.length - failed) + ' passed, ' + failed + ' failed');
+    process.exit(failed ? 1 : 0);
+  })();
 });

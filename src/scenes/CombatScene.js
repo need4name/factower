@@ -560,11 +560,13 @@ items.push(this.add.circle(tower.x, tower.y, tower.data.range).setStrokeStyle(2,
 
 const unlocked = this.upgradesUnlocked();
 const modsAt   = Progress.levelName(UNLOCKS.mods.at);
-const rowH = 58, h = unlocked ? 64 + paths.length * rowH + 8 : 120;
+const rowH = 66, h = unlocked ? 64 + paths.length * rowH + 8 : 120;
 const cy = this.HP_STRIP_Y - 24 - h / 2, lx = 12 + 18;
 items.push(UI.panel(this, width / 2, cy, width - 24, h, { fill: UI.C.surface, stroke: colour, strokeAlpha: 0.7, radius: 16, depth: D }));
 const top = cy - h / 2;
-items.push(UI.text(this, lx, top + 20, this.titleCase(tower.data.name), 'heading', { size: 17, origin: [0, 0.5], depth: D + 1, color: UI.hex(colour) }));
+const nameT = UI.text(this, lx, top + 20, this.titleCase(tower.data.name), 'heading', { size: 17, origin: [0, 0.5], depth: D + 1, color: UI.hex(colour) });
+items.push(nameT);
+items.push(UI.text(this, lx + nameT.width + 10, top + 21, this.statLine(tower.data, tower.type), 'label', { size: 10, origin: [0, 0.5], depth: D + 1, color: UI.T.mute }));
 const rareTxt = Object.keys(this.rare).filter(k => this.rare[k] > 0).map(k => this.rare[k] + ' ' + RARE_PARTS[k].name).join(' \u00b7 ');
 if (tower.type !== 'barricade') {
   const modes = ['first', 'strong', 'close', 'last'];
@@ -590,7 +592,11 @@ if (!unlocked) {
     items.push(UI.text(this, lx, ry - 11, path.name, 'tag', { size: 10.5, origin: [0, 0.5], depth: D + 1, color: open ? UI.T.dim : UI.T.faint }));
     for (let k = 0; k < 3; k++) items.push(this.add.circle(lx + 104 + k * 11, ry - 11, 3.5, k < tier ? colour : UI.C.line).setDepth(D + 1));
     const desc = !next ? 'Fully modded' : !open ? 'Two paths already in use' : next.name + ': ' + next.label + (next.rare ? '  (needs ' + RARE_PARTS[next.rare].name + ')' : '');
-    items.push(UI.text(this, lx, ry + 9, desc, 'small', { size: 11, origin: [0, 0.5], depth: D + 1, wrap: width - 150, color: open && next ? UI.T.text : UI.T.faint }));
+    items.push(UI.text(this, lx, ry + 7, desc, 'small', { size: 11, origin: [0, 0.5], depth: D + 1, wrap: width - 150, color: open && next ? UI.T.text : UI.T.faint }));
+    const delta = next && open ? this.modDelta(tower.data, tower.type, next) : '';
+    if (delta) items.push(UI.text(this, lx, ry + 24, delta, 'label', { size: 10, origin: [0, 0.5], depth: D + 1, color: UI.T.amber }));
+    // A faint ring for the reach a range mod would give
+    if (next && open && next.rangeBonus) items.push(this.add.circle(tower.x, tower.y, tower.data.range + next.rangeBonus).setStrokeStyle(1.5, colour, 0.35).setDepth(3));
     if (next && open) {
       const ok = this.canAffordMod(next);
       const btn = UI.button(this, width - 12 - 16 - 44, ry, 88, 40, {
@@ -607,6 +613,35 @@ const shield = this.add.zone(width / 2, cy, width - 24, h).setInteractive().setD
 shield.on('pointerup', () => { this.towerTapped = true; });
 items.push(shield);
 this.upgradePanel = items;
+}
+
+// The stats that matter for this tower, in one short line
+statLine(d, type) {
+const rate = v => (1000 / v).toFixed(1) + '/s';
+if (type === 'barricade') return 'SLOW ' + Math.round((1 - d.slowAmount) * 100) + '%  \u00b7  FIELD ' + d.range;
+if (type === 'siphon') return d.dps + ' DMG/S  \u00b7  RNG ' + d.range + '  \u00b7  ' + (d.beams || 1) + ' BEAM' + ((d.beams || 1) > 1 ? 'S' : '');
+if (type === 'cannon') return 'PUSH ' + d.push + '  \u00b7  RNG ' + d.range + '  \u00b7  ' + (d.spray || 1) + ' TARGET' + ((d.spray || 1) > 1 ? 'S' : '');
+return 'DMG ' + d.damage + '  \u00b7  RNG ' + d.range + '  \u00b7  ' + rate(d.fireRate);
+}
+
+// What a mod changes, as "range 110 → 130  ·  fires 1.1 → 1.4/s" ('' for mods
+// whose label already says it all)
+modDelta(d, type, m) {
+const out = [], arrow = ' \u2192 ';
+const rate = v => (1000 / v).toFixed(1);
+if (m.damageBonus) out.push('damage ' + d.damage + arrow + (d.damage + m.damageBonus));
+if (m.rangeBonus) out.push((type === 'barricade' ? 'field ' : 'range ') + d.range + arrow + (d.range + m.rangeBonus));
+if (m.fireRate !== undefined && m.fireRate !== d.fireRate) out.push('fires ' + rate(d.fireRate) + arrow + rate(m.fireRate) + '/s');
+if (m.splashRadius !== undefined) out.push('blast ' + (d.splashRadius || 80) + arrow + m.splashRadius);
+if (m.slowAmount !== undefined) out.push('slow ' + Math.round((1 - d.slowAmount) * 100) + '%' + arrow + Math.round((1 - m.slowAmount) * 100) + '%');
+if (m.dps) out.push('drain ' + d.dps + arrow + m.dps + '/s');
+if (m.beams) out.push('beams ' + (d.beams || 1) + arrow + m.beams);
+if (m.push) out.push('push ' + d.push + arrow + m.push);
+if (m.spray) out.push('targets ' + (d.spray || 1) + arrow + m.spray);
+if (m.pierce) out.push('ignores ' + (d.pierce || 0) + arrow + ((d.pierce || 0) + m.pierce) + ' armour');
+if (m.burnDps) out.push('spikes ' + (d.burnDps || 0) + arrow + m.burnDps + ' dmg/s');
+if (m.shieldX) out.push('vs shields \u00d7' + (d.shieldX || 1) + arrow + '\u00d7' + m.shieldX);
+return out.join('  \u00b7  ');
 }
 
 dismissUpgradePanel() {
